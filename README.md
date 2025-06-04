@@ -1,40 +1,46 @@
-place to design new characters, NPCs, and monsters/beasts/creatures for Dungeon & Dragons
+D&D Character Creator
+An AI-enhanced D&D character creator that helps players build balanced characters while adhering to D&D 5e rules (2024 edition).
 
-host as service on server (use a docker container)
+Overview
+This project combines modern web technologies with AI capabilities to create an immersive D&D character creation experience. The system guides players through character creation using AI prompts, validates rule adherence, and generates character portraits.
 
-backend/core directory has: ability_scores, alignment, character, classes, equipment, feats, personality_and_backstory, skills, species, and spells;
-each subdirectory has a abstract class that every new character created must adhere to
+Features
+AI-Guided Character Creation: Step-by-step creation process with Llama 3 guidance
+Rules Adherence: Automatic validation against D&D 5e (2024) ruleset
+Character Portrait Generation: AI-generated character visualization using Stable Diffusion
+DM Approval Workflow: Streamlined process for DM review and approval
+Character Management: Full lifecycle support including leveling up
+Journal System: Track character evolution through "waypoints" and game events
+AI-Powered Summaries: LLM-generated summaries of gameplay events
+Tech Stack
+Frontend: React with TailwindCSS
+Backend: FastAPI (Python)
+Database: MongoDB
+AI Services:
+Ollama with Llama 3 (8B) for character creation guidance
+Stable Diffusion for character visualization
+Architecture
+The system consists of three main components:
 
-link to or embed free LLM to aid/populate new character creation;
+Frontend: React-based UI for character creation, DM dashboard, and journals
+Backend: FastAPI service handling core logic and database interactions
+AI Services: Docker-containerized Ollama and Stable Diffusion instances
+Setup and Installation
+Prerequisites
+Docker and Docker Compose
+4GB+ VRAM for Stable Diffusion (CPU-only option available for Llama 3)
+Installation
+Clone the repository:
 
-idea would be, player goes to webpage, provides answers to a series of questions like:
+Run the setup script:
 
-prompt 1: describe your new character?
-prompt 2: what is the sex of your new character?
-prompt 3: tell me some things about your personality_and_backstory
-prompt 4: what are some characteristics (powers, abilities, etc) that you would like your character to have?
-prompt N: final prompt necessary to fully create your character
+Start the services:
 
-with each prompt, the LLM auto-populates one of the abstract classes (or portions of)
-
-LLM should moderate the character creation so that every character created is roughly equal in terms of abilities and skills
-For instance, if a player creates "Bob, the plummer" and another creates "Pheonix, the Sun God", they would roughly progress equivalently as they level up
-the idea is not to be able to create a god-like character that cannot be defeated and no other character can compete with
-
-frontend would allow for a DM to go to the webpage and approve a new character creation as well as create NPCs, monsters, beasts, and other creatures (also utilizing the LLM)
-
-frontend would also allow players to view their characters and level them up as they progress
-
-should have some backend to save created characters
-
-Basically, everything should be modifiable as long as it adheres to a abstract classes for character creation, whether that be spells or weapons or species... all are customizable
-
-Players and DMs should also be able to go into their character and create a journal and notes as appropriate
-
-Another feature would be to create "way points" that track or save a player's evolution as they level up (should be included in the journal)
-
-cool feature would be for LLM to review and summarize events for the DM to keep a master journal of all characters and other significant events in game-player
-
-another cool feature would be at the end of a player creation, the LLM would automatically generate a series of images that best describe the character created
-
-should adhere as much as possible to DnD rules 5e (2024 edition)
+API Endpoints
+/api/ai/character-guidance: Access Llama 3 suggestions for character creation
+/api/ai/generate-portrait: Generate character portraits based on character details
+Future Features
+Journal event illustrations using Stable Diffusion
+DM tools for generating maps, towns, battle scenes, and dungeons with AI
+Development
+Check architecture.txt for detailed information about the project structure and components.

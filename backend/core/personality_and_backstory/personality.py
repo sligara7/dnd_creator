@@ -1,56 +1,171 @@
 # personality.py
 # Description: Handles character traits, ideals, bonds, and flaws.
 
-# must adhere to abstract_personality.py interface for personality and backstory management in D&D 2024.
-
-# Methods:
-
-# get_personality_options(background) - Get personality options based on background
-# generate_random_personality() - Generate random personality traits
-# generate_ai_backstory(character_data) - Use LLM to generate character backstory
-# validate_backstory(backstory) - Check backstory for rule compliance
-# get_backstory_hooks(backstory) - Extract potential story hooks from backstory
-
-# Customizing Personality System with Llama 3/Ollama Integration
-# Each function in personality.py can be enhanced through LLM interactions to provide a rich character personality development experience:
-
-# 1. get_personality_options(background)
-# LLM Enhancement: "Generate unique personality traits that align with background {background} but go beyond the standard options"
-# Implementation: Add parameter include_custom_options=False to supplement standard options with AI-generated traits
-# Prompt Example: "Create three unique personality traits for a character with the Hermit background that reflect unusual experiences during their isolation"
-# 2. generate_random_personality()
-# LLM Enhancement: "Create a coherent personality where traits, ideals, bonds, and flaws naturally complement each other"
-# Implementation: Add parameter ensure_coherence=False to generate a psychologically consistent personality profile
-# Prompt Example: "Generate a personality profile where each element (traits, ideals, bonds, flaws) reinforces a central character theme of 'redemption seeker'"
-# 3. generate_ai_backstory(character_data)
-# LLM Enhancement: "Create a backstory that incorporates species {species}, class {class}, background {background}, and personality elements while explaining key life events"
-# Implementation: Add parameters for backstory_length, tone, and key_elements_to_include
-# Prompt Example: "Write a 300-word backstory for a Halfling Rogue with the Charlatan background. The tone should be bittersweet, and include how they learned their skills, their greatest con, and why they began adventuring"
-# 4. validate_backstory(backstory)
-# LLM Enhancement: "Analyze backstory for internal consistency, setting compatibility, and appropriate tone"
-# Implementation: Add parameters setting_name, check_for_consistency=True, suggest_improvements=False
-# Prompt Example: "Review this backstory for a character in the Forgotten Realms setting. Identify any inconsistencies with the world, timeline problems, or elements that seem out of character based on their species and class"
-# 5. get_backstory_hooks(backstory)
-# LLM Enhancement: "Extract narrative elements from the backstory that a DM could develop into personal quests or campaign ties"
-# Implementation: Add parameters hook_count=3, hook_type=['ally', 'enemy', 'mystery', 'goal'], detail_level='summary'
-# Prompt Example: "From this character backstory, identify 3 elements that could become personal quests: one involving a potential ally, one involving an enemy, and one unresolved mystery. Provide a brief adventure hook for each"
-# Implementation Approach
-# Create an LLMPersonalityAdvisor class that interfaces with Ollama/Llama3 for all personality-related enhancements
-# Store prompt templates that can be filled with character data dynamically
-# Implement a system to blend standard D&D personality options with custom LLM-generated content
-# Develop "backstory evolution" capability where the LLM can suggest how a character's personality might change after significant campaign events
-# Include a narrative voice feature where the backstory can be written in different styles (first-person, third-person, as a diary, etc.)
-# Create DM tools for generating NPCs that have meaningful connections to character backstories
-# This enhancement provides deep personalization of character personalities while maintaining gameplay balance by focusing these AI enhancements on narrative elements rather than mechanical advantages.
-
-# Backstory and Personality should be tightly coupled with alignment; for instance, if character is Chaotic Good, their backstory and personality traits should reflect that alignment. The LLM can help ensure that the character's personality, backstory, and alignment are consistent with each other.
+from typing import Dict, List, Tuple, Any
+import random
 
 from backend.core.ollama_service import OllamaService
+from backend.core.personality_and_backstory.llm_personality_advisor import LLMPersonalityAdvisor
+from backend.core.personality_and_backstory.abstract_personality import AbstractPersonality
 
-class LLMAbilityAdvisor:
-    def __init__(self, llm_service=None):
-        if llm_service is None:
-            self.llm_service = OllamaService()
-        else:
-            self.llm_service = llm_service
-        self.ability_scores = AbilityScores()
+
+class Personality(AbstractPersonality):
+    """
+    Implementation of AbstractPersonality for handling character personality 
+    and backstory in D&D 2024.
+    """
+    
+    def __init__(self):
+        """Initialize services required for personality generation"""
+        self.ollama_service = OllamaService()
+        self.personality_advisor = LLMPersonalityAdvisor()
+        
+        # Common personality traits by background - simplified example
+        self._background_options = {
+            "acolyte": {
+                "traits": ["I quote sacred texts", "I find guidance in prayer"],
+                "ideals": ["Tradition", "Faith", "Charity"],
+                "bonds": ["I would die for my temple", "My mentor is everything to me"],
+                "flaws": ["I judge others harshly", "I trust religious authority blindly"]
+            },
+            "criminal": {
+                "traits": ["I always have a plan", "I'm suspicious of everyone"],
+                "ideals": ["Freedom", "Greed", "People"],
+                "bonds": ["I'm loyal to my crew", "I have a debt to repay"],
+                "flaws": ["I can't resist a con", "I run from authority"]
+            },
+            # Additional backgrounds would be added here
+        }
+    
+    def get_personality_options(self, background: str) -> Dict[str, List[str]]:
+        """
+        Get personality options based on background
+        
+        Args:
+            background (str): The character's background
+            
+        Returns:
+            dict: Dictionary containing traits, ideals, bonds, and flaws options
+        """
+        if background.lower() in self._background_options:
+            return self._background_options[background.lower()]
+        
+        # If background isn't found, generate options using the LLM
+        return self.personality_advisor.generate_options_for_background(background)
+    
+    def generate_random_personality(self) -> Dict[str, str]:
+        """
+        Generate random personality traits
+        
+        Returns:
+            dict: Randomly generated personality traits, ideals, bonds, and flaws
+        """
+        # Select a random background for base options
+        background = random.choice(list(self._background_options.keys()))
+        options = self._background_options[background]
+        
+        # Choose one option randomly from each category
+        return {
+            "trait": random.choice(options["traits"]),
+            "ideal": random.choice(options["ideals"]),
+            "bond": random.choice(options["bonds"]),
+            "flaw": random.choice(options["flaws"]),
+            "background": background
+        }
+    
+    def generate_ai_backstory(self, character_data: Dict[str, Any]) -> str:
+        """
+        Use LLM to generate character backstory
+        
+        Args:
+            character_data (dict): Character information including class, race, background
+            
+        Returns:
+            str: Generated backstory
+        """
+        # Extract key data for backstory generation
+        prompt = self._format_backstory_prompt(character_data)
+        
+        # Generate backstory using Ollama service
+        return self.ollama_service.generate_text(
+            prompt=prompt, 
+            system_message="Create a compelling D&D character backstory that aligns with the 2024 edition rules."
+        )
+    
+    def validate_backstory(self, backstory: str) -> Tuple[bool, str]:
+        """
+        Check backstory for rule compliance
+        
+        Args:
+            backstory (str): The character backstory
+            
+        Returns:
+            tuple: (is_valid, reason_if_invalid)
+        """
+        # Define validation criteria
+        max_length = 2000
+        forbidden_terms = ["modern", "gun", "technology", "internet", "computer"]
+        
+        # Check length
+        if len(backstory) > max_length:
+            return False, f"Backstory exceeds maximum length of {max_length} characters"
+        
+        # Check for anachronistic or forbidden terms
+        for term in forbidden_terms:
+            if term.lower() in backstory.lower():
+                return False, f"Backstory contains anachronistic term: '{term}'"
+        
+        # Use LLM to check for deeper rule compliance
+        validation_result = self.personality_advisor.validate_backstory_against_rules(backstory)
+        if not validation_result["is_valid"]:
+            return False, validation_result["reason"]
+        
+        return True, "Backstory is valid"
+    
+    def get_backstory_hooks(self, backstory: str) -> List[str]:
+        """
+        Extract potential story hooks from backstory
+        
+        Args:
+            backstory (str): The character backstory
+            
+        Returns:
+            list: List of potential story hooks
+        """
+        # Use LLM to extract story hooks
+        result = self.ollama_service.generate_text(
+            prompt=f"Extract 3-5 story hooks from this character backstory: {backstory}",
+            system_message="You are a helpful DM assistant. Extract specific plot hooks, unresolved conflicts, or character goals that could be used in a D&D campaign."
+        )
+        
+        # Process result to get a clean list of hooks
+        hooks = []
+        for line in result.split("\n"):
+            line = line.strip()
+            if line and (line.startswith("-") or line.startswith("•") or len(hooks) < 5):
+                # Clean up the line
+                hook = line.lstrip("-•").strip()
+                if hook and len(hook) > 10:  # Ensure it's substantive
+                    hooks.append(hook)
+        
+        return hooks
+    
+    def _format_backstory_prompt(self, character_data: Dict[str, Any]) -> str:
+        """Helper method to format the backstory prompt based on character data"""
+        prompt = f"Create a character backstory for a {character_data.get('species', 'humanoid')} " \
+                 f"{character_data.get('class', 'adventurer')} with the " \
+                 f"{character_data.get('background', 'wanderer')} background.\n\n"
+                 
+        # Add personality traits if available
+        if "personality" in character_data:
+            p = character_data["personality"]
+            prompt += f"Traits: {p.get('trait', '')}\n"
+            prompt += f"Ideals: {p.get('ideal', '')}\n"
+            prompt += f"Bonds: {p.get('bond', '')}\n"
+            prompt += f"Flaws: {p.get('flaw', '')}\n\n"
+            
+        prompt += "The backstory should explain their motivations, past experiences, " \
+                  "and how they acquired their abilities. Include at least one unresolved " \
+                  "conflict and a connection to the world."
+            
+        return prompt

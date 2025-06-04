@@ -1,0 +1,84 @@
+{
+  "version": "5e",
+  "classes": {
+    "fighter": {
+      "hit_die": "d10",
+      "primary_ability": ["strength", "dexterity"],
+      "saving_throw_proficiencies": ["strength", "constitution"],
+      "armor_proficiencies": ["light", "medium", "heavy", "shields"],
+      "weapon_proficiencies": ["simple", "martial"],
+      "skill_choices": ["acrobatics", "animal_handling", "athletics", "history", "insight", "intimidation", "perception", "survival"],
+      "num_skill_choices": 2,
+      "features": {
+        "1": ["fighting_style", "second_wind"],
+        "2": ["action_surge"],
+        "3": ["martial_archetype"],
+        "4": ["ability_score_improvement"]
+        // More levels...
+      },
+      "subclasses": ["champion", "battle_master", "eldritch_knight"]
+    },
+    "wizard": {
+      // Similar structure for other classes
+    }
+    // Additional classes...
+  },
+  "species": {
+    "human": {
+      "ability_score_increase": {"all": 1},
+      "size": "medium",
+      "speed": 30,
+      "languages": ["common", "one_of_choice"],
+      "traits": []
+    },
+    "elf": {
+      "ability_score_increase": {"dexterity": 2},
+      "size": "medium",
+      "speed": 30,
+      "languages": ["common", "elvish"],
+      "traits": ["darkvision", "fey_ancestry", "trance"]
+    }
+    // Additional species...
+  },
+  "skills": {
+    "athletics": {"ability": "strength", "description": "Climbing, jumping, swimming"},
+    "acrobatics": {"ability": "dexterity", "description": "Balance, flips, tumbles"}
+    // Additional skills...
+  },
+  "spells": {
+    "fireball": {
+      "level": 3,
+      "school": "evocation",
+      "casting_time": "1 action",
+      "range": "150 feet",
+      "components": ["V", "S", "M"],
+      "duration": "instantaneous",
+      "description": "A bright streak flashes from your pointing finger to a point you choose...",
+      "classes": ["sorcerer", "wizard"]
+    }
+    // Additional spells...
+  },
+  "equipment": {
+    "weapons": {
+      "longsword": {
+        "category": "martial_melee",
+        "cost": "15 gp",
+        "damage": "1d8 slashing",
+        "weight": "3 lb",
+        "properties": ["versatile (1d10)"]
+      }
+      // Additional weapons...
+    },
+    "armor": {
+      // Armor data...
+    }
+  },
+  "rules": {
+    "ability_checks": "To make an ability check, roll a d20 and add the relevant ability modifier...",
+    "combat": {
+      "attack_rolls": "Roll d20 + ability modifier + proficiency bonus (if proficient)",
+      "damage_rolls": "Roll the weapon's damage die + ability modifier"
+    }
+    // Additional rules...
+  }
+}

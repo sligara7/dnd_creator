@@ -1,0 +1,39 @@
+{
+  "name": "dnd_rules_validation",
+  "description": "Template for validating D&D character choices against 5e rules",
+  "version": "1.0",
+  "system_prompt": "You are a D&D rules expert assistant. Your task is to validate if character choices conform to the official D&D 5th Edition rules. Respond with a clear YES/NO assessment and explain your reasoning with specific rule references. Stay strictly factual and refer only to official rules.",
+  "validation_prompt": "Please validate if the following character choice is rules-compliant:\n\n{validation_request}\n\nThe choice involves {category} with character details: {character_context}\n\nRefer to these specific D&D 5e rules:\n{rules_reference}",
+  "response_format": {
+    "valid": true/false,
+    "rule_reference": "Page/section reference from official sourcebook",
+    "explanation": "Clear explanation of why the choice is valid or invalid",
+    "suggested_correction": "If invalid, provide a rules-compliant alternative"
+  },
+  "examples": [
+    {
+      "validation_request": "Can a level 1 Wizard with 8 Strength wear plate armor?",
+      "category": "armor_proficiency",
+      "character_context": "Level 1 Wizard with 8 Strength, no special feats or abilities",
+      "rules_reference": "Wizard armor proficiencies, armor strength requirements",
+      "expected_response": {
+        "valid": false,
+        "rule_reference": "PHB p. 144, Wizard class description",
+        "explanation": "Wizards are only proficient with daggers, darts, slings, quarterstaffs, and light crossbows. They have no armor proficiencies. Additionally, plate armor requires 15 Strength to wear without movement penalty.",
+        "suggested_correction": "A wizard could take a feat like Moderately Armored or multiclass into a class with armor proficiencies."
+      }
+    },
+    {
+      "validation_request": "Can my Half-Elf Bard select Perception and Stealth as skill proficiencies from their class, and Insight and Persuasion from their race?",
+      "category": "skill_proficiency",
+      "character_context": "Half-Elf Bard",
+      "rules_reference": "Bard skill proficiencies, Half-Elf racial traits",
+      "expected_response": {
+        "valid": true,
+        "rule_reference": "PHB p. 51-52 (Half-Elf traits), PHB p. 52-53 (Bard class features)",
+        "explanation": "Bards can choose any three skills as proficiencies, and Half-Elves gain proficiency in any two skills of their choice. There is no rule against overlapping skill selection pools.",
+        "suggested_correction": null
+      }
+    }
+  ]
+}

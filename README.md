@@ -44,3 +44,10 @@ Journal event illustrations using Stable Diffusion
 DM tools for generating maps, towns, battle scenes, and dungeons with AI
 Development
 Check architecture.txt for detailed information about the project structure and components.
+
+Testing backend/core functions:
+cd /home/ajs7/dnd_tools/dnd_char_creator
+python -m pytest backend/tests
+
+For specific tests:
+python -m pytest backend/tests/test_character_creation.py

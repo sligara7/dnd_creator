@@ -4,7 +4,8 @@
 from typing import Dict, List, Tuple, Any, Optional
 import json
 
-from backend.core.skills.abstract_skills import AbstractSkills    
+from backend.core.skills.abstract_skills import AbstractSkills  
+from backend.core.services.ollama_service import OllamaService  
 from backend.core.skills.llm_skills_advisor import LLMSkillsAdvisor
 
 class Skills(AbstractSkills):

@@ -1,40 +1,195 @@
-place to design new characters, NPCs, and monsters/beasts/creatures for Dungeon & Dragons
+import unittest
+from unittest.mock import MagicMock, patch
+import json
+import os
+import sys
+import pytest
 
-host as service on server (use a docker container)
+# Import the core modules
+from backend.core.character.character import Character
+from backend.core.ability_scores.ability_scores import AbilityScores
+from backend.core.species.species import Species
+from backend.core.classes.classes import Classes
+from backend.core.skills.skills import Skills
+from backend.core.personality_and_backstory.abstract_personality import AbstractPersonality
+from backend.core.services.ollama_service import OllamaService
 
-backend/core directory has: ability_scores, alignment, character, classes, equipment, feats, personality_and_backstory, skills, species, and spells;
-each subdirectory has a abstract class that every new character created must adhere to
+class TestCharacterCreation(unittest.TestCase):
+    """Test suite for character creation functionality"""
+    
+    def setUp(self):
+        """Set up test environment before each test"""
+        # Mock the OllamaService to avoid actual API calls during tests
+        self.ollama_patcher = patch('backend.core.services.ollama_service.OllamaService')
+        self.mock_ollama = self.ollama_patcher.start()
+        
+        # Create instances of core components with mocked dependencies
+        self.ability_scores = AbilityScores()
+        self.species = Species()
+        self.character = Character()
+        
+    def tearDown(self):
+        """Clean up after each test"""
+        self.ollama_patcher.stop()
+    
+    def test_character_basic_creation(self):
+        """Test creating a basic character with minimal information"""
+        character_data = {
+            "name": "Test Character",
+            "level": 1,
+            "species": "human",
+            "class": "fighter"
+        }
+        
+        # Create a character
+        character_id = self.character.create_character(character_data)
+        
+        # Verify the character was created with correct basic attributes
+        created_character = self.character.get_character(character_id)
+        self.assertEqual(created_character["name"], "Test Character")
+        self.assertEqual(created_character["level"], 1)
+        self.assertEqual(created_character["species"], "human")
+        self.assertEqual(created_character["class"], "fighter")
+    
+    def test_ability_score_generation(self):
+        """Test generating ability scores"""
+        # Test standard array
+        scores = self.ability_scores.generate_scores(method="standard_array")
+        self.assertEqual(len(scores), 6)
+        self.assertEqual(sum(scores.values()), 72)  # Standard array sums to 72
+        
+        # Test rolling method (check ranges only, since it's random)
+        scores = self.ability_scores.generate_scores(method="roll")
+        self.assertEqual(len(scores), 6)
+        for stat, value in scores.items():
+            self.assertTrue(3 <= value <= 18)
+        
+        # Test point buy
+        scores = self.ability_scores.generate_scores(method="point_buy", 
+                                                    custom_scores={"strength": 15, "dexterity": 14, 
+                                                                  "constitution": 13, "intelligence": 12, 
+                                                                  "wisdom": 10, "charisma": 8})
+        self.assertEqual(scores["strength"], 15)
+        self.assertEqual(scores["charisma"], 8)
+    
+    def test_species_selection(self):
+        """Test selecting a species and getting appropriate traits"""
+        # Test a standard species
+        human_traits = self.species.get_species_traits("human")
+        self.assertIn("ability_score_increase", human_traits)
+        self.assertIn("traits", human_traits)
+        
+        # Test an invalid species
+        with self.assertRaises(ValueError):
+            self.species.get_species_traits("invalid_species")
+    
+    def test_skill_proficiency_selection(self):
+        """Test selecting skill proficiencies"""
+        skills = Skills()
+        
+        # Create a fighter with proficiencies
+        fighter_profs = skills.get_class_skill_proficiencies("fighter")
+        
+        # Check number of choices
+        self.assertEqual(fighter_profs["num_choices"], 2)
+        
+        # Select some skills and verify
+        selected_skills = ["athletics", "intimidation"]
+        
+        # Validate selection
+        validation = skills.validate_skill_selection("fighter", selected_skills)
+        self.assertTrue(validation["valid"])
+        
+        # Apply proficiencies
+        character_skills = skills.apply_proficiencies(selected_skills)
+        
+        # Check proficiencies were applied
+        self.assertTrue(character_skills["athletics"]["proficient"])
+        self.assertTrue(character_skills["intimidation"]["proficient"])
+        self.assertFalse(character_skills["arcana"]["proficient"])
 
-link to or embed free LLM to aid/populate new character creation;
+    def test_personality_and_backstory_generation(self):
+        """Test generating personality traits and backstory"""
+        # Mock the LLM response for personality generation
+        self.mock_ollama.return_value.generate_text.return_value = json.dumps({
+            "personality_traits": "Brave, loyal, but quick to anger",
+            "ideals": "Honor above all else",
+            "bonds": "Sworn to protect my homeland",
+            "flaws": "Stubborn to a fault",
+            "backstory": "A soldier who lost everything in the war..."
+        })
+        
+        # Create an actual personality
+        personality = AbstractPersonality()  # This would actually use a concrete implementation
+        
+        # Generate traits based on inputs
+        traits = personality.generate_traits("fighter", "soldier", "lawful good")
+        
+        # Verify traits were generated
+        self.assertIn("personality_traits", traits)
+        self.assertIn("ideals", traits)
+        self.assertIn("bonds", traits)
+        self.assertIn("flaws", traits)
+        self.assertIn("backstory", traits)
 
-idea would be, player goes to webpage, provides answers to a series of questions like:
 
-prompt 1: describe your new character?
-prompt 2: what is the sex of your new character?
-prompt 3: tell me some things about your personality_and_backstory
-prompt 4: what are some characteristics (powers, abilities, etc) that you would like your character to have?
-prompt N: final prompt necessary to fully create your character
+# Using pytest for more complex tests with fixtures
+@pytest.fixture
+def mock_ollama_service():
+    """Fixture for mocking OllamaService"""
+    with patch('backend.core.services.ollama_service.OllamaService') as mock:
+        yield mock
 
-with each prompt, the LLM auto-populates one of the abstract classes (or portions of)
+@pytest.fixture
+def character():
+    """Fixture for creating a test character"""
+    return Character()
 
-LLM should moderate the character creation so that every character created is roughly equal in terms of abilities and skills
-For instance, if a player creates "Bob, the plummer" and another creates "Pheonix, the Sun God", they would roughly progress equivalently as they level up
-the idea is not to be able to create a god-like character that cannot be defeated and no other character can compete with
-
-frontend would allow for a DM to go to the webpage and approve a new character creation as well as create NPCs, monsters, beasts, and other creatures (also utilizing the LLM)
-
-frontend would also allow players to view their characters and level them up as they progress
-
-should have some backend to save created characters
-
-Basically, everything should be modifiable as long as it adheres to a abstract classes for character creation, whether that be spells or weapons or species... all are customizable
-
-Players and DMs should also be able to go into their character and create a journal and notes as appropriate
-
-Another feature would be to create "way points" that track or save a player's evolution as they level up (should be included in the journal)
-
-cool feature would be for LLM to review and summarize events for the DM to keep a master journal of all characters and other significant events in game-player
-
-another cool feature would be at the end of a player creation, the LLM would automatically generate a series of images that best describe the character created
-
-should adhere as much as possible to DnD rules 5e (2024 edition)
+def test_full_character_creation(mock_ollama_service, character):
+    """Test creating a full character with all components"""
+    # Setup mock responses
+    mock_ollama_service.return_value.generate_text.return_value = json.dumps({
+        "personality": {
+            "traits": "Curious and analytical",
+            "ideals": "Knowledge is power",
+            "bonds": "Dedicated to my arcane studies",
+            "flaws": "Often overlooks practical concerns"
+        },
+        "backstory": "A scholar who discovered hidden magical talent..."
+    })
+    
+    # Create comprehensive character data
+    character_data = {
+        "name": "Elara Nightwind",
+        "level": 1,
+        "species": "elf",
+        "class": "wizard",
+        "background": "sage",
+        "alignment": "neutral good",
+        "ability_scores": {
+            "strength": 8,
+            "dexterity": 14,
+            "constitution": 12,
+            "intelligence": 16,
+            "wisdom": 13,
+            "charisma": 10
+        },
+        "skills": ["arcana", "history", "investigation", "perception"],
+        "equipment": ["spellbook", "dagger", "component pouch", "scholar's pack"]
+    }
+    
+    # Create the character
+    character_id = character.create_character(character_data)
+    
+    # Verify full character creation
+    created_character = character.get_character(character_id)
+    
+    assert created_character["name"] == "Elara Nightwind"
+    assert created_character["species"] == "elf"
+    assert created_character["class"] == "wizard"
+    assert created_character["ability_scores"]["intelligence"] == 16
+    assert "arcana" in created_character["skills"]
+    assert "spellbook" in created_character["equipment"]
+    
+    # Verify the LLM was called for personality/backstory generation
+    mock_ollama_service.return_value.generate_text.assert_called_once()

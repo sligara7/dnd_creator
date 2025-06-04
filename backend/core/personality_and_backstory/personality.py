@@ -4,7 +4,7 @@
 from typing import Dict, List, Tuple, Any
 import random
 
-from backend.core.ollama_service import OllamaService
+from backend.core.services.ollama_service import OllamaService
 from backend.core.personality_and_backstory.llm_personality_advisor import LLMPersonalityAdvisor
 from backend.core.personality_and_backstory.abstract_personality import AbstractPersonality
 

@@ -2,7 +2,7 @@ import re
 import json
 from typing import Dict, List, Any, Optional, Union, Tuple
 
-from backend.core.ollama_service import OllamaService
+from backend.core.services.ollama_service import OllamaService
 
 class LLMPersonalityAdvisor:
     """

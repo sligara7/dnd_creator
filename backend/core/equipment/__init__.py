@@ -1,19 +1,30 @@
 """
-D&D Character Creator Equipment Package
+D&D 2024 Equipment System
 
-This package handles all equipment-related functionality for the D&D character creator,
-including weapons, armor, gear, and specialized equipment types. The modular design 
-uses a base Equipment class with specialized subclasses for different equipment categories.
+This package provides classes for managing character equipment in D&D,
+including weapons, armor, gear, and other items.
 
 Classes:
     Equipment: Base class for all equipment handling
     Weapons: Specialized handling for weapons and combat items
     Armor: Specialized handling for armor and protective gear
     Vehicles: Specialized handling for mounts and vehicles
-    TradeGoods: Specialized handling for trade goods and commerce
+    TradeGoods: Specialized handling for trade goods
     Trinkets: Specialized handling for small flavor items
     SpellcastingComponents: Specialized handling for magical components
-    LLMEquipmentAdvisor: AI-powered equipment recommendations and descriptions
+    LLMEquipmentAdvisor: AI-powered equipment recommendations
+
+Enumerations:
+    EquipmentCategory: Categories of equipment
+    ArmorCategory: Types of armor
+    WeaponCategory: Types of weapons
+    DamageType: Types of damage
+    RarityType: Item rarity levels
+    ComponentType: Types of spellcasting components
+    FocusProperty: Properties of arcane/divine foci
+
+Functions:
+    get_equipment_handler: Factory function to get appropriate equipment handler
 """
 
 # Import enums for external use
@@ -29,7 +40,7 @@ from backend.core.equipment.equipment import (
 from backend.core.equipment.equipment import Equipment
 
 # Import specialized equipment classes
-# Import conditionally to handle potential circular imports
+# Use lazy imports to prevent circular dependencies
 try:
     from backend.core.equipment.weapons import Weapons
 except ImportError:

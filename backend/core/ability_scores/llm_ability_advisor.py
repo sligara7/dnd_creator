@@ -1,5 +1,5 @@
 
-from backend.core.ollama_service import OllamaService
+from backend.core.services.ollama_service import OllamaService
 
 class LLMAbilityAdvisor:
     def __init__(self, llm_service=None):

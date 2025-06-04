@@ -5,7 +5,7 @@ from typing import Dict, List, Any, Optional, Tuple
 import json
 import re
 
-from backend.core.ollama_service import OllamaService
+from backend.core.services.ollama_service import OllamaService
 
 class LLMSkillsAdvisor:
     """

@@ -1,8 +1,17 @@
 """
-D&D Character Creator - Character Package
+D&D 2024 Character System
 
-This package contains all classes related to D&D character creation, validation, 
-and management. It serves as the core functionality for the character creation system.
+This package provides classes for creating, validating, and managing D&D characters,
+including ability scores, progression, and export capabilities.
+
+Classes:
+    AbstractCharacterClass: Base class defining the character system interface
+    Character: Implementation of D&D 2024 character mechanics
+    CharacterValidator: Validates character configuration and choices
+    AbilityScores: Handles character ability scores and modifiers
+    CharacterProgression: Manages character leveling and advancement
+    CharacterExporter: Exports character data to various formats
+    LLMCharacterAdvisor: AI-powered helper for character optimization and concepts
 """
 
 # Import main classes for direct access when importing from this package
@@ -24,7 +33,3 @@ __all__ = [
     'CharacterExporter',
     'LLMCharacterAdvisor',
 ]
-
-# Package metadata
-__version__ = '0.1.0'
-__author__ = 'D&D Character Creator Team'

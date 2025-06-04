@@ -6,7 +6,7 @@ import uuid
 from enum import Enum, auto
 
 from backend.core.species.abstract_species import AbstractSpecies, SpeciesSize
-from backend.core.ollama_service import OllamaService
+from backend.core.services.ollama_service import OllamaService
 from backend.core.species.llm_species_advisor import LLMSpeciesAdvisor
 
 class Species(AbstractSpecies):

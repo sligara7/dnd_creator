@@ -18,17 +18,11 @@ __all__ = [
     "close_mongo_connection"
 ]
 
-# Repository imports (assuming you'll implement these)
-from backend.app.db.repositories.character_repository import CharacterRepository
-from backend.app.db.repositories.user_repository import UserRepository
-from backend.app.db.repositories.campaign_repository import CampaignRepository
+# Import repositories from the new repository package
+from backend.app.db.repositories import repositories as repo_instances
 
-# Export repositories
-repositories = {
-    "character": CharacterRepository(),
-    "user": UserRepository(),
-    "campaign": CampaignRepository()
-}
+# Export repositories - now from the centralized repository package
+repositories = repo_instances
 
 # Add specialized repositories to exports
 __all__.extend(["repositories"])

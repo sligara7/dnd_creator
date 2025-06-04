@@ -1,40 +1,351 @@
-place to design new characters, NPCs, and monsters/beasts/creatures for Dungeon & Dragons
+from fastapi import APIRouter, HTTPException, Body, Query, Depends, BackgroundTasks
+from typing import List, Dict, Any, Optional
+import httpx
+import os
+import logging
+from pydantic import BaseModel
 
-host as service on server (use a docker container)
+from backend.core.npc.npc import NPC
+from backend.core.npc.llm_npc_advisor import LLMNPCAdvisor
+from backend.core.character.character import Character
+from backend.core.services.ollama_service import OllamaService
+from backend.app.dependencies.auth import get_current_user, get_dm_user
+from backend.app.models.campaign import (
+    CampaignCreate, CampaignResponse, CampaignUpdate,
+    SessionCreate, SessionResponse, WaypointCreate, WaypointResponse
+)
+from backend.app.models.character import CharacterApproval, CharacterResponse
+from backend.app.models.journal import JournalCreate, JournalResponse
+from backend.app.models.user import User
 
-backend/core directory has: ability_scores, alignment, character, classes, equipment, feats, personality_and_backstory, skills, species, and spells;
-each subdirectory has a abstract class that every new character created must adhere to
+# Create router with appropriate prefix and tags
+router = APIRouter(
+    prefix="/api/dm",
+    tags=["dm"],
+    responses={404: {"description": "Resource not found"}}
+)
 
-link to or embed free LLM to aid/populate new character creation;
+# Initialize services
+ollama_service = OllamaService()
+npc_service = NPC()
+npc_advisor = LLMNPCAdvisor()
+character_service = Character()
 
-idea would be, player goes to webpage, provides answers to a series of questions like:
+# Pydantic models for requests
+class MapGenerationRequest(BaseModel):
+    map_type: str  # "dungeon", "town", "wilderness", "battle"
+    description: str
+    style: Optional[str] = "fantasy"
+    
+class NPCGenerationRequest(BaseModel):
+    npc_type: str
+    importance: str = "minor"
+    campaign_context: Optional[Dict[str, Any]] = None
+    count: int = 1
 
-prompt 1: describe your new character?
-prompt 2: what is the sex of your new character?
-prompt 3: tell me some things about your personality_and_backstory
-prompt 4: what are some characteristics (powers, abilities, etc) that you would like your character to have?
-prompt N: final prompt necessary to fully create your character
+class JournalSummaryRequest(BaseModel):
+    campaign_id: str
+    session_ids: Optional[List[str]] = None
+    focus_areas: Optional[List[str]] = None
 
-with each prompt, the LLM auto-populates one of the abstract classes (or portions of)
+# Campaign Management Endpoints
+@router.post("/campaigns", response_model=CampaignResponse)
+async def create_campaign(
+    campaign: CampaignCreate,
+    current_user: User = Depends(get_dm_user)
+):
+    """Create a new campaign"""
+    # Add DM reference
+    campaign_dict = campaign.dict()
+    campaign_dict["dm_id"] = current_user.id
+    
+    # Create the campaign (implementation depends on your data layer)
+    campaign_id = await campaign_service.create_campaign(campaign_dict)
+    return await campaign_service.get_campaign(campaign_id)
 
-LLM should moderate the character creation so that every character created is roughly equal in terms of abilities and skills
-For instance, if a player creates "Bob, the plummer" and another creates "Pheonix, the Sun God", they would roughly progress equivalently as they level up
-the idea is not to be able to create a god-like character that cannot be defeated and no other character can compete with
+@router.get("/campaigns", response_model=List[CampaignResponse])
+async def list_campaigns(
+    current_user: User = Depends(get_dm_user)
+):
+    """List all campaigns for the current DM"""
+    return await campaign_service.list_campaigns(dm_id=current_user.id)
 
-frontend would allow for a DM to go to the webpage and approve a new character creation as well as create NPCs, monsters, beasts, and other creatures (also utilizing the LLM)
+@router.get("/campaigns/{campaign_id}", response_model=CampaignResponse)
+async def get_campaign(
+    campaign_id: str,
+    current_user: User = Depends(get_dm_user)
+):
+    """Get campaign details by ID"""
+    campaign = await campaign_service.get_campaign(campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+        
+    # Verify ownership
+    if campaign.get("dm_id") != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized to access this campaign")
+        
+    return campaign
 
-frontend would also allow players to view their characters and level them up as they progress
+@router.put("/campaigns/{campaign_id}", response_model=CampaignResponse)
+async def update_campaign(
+    campaign_id: str,
+    campaign_update: CampaignUpdate,
+    current_user: User = Depends(get_dm_user)
+):
+    """Update campaign details"""
+    # Check if campaign exists and user is DM
+    campaign = await campaign_service.get_campaign(campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+        
+    if campaign.get("dm_id") != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this campaign")
+    
+    # Apply the update
+    update_data = campaign_update.dict(exclude_unset=True)
+    await campaign_service.update_campaign(campaign_id, update_data)
+    return await campaign_service.get_campaign(campaign_id)
 
-should have some backend to save created characters
+@router.delete("/campaigns/{campaign_id}")
+async def delete_campaign(
+    campaign_id: str,
+    current_user: User = Depends(get_dm_user)
+):
+    """Delete a campaign"""
+    # Check if campaign exists and user is DM
+    campaign = await campaign_service.get_campaign(campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+        
+    if campaign.get("dm_id") != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this campaign")
+    
+    await campaign_service.delete_campaign(campaign_id)
+    return {"message": "Campaign deleted successfully"}
 
-Basically, everything should be modifiable as long as it adheres to a abstract classes for character creation, whether that be spells or weapons or species... all are customizable
+# Character Approval Workflow
+@router.get("/campaigns/{campaign_id}/pending-characters", response_model=List[CharacterResponse])
+async def list_pending_characters(
+    campaign_id: str,
+    current_user: User = Depends(get_dm_user)
+):
+    """List characters pending approval for a campaign"""
+    # Check campaign exists and user is DM
+    campaign = await campaign_service.get_campaign(campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+        
+    if campaign.get("dm_id") != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized to access this campaign")
+    
+    # Get pending characters
+    pending_characters = await character_service.list_characters(
+        campaign_id=campaign_id, status="pending_approval"
+    )
+    return pending_characters
 
-Players and DMs should also be able to go into their character and create a journal and notes as appropriate
+@router.post("/characters/{character_id}/approval", response_model=CharacterResponse)
+async def approve_character(
+    character_id: str,
+    approval: CharacterApproval,
+    current_user: User = Depends(get_dm_user)
+):
+    """Approve or reject a character"""
+    # Get character
+    character = await character_service.get_character(character_id)
+    if not character:
+        raise HTTPException(status_code=404, detail="Character not found")
+    
+    # Get campaign and verify DM permissions
+    campaign = await campaign_service.get_campaign(character.get("campaign_id"))
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+        
+    if campaign.get("dm_id") != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized to approve characters for this campaign")
+    
+    # Apply approval or rejection
+    update_data = {
+        "status": "approved" if approval.approved else "rejected",
+        "dm_notes": approval.notes,
+        "revision_requested": approval.revision_requested
+    }
+    
+    await character_service.update_character(character_id, update_data)
+    return await character_service.get_character(character_id)
 
-Another feature would be to create "way points" that track or save a player's evolution as they level up (should be included in the journal)
+# NPC Generation
+@router.post("/npcs", response_model=Dict[str, Any])
+async def generate_npcs(
+    request: NPCGenerationRequest,
+    current_user: User = Depends(get_dm_user)
+):
+    """Generate NPCs based on DM requirements"""
+    try:
+        npcs = []
+        
+        for _ in range(request.count):
+            # Generate NPC
+            npc_data = npc_service.generate_quick_npc(
+                role=request.npc_type, 
+                importance_level=request.importance
+            )
+            
+            # If context is provided, adapt the NPC to the campaign
+            if request.campaign_context:
+                npc_data = npc_advisor.adapt_to_campaign_context(
+                    npc_data, request.campaign_context
+                )
+                
+            npcs.append(npc_data)
+            
+        return {
+            "success": True,
+            "npcs": npcs,
+            "count": len(npcs)
+        }
+        
+    except Exception as e:
+        logging.error(f"Error generating NPCs: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating NPCs: {str(e)}")
 
-cool feature would be for LLM to review and summarize events for the DM to keep a master journal of all characters and other significant events in game-player
+# Map Generation with Stable Diffusion
+@router.post("/generate-map")
+async def generate_map(
+    request: MapGenerationRequest,
+    current_user: User = Depends(get_dm_user)
+):
+    """Generate a map using Stable Diffusion"""
+    try:
+        # Enhance the map description with D&D specific elements
+        enhanced_prompt = f"Fantasy map, top-down view, {request.map_type} setting, {request.description}, detailed, D&D style"
+        
+        # Call Stable Diffusion service
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{os.environ.get('STABLE_DIFFUSION_URL', 'http://stable-diffusion:7860')}/sdapi/v1/txt2img",
+                json={
+                    "prompt": enhanced_prompt,
+                    "negative_prompt": "blurry, distorted, text, words, labels",
+                    "steps": 40,
+                    "width": 896,
+                    "height": 640,
+                    "cfg_scale": 8.0
+                }
+            )
+            
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail="Error generating map")
+                
+            return response.json()
+            
+    except Exception as e:
+        logging.error(f"Error generating map: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating map: {str(e)}")
 
-another cool feature would be at the end of a player creation, the LLM would automatically generate a series of images that best describe the character created
+# Session & Waypoint Management
+@router.post("/campaigns/{campaign_id}/sessions", response_model=SessionResponse)
+async def create_session(
+    campaign_id: str,
+    session: SessionCreate,
+    current_user: User = Depends(get_dm_user)
+):
+    """Create a new game session for a campaign"""
+    # Check campaign exists and user is DM
+    campaign = await campaign_service.get_campaign(campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+        
+    if campaign.get("dm_id") != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized to manage sessions for this campaign")
+    
+    # Create the session
+    session_dict = session.dict()
+    session_dict["campaign_id"] = campaign_id
+    
+    session_id = await campaign_service.create_session(session_dict)
+    return await campaign_service.get_session(session_id)
 
-should adhere as much as possible to DnD rules 5e (2024 edition)
+@router.post("/campaigns/{campaign_id}/waypoints", response_model=WaypointResponse)
+async def create_waypoint(
+    campaign_id: str,
+    waypoint: WaypointCreate,
+    current_user: User = Depends(get_dm_user)
+):
+    """
+    Create a waypoint (character evolution milestone)
+    Waypoints track character development at key points in the campaign
+    """
+    # Check campaign exists and user is DM
+    campaign = await campaign_service.get_campaign(campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+        
+    if campaign.get("dm_id") != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized to manage waypoints for this campaign")
+    
+    # Create the waypoint
+    waypoint_dict = waypoint.dict()
+    waypoint_dict["campaign_id"] = campaign_id
+    
+    waypoint_id = await campaign_service.create_waypoint(waypoint_dict)
+    return await campaign_service.get_waypoint(waypoint_id)
+
+# Journal Summaries
+@router.post("/journal-summary")
+async def generate_journal_summary(
+    request: JournalSummaryRequest,
+    current_user: User = Depends(get_dm_user)
+):
+    """
+    Generate a summary of journal entries for campaign sessions
+    """
+    try:
+        # Check campaign exists and user is DM
+        campaign = await campaign_service.get_campaign(request.campaign_id)
+        if not campaign:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+            
+        if campaign.get("dm_id") != current_user.id and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="Not authorized to access this campaign")
+        
+        # Get journal entries
+        journal_entries = await journal_service.get_journal_entries(
+            campaign_id=request.campaign_id,
+            session_ids=request.session_ids
+        )
+        
+        if not journal_entries:
+            return {"summary": "No journal entries found for the selected sessions."}
+        
+        # Format entries for the LLM
+        entries_text = "\n\n".join([
+            f"Date: {entry.get('date', 'Unknown')}\n"
+            f"Character: {entry.get('character_name', 'Unknown')}\n"
+            f"Session: {entry.get('session_name', 'Unknown')}\n"
+            f"Entry: {entry.get('content', '')}"
+            for entry in journal_entries
+        ])
+        
+        # Create focus area instruction
+        focus_instruction = ""
+        if request.focus_areas:
+            focus_instruction = f"Focus on these aspects: {', '.join(request.focus_areas)}. "
+            
+        # Create prompt
+        system_message = "You are a D&D campaign chronicler. Create a cohesive narrative summary of these journal entries."
+        prompt = f"{focus_instruction}Summarize these journal entries into a compelling narrative that captures the key developments, character growth, and important plot points:\n\n{entries_text}"
+        
+        # Generate summary
+        summary = ollama_service.generate_text(
+            prompt=prompt,
+            system_message=system_message,
+            max_tokens=2000,
+            temperature=0.7
+        )
+        
+        return {"summary": summary}
+        
+    except Exception as e:
+        logging.error(f"Error generating journal summary: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating journal summary: {str(e)}")

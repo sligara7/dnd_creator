@@ -1,3 +1,34 @@
+from typing import Dict, List, Any, Tuple
+from backend.core.character.character_validator import CharacterValidator
+from backend.core.services.class_validation_service import ClassValidationService
+
+class ValidationService:
+    """
+    Orchestrates the validation chain for character creation process.
+    Ensures adherence to D&D rules and game balance across iterations.
+    """
+    
+    def __init__(self, character_validator=None, class_validator=None):
+        self.character_validator = character_validator or CharacterValidator()
+        self.class_validator = class_validator or ClassValidationService()
+        
+    def validate_creation_step(self, step_name: str, partial_character: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate a single step in the character creation process"""
+        # Different validation logic based on which step we're in
+        
+    def validate_character_concept(self, concept: str) -> Dict[str, Any]:
+        """Validate initial character concept for feasibility"""
+        
+    def validate_and_balance_class(self, custom_class: Dict[str, Any]) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+        """Validate a custom class and apply automatic balancing if needed"""
+        
+    def validate_refinement_request(self, original_data: Dict[str, Any], 
+                                  refinement_request: str) -> Dict[str, Any]:
+        """Check if a refinement request would lead to rule violations"""
+        
+    def final_character_validation(self, character_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Complete validation before character finalization"""
+
 import logging
 from typing import Dict, List, Any, Tuple, Optional
 from backend.core.classes.class_models import CustomClass, SpellcastingType

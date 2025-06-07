@@ -5,9 +5,11 @@ Provides AI-powered assistance for character creation and development using LLM 
 Offers methods to generate character concepts, backstories, and optimization suggestions.
 """
 
-from typing import Dict, List, Any, Optional, Union
+from typing import Dict, List, Any, Optional, Union, Callable
 import json
 import datetime
+import logging
+from enum import Enum
 from pathlib import Path
 
 try:
@@ -15,6 +17,22 @@ try:
 except ImportError:
     # Fallback for development
     AbstractCharacterClass = object
+
+logger = logging.getLogger(__name__)
+
+class CharacterAspect(Enum):
+    """Enum for different character aspects to generate or modify"""
+    CONCEPT = "concept"
+    BACKSTORY = "backstory"
+    OPTIMIZATION = "optimization"
+    NARRATIVE = "narrative"
+    MECHANICS = "mechanics"
+    DEVELOPMENT = "development"
+    ROLEPLAYING = "roleplaying"
+    VISUALS = "visuals"
+    RESOLUTION = "resolution"
+    ADAPTATION = "adaptation"
+    CUSTOM = "custom"
 
 
 class LLMCharacterAdvisor(AbstractCharacterClass):
@@ -42,798 +60,830 @@ class LLMCharacterAdvisor(AbstractCharacterClass):
         
     def _load_rules_data(self):
         """Load rules data from JSON files."""
-        try:
-            # Load class data
-            with open(self.rules_data_path / "classes.json", "r") as f:
-                self.class_data = json.load(f)
-                
-            # Load species data
-            with open(self.rules_data_path / "species.json", "r") as f:
-                self.species_data = json.load(f)
-                
-            # Load background data
-            with open(self.rules_data_path / "backgrounds.json", "r") as f:
-                self.background_data = json.load(f)
-                
-        except FileNotFoundError as e:
-            print(f"Warning: Could not load rules data: {e}")
-            # Initialize with empty data as fallback
-            self.class_data = {}
-            self.species_data = {}
-            self.background_data = {}
+        self.rules_data = {}
+        data_files = {
+            "class_data": "classes.json",
+            "species_data": "species.json", 
+            "background_data": "backgrounds.json",
+            "spell_data": "spells.json",
+            "feat_data": "feats.json",
+            "equipment_data": "equipment.json"
+        }
+        
+        for data_key, filename in data_files.items():
+            try:
+                with open(self.rules_data_path / filename, "r") as f:
+                    self.rules_data[data_key] = json.load(f)
+            except FileNotFoundError:
+                logger.warning(f"Could not load {filename}. Using empty data.")
+                self.rules_data[data_key] = {}
 
+    #---------------------------------------------------------------
+    # Core LLM Generation Method - This centralizes the LLM interactions
+    #---------------------------------------------------------------
+    
+    def generate_character_content(
+        self, 
+        aspect: CharacterAspect,
+        character_data: Dict[str, Any] = None,
+        parameters: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
+        """
+        Generate any type of character content using the LLM.
+        
+        Args:
+            aspect: Which aspect of character to generate
+            character_data: Optional character data for context
+            parameters: Additional parameters for generation
+            
+        Returns:
+            Dictionary with generated content or error
+        """
+        try:
+            # Create context data
+            context = {
+                "character_data": character_data or {},
+                "parameters": parameters or {},
+                "aspect": aspect.value
+            }
+            
+            # Get appropriate prompt creator and parser functions
+            prompt_creator, response_parser = self._get_handler_functions(aspect)
+            
+            # Create prompt
+            prompt = prompt_creator(context)
+            
+            # Get LLM response
+            llm_response = self.llm_service.generate_response(prompt)
+            
+            # Parse response
+            parsed_content = response_parser(llm_response, context)
+            
+            # Add metadata
+            parsed_content["metadata"] = {
+                "generated_at": datetime.datetime.now().isoformat(),
+                "aspect": aspect.value,
+                **{f"param_{k}": v for k, v in (parameters or {}).items()}
+            }
+            
+            return {
+                "success": True,
+                f"{aspect.value}_content": parsed_content
+            }
+            
+        except Exception as e:
+            logger.error(f"Error generating {aspect.value}: {str(e)}")
+            return {
+                "success": False,
+                "error": f"Failed to generate {aspect.value}: {str(e)}"
+            }
+    
+    def _get_handler_functions(self, aspect: CharacterAspect) -> tuple:
+        """Get the appropriate prompt creator and response parser for an aspect."""
+        handlers = {
+            CharacterAspect.CONCEPT: (self._create_concept_prompt, self._parse_concept_response),
+            CharacterAspect.BACKSTORY: (self._create_backstory_prompt, self._parse_backstory_response),
+            CharacterAspect.OPTIMIZATION: (self._create_optimization_prompt, self._parse_optimization_response),
+            CharacterAspect.NARRATIVE: (self._create_narrative_prompt, self._parse_narrative_response),
+            CharacterAspect.MECHANICS: (self._create_mechanics_prompt, self._parse_mechanics_response),
+            CharacterAspect.DEVELOPMENT: (self._create_development_prompt, self._parse_development_response),
+            CharacterAspect.ROLEPLAYING: (self._create_roleplaying_prompt, self._parse_roleplaying_response),
+            CharacterAspect.VISUALS: (self._create_visuals_prompt, self._parse_visuals_response),
+            CharacterAspect.RESOLUTION: (self._create_resolution_prompt, self._parse_resolution_response),
+            CharacterAspect.ADAPTATION: (self._create_adaptation_prompt, self._parse_adaptation_response),
+            CharacterAspect.CUSTOM: (self._create_custom_prompt, self._parse_custom_response)
+        }
+        
+        return handlers.get(
+            aspect, 
+            (lambda ctx: "Generate content", lambda resp, ctx: {"content": resp})
+        )
+
+    #---------------------------------------------------------------
+    # Simplified Public Methods - These replace the original detailed methods
+    #---------------------------------------------------------------
+    
     def generate_character_concept(self, concept_description: str) -> Dict[str, Any]:
-        """
-        Generate a character concept based on a description.
-        
-        Args:
-            concept_description: Brief description of desired character concept
-            
-        Returns:
-            Dict[str, Any]: Generated character concept with class, species, background suggestions
-        """
-        try:
-            # Create a prompt for the LLM
-            prompt = self._create_concept_prompt(concept_description)
-            
-            # Get response from LLM service
-            llm_response = self.llm_service.generate_response(prompt)
-            
-            # Parse LLM response into structured character concept
-            character_concept = self._parse_concept_response(llm_response)
-            
-            # Add metadata
-            character_concept["metadata"] = {
-                "generated_at": datetime.datetime.now().isoformat(),
-                "concept_description": concept_description,
-                "generation_method": "llm_assisted"
-            }
-            
-            return {
-                "success": True,
-                "character_concept": character_concept
-            }
-            
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Failed to generate character concept: {str(e)}"
-            }
-            
-    def suggest_character_optimization(self, character_data: Dict[str, Any], 
-                                    optimization_goal: str) -> Dict[str, Any]:
-        """
-        Suggest optimizations for a character based on specific goals.
-        
-        Args:
-            character_data: Current character data
-            optimization_goal: Specific optimization goal (e.g., "combat", "social", "survival")
-            
-        Returns:
-            Dict[str, Any]: Optimization suggestions with explanations
-        """
-        try:
-            # Create a prompt for the LLM
-            prompt = self._create_optimization_prompt(character_data, optimization_goal)
-            
-            # Get response from LLM service
-            llm_response = self.llm_service.generate_response(prompt)
-            
-            # Parse LLM response into structured optimization suggestions
-            optimization_suggestions = self._parse_optimization_response(llm_response)
-            
-            # Add metadata
-            optimization_suggestions["metadata"] = {
-                "generated_at": datetime.datetime.now().isoformat(),
-                "optimization_goal": optimization_goal
-            }
-            
-            return {
-                "success": True,
-                "optimization_suggestions": optimization_suggestions
-            }
-            
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Failed to suggest character optimizations: {str(e)}"
-            }
-            
-    def generate_backstory(self, character_data: Dict[str, Any], 
-                        backstory_elements: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Generate a character backstory based on character data and key elements.
-        
-        Args:
-            character_data: Current character data
-            backstory_elements: Key elements to include in backstory (e.g., tragedy, mentor, goal)
-            
-        Returns:
-            Dict[str, Any]: Generated backstory with key events and connections
-        """
-        try:
-            # Create a prompt for the LLM
-            prompt = self._create_backstory_prompt(character_data, backstory_elements)
-            
-            # Get response from LLM service
-            llm_response = self.llm_service.generate_response(prompt)
-            
-            # Parse LLM response into structured backstory
-            backstory = self._parse_backstory_response(llm_response)
-            
-            # Add metadata
-            backstory["metadata"] = {
-                "generated_at": datetime.datetime.now().isoformat(),
-                "backstory_elements": backstory_elements
-            }
-            
-            return {
-                "success": True,
-                "backstory": backstory
-            }
-            
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Failed to generate character backstory: {str(e)}"
-            }
-            
-    def suggest_narrative_choices(self, character_data: Dict[str, Any], 
-                               decision_point: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Suggest narrative choices based on character personality and background.
-        
-        Args:
-            character_data: Current character data
-            decision_point: Description of the narrative decision point
-            
-        Returns:
-            Dict[str, Any]: Suggested choices with rationales based on character
-        """
-        try:
-            # Create a prompt for the LLM
-            prompt = self._create_narrative_choices_prompt(character_data, decision_point)
-            
-            # Get response from LLM service
-            llm_response = self.llm_service.generate_response(prompt)
-            
-            # Parse LLM response into structured narrative choices
-            choices = self._parse_narrative_choices_response(llm_response)
-            
-            # Add metadata
-            choices["metadata"] = {
-                "generated_at": datetime.datetime.now().isoformat(),
-                "decision_point": decision_point
-            }
-            
-            return {
-                "success": True,
-                "narrative_choices": choices
-            }
-            
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Failed to suggest narrative choices: {str(e)}"
-            }
-            
-    def explain_character_mechanics(self, character_data: Dict[str, Any], 
-                                 mechanics_question: str) -> Dict[str, Any]:
-        """
-        Provide explanations for character mechanics and rules questions.
-        
-        Args:
-            character_data: Current character data
-            mechanics_question: Question about character mechanics or rules
-            
-        Returns:
-            Dict[str, Any]: Explanation tailored to the character's context
-        """
-        try:
-            # Create a prompt for the LLM
-            prompt = self._create_mechanics_explanation_prompt(character_data, mechanics_question)
-            
-            # Get response from LLM service
-            llm_response = self.llm_service.generate_response(prompt)
-            
-            # Parse LLM response into structured explanation
-            explanation = self._parse_mechanics_explanation_response(llm_response)
-            
-            # Add metadata
-            explanation["metadata"] = {
-                "generated_at": datetime.datetime.now().isoformat(),
-                "question": mechanics_question
-            }
-            
-            return {
-                "success": True,
-                "explanation": explanation
-            }
-            
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Failed to explain character mechanics: {str(e)}"
-            }
-            
-    def generate_character_development(self, character_data: Dict[str, Any], 
-                                    character_goals: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Generate character development ideas based on character goals.
-        
-        Args:
-            character_data: Current character data
-            character_goals: Character's short and long-term goals
-            
-        Returns:
-            Dict[str, Any]: Development suggestions with milestones and paths
-        """
-        try:
-            # Create a prompt for the LLM
-            prompt = self._create_development_prompt(character_data, character_goals)
-            
-            # Get response from LLM service
-            llm_response = self.llm_service.generate_response(prompt)
-            
-            # Parse LLM response into structured development ideas
-            development_ideas = self._parse_development_response(llm_response)
-            
-            # Add metadata
-            development_ideas["metadata"] = {
-                "generated_at": datetime.datetime.now().isoformat(),
-                "character_goals": character_goals
-            }
-            
-            return {
-                "success": True,
-                "development_ideas": development_ideas
-            }
-            
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Failed to generate character development ideas: {str(e)}"
-            }
-            
-    def create_character_moments(self, character_data: Dict[str, Any], 
-                              situation: str) -> Dict[str, Any]:
-        """
-        Generate narrative vignettes for the character in specific situations.
-        
-        Args:
-            character_data: Current character data
-            situation: Description of the situation for the vignette
-            
-        Returns:
-            Dict[str, Any]: Narrative vignettes showing character in action
-        """
-        try:
-            # Create a prompt for the LLM
-            prompt = self._create_character_moments_prompt(character_data, situation)
-            
-            # Get response from LLM service
-            llm_response = self.llm_service.generate_response(prompt)
-            
-            # Parse LLM response into structured vignettes
-            vignettes = self._parse_character_moments_response(llm_response)
-            
-            # Add metadata
-            vignettes["metadata"] = {
-                "generated_at": datetime.datetime.now().isoformat(),
-                "situation": situation
-            }
-            
-            return {
-                "success": True,
-                "character_moments": vignettes
-            }
-            
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Failed to create character moments: {str(e)}"
-            }
-            
-    def suggest_roleplaying_approaches(self, character_data: Dict[str, Any], 
-                                    scenario: str) -> Dict[str, Any]:
-        """
-        Suggest roleplaying approaches for specific scenarios.
-        
-        Args:
-            character_data: Current character data
-            scenario: Description of the roleplaying scenario
-            
-        Returns:
-            Dict[str, Any]: Roleplaying suggestions with character-appropriate options
-        """
-        try:
-            # Create a prompt for the LLM
-            prompt = self._create_roleplaying_prompt(character_data, scenario)
-            
-            # Get response from LLM service
-            llm_response = self.llm_service.generate_response(prompt)
-            
-            # Parse LLM response into structured roleplaying suggestions
-            roleplaying_suggestions = self._parse_roleplaying_response(llm_response)
-            
-            # Add metadata
-            roleplaying_suggestions["metadata"] = {
-                "generated_at": datetime.datetime.now().isoformat(),
-                "scenario": scenario
-            }
-            
-            return {
-                "success": True,
-                "roleplaying_suggestions": roleplaying_suggestions
-            }
-            
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Failed to suggest roleplaying approaches: {str(e)}"
-            }
-            
-    def generate_character_portrait_prompt(self, character_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Create a prompt for generating character portraits with image generation models.
-        
-        Args:
-            character_data: Current character data
-            
-        Returns:
-            Dict[str, Any]: Portrait generation prompt with visual details
-        """
-        try:
-            # Create a prompt for the LLM
-            prompt = self._create_portrait_prompt_generator(character_data)
-            
-            # Get response from LLM service
-            llm_response = self.llm_service.generate_response(prompt)
-            
-            # Parse LLM response into structured portrait prompt
-            portrait_prompt = self._parse_portrait_prompt_response(llm_response)
-            
-            # Add metadata
-            portrait_prompt["metadata"] = {
-                "generated_at": datetime.datetime.now().isoformat(),
-                "character_name": character_data.get("name", "Unnamed character")
-            }
-            
-            return {
-                "success": True,
-                "portrait_prompt": portrait_prompt
-            }
-            
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Failed to generate character portrait prompt: {str(e)}"
-            }
-            
-    def resolve_conflicts(self, character_data: Dict[str, Any], 
+        """Generate a character concept based on a description."""
+        return self.generate_character_content(
+            CharacterAspect.CONCEPT,
+            parameters={"concept_description": concept_description}
+        )
+    
+    def generate_backstory(self, 
+                        character_data: Dict[str, Any], 
+                        backstory_elements: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Generate a character backstory."""
+        return self.generate_character_content(
+            CharacterAspect.BACKSTORY,
+            character_data=character_data,
+            parameters={"elements": backstory_elements or {}}
+        )
+    
+    def suggest_character_optimization(self, 
+                                    character_data: Dict[str, Any], 
+                                    optimization_goal: str = "general") -> Dict[str, Any]:
+        """Suggest character optimization based on a goal."""
+        return self.generate_character_content(
+            CharacterAspect.OPTIMIZATION,
+            character_data=character_data,
+            parameters={"goal": optimization_goal}
+        )
+    
+    def suggest_narrative_elements(self, 
+                               character_data: Dict[str, Any], 
+                               narrative_context: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Suggest narrative elements like choices, moments, or approaches."""
+        return self.generate_character_content(
+            CharacterAspect.NARRATIVE,
+            character_data=character_data,
+            parameters=narrative_context
+        )
+    
+    def explain_mechanics(self, 
+                       character_data: Dict[str, Any], 
+                       question: str) -> Dict[str, Any]:
+        """Explain character mechanics."""
+        return self.generate_character_content(
+            CharacterAspect.MECHANICS,
+            character_data=character_data,
+            parameters={"question": question}
+        )
+    
+    def suggest_character_development(self, 
+                                   character_data: Dict[str, Any], 
+                                   development_focus: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Suggest character development paths."""
+        return self.generate_character_content(
+            CharacterAspect.DEVELOPMENT,
+            character_data=character_data,
+            parameters=development_focus
+        )
+    
+    def suggest_visual_elements(self, 
+                             character_data: Dict[str, Any], 
+                             visual_type: str = "portrait") -> Dict[str, Any]:
+        """Create prompts for visual elements like portraits or symbols."""
+        return self.generate_character_content(
+            CharacterAspect.VISUALS,
+            character_data=character_data,
+            parameters={"type": visual_type}
+        )
+    
+    def resolve_conflicts(self, 
+                       character_data: Dict[str, Any], 
                        conflicts: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Resolve character conflicts or inconsistencies."""
+        return self.generate_character_content(
+            CharacterAspect.RESOLUTION,
+            character_data=character_data,
+            parameters={"conflicts": conflicts}
+        )
+    
+    #---------------------------------------------------------------
+    # Character Adaptation Methods - For creative freedom
+    #---------------------------------------------------------------
+    
+    def adapt_external_character(self, 
+                              character_name: str, 
+                              source: str, 
+                              key_traits: List[str] = None, 
+                              game_style: str = "authentic") -> Dict[str, Any]:
+        """Adapt a character from literature, history, or other media to D&D."""
+        return self.generate_character_content(
+            CharacterAspect.ADAPTATION,
+            parameters={
+                "name": character_name,
+                "source": source,
+                "traits": key_traits or [],
+                "style": game_style
+            }
+        )
+    
+    def adapt_concept_or_mechanics(self, 
+                               concept_type: str, 
+                               description: str, 
+                               reference_elements: List[str] = None,
+                               power_level: str = "balanced") -> Dict[str, Any]:
         """
-        Provide suggestions on how to resolve character conflicts/inconsistencies.
-        
-        Args:
-            character_data: Current character data
-            conflicts: List of identified conflicts in character design
-            
-        Returns:
-            Dict[str, Any]: Suggested resolutions for each conflict
+        Universal adaptor for custom concepts, mechanics, etc.
+        This covers all custom adaptations like:
+        - Translating concept to mechanics
+        - Reflavoring standard abilities
+        - Creating custom features
+        - Incorporating cultural elements
+        - Creating resource systems
+        - Integrating with settings
         """
-        try:
-            # Create a prompt for the LLM
-            prompt = self._create_conflict_resolution_prompt(character_data, conflicts)
-            
-            # Get response from LLM service
-            llm_response = self.llm_service.generate_response(prompt)
-            
-            # Parse LLM response into structured conflict resolutions
-            resolutions = self._parse_conflict_resolution_response(llm_response)
-            
-            # Add metadata
-            resolutions["metadata"] = {
-                "generated_at": datetime.datetime.now().isoformat(),
-                "conflict_count": len(conflicts)
+        return self.generate_character_content(
+            CharacterAspect.CUSTOM,
+            parameters={
+                "type": concept_type,
+                "description": description,
+                "references": reference_elements or [],
+                "power_level": power_level
             }
+        )
+    
+    #---------------------------------------------------------------
+    # Prompt Creation Methods
+    #---------------------------------------------------------------
+    
+    def _create_concept_prompt(self, context: Dict[str, Any]) -> str:
+        """Create prompt for character concept generation."""
+        concept_description = context["parameters"].get("concept_description", "")
+        
+        return self._format_prompt(
+            "Create a D&D character concept",
+            concept_description,
+            [
+                "Character class recommendation with rationale",
+                "Species (race) recommendation with rationale",
+                "Background recommendation with rationale",
+                "Suggested ability scores priority",
+                "Personality traits that fit this concept",
+                "Character motivation and goals"
+            ]
+        )
+    
+    def _create_backstory_prompt(self, context: Dict[str, Any]) -> str:
+        """Create prompt for backstory generation."""
+        character_summary = self._create_character_summary(context["character_data"])
+        elements = context["parameters"].get("elements", {})
+        elements_text = ", ".join(f"{k}: {v}" for k, v in elements.items())
+        
+        return self._format_prompt(
+            "Create a character backstory",
+            f"Character: {character_summary}\nBackstory elements: {elements_text}",
+            [
+                "Origin and early life",
+                "Formative events that shaped the character",
+                "How they acquired their class abilities",
+                "Key relationships and connections",
+                "Events that led them to their adventuring life",
+                "Current goals and motivations"
+            ]
+        )
+    
+    def _create_optimization_prompt(self, context: Dict[str, Any]) -> str:
+        """Create prompt for optimization suggestions."""
+        character_summary = self._create_character_summary(context["character_data"])
+        goal = context["parameters"].get("goal", "general improvement")
+        
+        return self._format_prompt(
+            f"Optimize this character for {goal}",
+            f"Character: {character_summary}",
+            [
+                "Ability score adjustments",
+                "Skill selection recommendations",
+                "Equipment suggestions",
+                "Feat recommendations (if applicable)",
+                "Spell selections (if applicable)",
+                "Multiclass options (if beneficial)"
+            ]
+        )
+    
+    def _create_narrative_prompt(self, context: Dict[str, Any]) -> str:
+        """Create prompt for narrative elements."""
+        character_summary = self._create_character_summary(context["character_data"])
+        
+        # Handle various narrative contexts
+        if "scenario" in context["parameters"]:
+            narrative_type = "roleplaying scenario"
+            focus = context["parameters"]["scenario"]
+            items = [
+                "Initial reaction",
+                "Key personality traits to emphasize",
+                "Dialogue examples and speech patterns",
+                "Body language and mannerisms",
+                "Internal thoughts vs. external actions"
+            ]
+        elif "situation" in context["parameters"]:
+            narrative_type = "character moments"
+            focus = context["parameters"]["situation"]
+            items = [
+                "3-4 brief narrative vignettes",
+                "Dialogue that reflects their way of speaking",
+                "How they display their abilities and traits",
+                "What makes their approach unique"
+            ]
+        elif "decision_point" in context["parameters"]:
+            narrative_type = "decision point"
+            decision = context["parameters"]["decision_point"]
+            focus = f"Decision: {decision.get('situation', '')}"
+            options = "\n".join([f"- {option}" for option in decision.get("options", [])])
+            focus = f"{focus}\nOptions:\n{options}"
+            items = [
+                "Likelihood of choosing each option",
+                "Character's thought process",
+                "Alignment with character traits",
+                "Additional in-character options"
+            ]
+        else:
+            narrative_type = "general narrative"
+            focus = "Provide general narrative guidance for this character"
+            items = [
+                "Character voice and mannerisms",
+                "Typical reactions to common situations",
+                "Relationship dynamics",
+                "Personal quirks to emphasize"
+            ]
             
-            return {
-                "success": True,
-                "conflict_resolutions": resolutions
-            }
+        return self._format_prompt(
+            f"Create {narrative_type} content",
+            f"Character: {character_summary}\n{focus}",
+            items
+        )
+    
+    def _create_mechanics_prompt(self, context: Dict[str, Any]) -> str:
+        """Create prompt for mechanics explanations."""
+        character_summary = self._create_character_summary(context["character_data"])
+        question = context["parameters"].get("question", "")
+        
+        return self._format_prompt(
+            "Explain character mechanics",
+            f"Character: {character_summary}\nQuestion: {question}",
+            [
+                "Clear explanation of the relevant rules",
+                "How these mechanics apply to this character specifically",
+                "Examples of how this works in play",
+                "Tips for using these mechanics effectively"
+            ]
+        )
+    
+    def _create_development_prompt(self, context: Dict[str, Any]) -> str:
+        """Create prompt for character development."""
+        character_summary = self._create_character_summary(context["character_data"])
+        development_focus = context["parameters"]
+        goals_text = ", ".join(f"{k}: {v}" for k, v in development_focus.items() if k != "timeframe")
+        timeframe = development_focus.get("timeframe", "full character arc")
+        
+        return self._format_prompt(
+            f"Create a character development plan ({timeframe})",
+            f"Character: {character_summary}\nGoals and focus: {goals_text}",
+            [
+                "Short-term development milestones",
+                "Medium-term growth opportunities",
+                "Long-term character arc",
+                "Skills and abilities to focus on developing",
+                "Narrative challenges to drive growth",
+                "Relationships to cultivate"
+            ]
+        )
+    
+    def _create_visuals_prompt(self, context: Dict[str, Any]) -> str:
+        """Create prompt for visual elements."""
+        character_summary = self._create_character_summary(context["character_data"])
+        visual_type = context["parameters"].get("type", "portrait")
+        
+        elements = [
+            "Physical appearance details",
+            "Clothing and armor description",
+            "Weapons and equipment",
+            "Pose and expression",
+            "Lighting and background suggestions",
+            "Artistic style recommendations"
+        ]
+        
+        if visual_type == "symbol":
+            elements = [
+                "Symbolic elements representing the character",
+                "Color scheme and meaning",
+                "Design motifs",
+                "Style and presentation",
+                "How it represents the character's essence"
+            ]
             
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Failed to resolve character conflicts: {str(e)}"
-            }
-
-    # Helper methods for creating prompts
-    
-    def _create_concept_prompt(self, concept_description: str) -> str:
-        """Create a prompt for character concept generation."""
-        return (
-            f"Create a D&D character concept based on this description: {concept_description}\n\n"
-            "Provide the following details:\n"
-            "1. Character class recommendation with rationale\n"
-            "2. Species (race) recommendation with rationale\n"
-            "3. Background recommendation with rationale\n"
-            "4. Suggested ability scores priority\n"
-            "5. Personality traits that fit this concept\n"
-            "6. Character motivation and goals\n\n"
-            "Format the response as structured data that can be parsed into a JSON object."
+        return self._format_prompt(
+            f"Create a {visual_type} prompt",
+            f"Character: {character_summary}",
+            elements
         )
     
-    def _create_optimization_prompt(self, character_data: Dict[str, Any], optimization_goal: str) -> str:
-        """Create a prompt for character optimization suggestions."""
-        character_summary = self._create_character_summary(character_data)
-        
-        return (
-            f"Character Summary: {character_summary}\n\n"
-            f"Optimization Goal: {optimization_goal}\n\n"
-            "Please suggest optimizations for this character to better achieve the stated goal. Include:\n"
-            "1. Ability score adjustments\n"
-            "2. Skill selection recommendations\n"
-            "3. Equipment suggestions\n"
-            "4. Feat recommendations (if applicable)\n"
-            "5. Spell selections (if applicable)\n"
-            "6. Multiclass options (if beneficial)\n\n"
-            "For each suggestion, explain the benefit and how it helps achieve the optimization goal.\n\n"
-            "Format the response as structured data that can be parsed into a JSON object."
-        )
-    
-    def _create_backstory_prompt(self, character_data: Dict[str, Any], backstory_elements: Dict[str, Any]) -> str:
-        """Create a prompt for backstory generation."""
-        character_summary = self._create_character_summary(character_data)
-        elements_text = ", ".join(f"{k}: {v}" for k, v in backstory_elements.items())
-        
-        return (
-            f"Character Summary: {character_summary}\n\n"
-            f"Key Backstory Elements: {elements_text}\n\n"
-            "Please create a compelling backstory for this character that incorporates the key elements. Include:\n"
-            "1. Origin and early life\n"
-            "2. Formative events that shaped the character\n"
-            "3. How they acquired their class abilities\n"
-            "4. Key relationships and connections\n"
-            "5. Events that led them to their adventuring life\n"
-            "6. Current goals and motivations\n\n"
-            "Make the backstory consistent with D&D lore while being unique to this character.\n\n"
-            "Format the response as structured data that can be parsed into a JSON object."
-        )
-    
-    def _create_narrative_choices_prompt(self, character_data: Dict[str, Any], decision_point: Dict[str, Any]) -> str:
-        """Create a prompt for suggesting narrative choices."""
-        character_summary = self._create_character_summary(character_data)
-        situation = decision_point.get("situation", "")
-        options = decision_point.get("options", [])
-        options_text = "\n".join([f"- {option}" for option in options])
-        
-        return (
-            f"Character Summary: {character_summary}\n\n"
-            f"Situation: {situation}\n\n"
-            f"Available Options:\n{options_text}\n\n"
-            "Based on this character's personality, background, and motivations, suggest how they might approach "
-            "this situation. For each option, provide:\n"
-            "1. How likely the character would choose this option\n"
-            "2. Their thought process and reasoning\n"
-            "3. How this choice aligns with their character traits\n"
-            "4. Potential consequences they might consider\n\n"
-            "If there are additional options that would be more in-character, suggest those as well.\n\n"
-            "Format the response as structured data that can be parsed into a JSON object."
-        )
-    
-    def _create_mechanics_explanation_prompt(self, character_data: Dict[str, Any], mechanics_question: str) -> str:
-        """Create a prompt for explaining character mechanics."""
-        character_summary = self._create_character_summary(character_data)
-        
-        return (
-            f"Character Summary: {character_summary}\n\n"
-            f"Question about character mechanics: {mechanics_question}\n\n"
-            "Please explain these mechanics in the context of this specific character, including:\n"
-            "1. Clear explanation of the relevant rules\n"
-            "2. How these mechanics apply to this character specifically\n"
-            "3. Examples of how this works in play\n"
-            "4. Any tips for using these mechanics effectively\n\n"
-            "Make the explanation accessible to someone who may not be familiar with all D&D rules."
-            "Format the response as structured data that can be parsed into a JSON object."
-        )
-    
-    def _create_development_prompt(self, character_data: Dict[str, Any], character_goals: Dict[str, Any]) -> str:
-        """Create a prompt for character development ideas."""
-        character_summary = self._create_character_summary(character_data)
-        goals_text = ", ".join(f"{k}: {v}" for k, v in character_goals.items())
-        
-        return (
-            f"Character Summary: {character_summary}\n\n"
-            f"Character Goals: {goals_text}\n\n"
-            "Please suggest a character development path that helps this character achieve their goals. Include:\n"
-            "1. Short-term development milestones (next 1-2 levels)\n"
-            "2. Medium-term growth opportunities (next 3-5 levels)\n"
-            "3. Long-term character arc (full career)\n"
-            "4. Skills and abilities to focus on developing\n"
-            "5. Narrative challenges that could drive growth\n"
-            "6. Relationships to cultivate or resolve\n\n"
-            "Make suggestions that combine mechanical advancement with narrative development.\n\n"
-            "Format the response as structured data that can be parsed into a JSON object."
-        )
-    
-    def _create_character_moments_prompt(self, character_data: Dict[str, Any], situation: str) -> str:
-        """Create a prompt for generating character moments/vignettes."""
-        character_summary = self._create_character_summary(character_data)
-        
-        return (
-            f"Character Summary: {character_summary}\n\n"
-            f"Situation: {situation}\n\n"
-            "Please create 2-3 brief narrative vignettes (short scenes) showing how this character might act "
-            "in the described situation. Each vignette should:\n"
-            "1. Showcase the character's personality and abilities\n"
-            "2. Demonstrate their typical approach to challenges\n"
-            "3. Include dialogue that reflects their way of speaking\n"
-            "4. Highlight what makes this character unique\n\n"
-            "Make the vignettes varied to show different aspects of the character.\n\n"
-            "Format the response as structured data that can be parsed into a JSON object."
-        )
-    
-    def _create_roleplaying_prompt(self, character_data: Dict[str, Any], scenario: str) -> str:
-        """Create a prompt for suggesting roleplaying approaches."""
-        character_summary = self._create_character_summary(character_data)
-        
-        return (
-            f"Character Summary: {character_summary}\n\n"
-            f"Roleplaying Scenario: {scenario}\n\n"
-            "Please suggest roleplaying approaches for this character in this scenario. Include:\n"
-            "1. How the character might initially react\n"
-            "2. Key personality traits to emphasize\n"
-            "3. Dialogue examples and speech patterns\n"
-            "4. Body language and mannerisms to portray\n"
-            "5. Internal thoughts vs. external actions\n"
-            "6. Different approaches based on the character's mood or situation\n\n"
-            "Focus on staying true to the character while creating engaging roleplaying moments.\n\n"
-            "Format the response as structured data that can be parsed into a JSON object."
-        )
-    
-    def _create_portrait_prompt_generator(self, character_data: Dict[str, Any]) -> str:
-        """Create a prompt for generating a character portrait prompt."""
-        character_summary = self._create_character_summary(character_data)
-        
-        return (
-            f"Character Summary: {character_summary}\n\n"
-            "Please create a detailed prompt that could be used with AI image generators to create a portrait "
-            "of this character. Include:\n"
-            "1. Physical appearance details (face, body type, hair, eyes)\n"
-            "2. Clothing and armor description\n"
-            "3. Weapons and equipment\n"
-            "4. Pose and expression\n"
-            "5. Lighting and background suggestions\n"
-            "6. Artistic style recommendations\n\n"
-            "Make the prompt detailed enough to capture the character's essence but formatted for optimal use "
-            "with image generation AI.\n\n"
-            "Format the response as structured data that can be parsed into a JSON object."
-        )
-    
-    def _create_conflict_resolution_prompt(self, character_data: Dict[str, Any], conflicts: List[Dict[str, Any]]) -> str:
-        """Create a prompt for resolving character conflicts."""
-        character_summary = self._create_character_summary(character_data)
+    def _create_resolution_prompt(self, context: Dict[str, Any]) -> str:
+        """Create prompt for conflict resolution."""
+        character_summary = self._create_character_summary(context["character_data"])
+        conflicts = context["parameters"].get("conflicts", [])
         
         conflicts_text = "\n".join([
             f"- {conflict.get('type', 'Unknown conflict')}: {conflict.get('description', 'No description')}"
             for conflict in conflicts
         ])
         
+        return self._format_prompt(
+            "Resolve character conflicts",
+            f"Character: {character_summary}\nConflicts:\n{conflicts_text}",
+            [
+                "Analysis of why each conflict exists",
+                "2-3 possible resolution approaches per conflict",
+                "Best recommendation for each conflict",
+                "How to integrate resolutions into the character's narrative"
+            ]
+        )
+    
+    def _create_adaptation_prompt(self, context: Dict[str, Any]) -> str:
+        """Create prompt for external character adaptation."""
+        params = context["parameters"]
+        name = params.get("name", "")
+        source = params.get("source", "")
+        traits = params.get("traits", [])
+        style = params.get("style", "authentic")
+        
+        traits_text = "\n".join([f"- {trait}" for trait in traits])
+        
+        approach_guidance = {
+            "authentic": "Focus on creating a faithful adaptation that captures the essence of the original character while working within D&D mechanics. Prioritize thematic accuracy over mechanical optimization.",
+            "fantastical": "Adapt the character with a focus on creating interesting and powerful game mechanics, even if it means taking creative liberties with the source material.",
+            "modern": "Update the character for a modern context while preserving their core identity. Consider how their traits would manifest in today's world."
+        }
+        
+        return self._format_prompt(
+            f"Adapt {name} from {source} to D&D",
+            f"Character: {name}\nSource: {source}\nKey traits:\n{traits_text}\nAdaptation style: {style}\n\nGuidance: {approach_guidance.get(style, '')}",
+            [
+                "Recommended class and subclass with rationale",
+                "Species (race) selection with justification",
+                "Background that reflects their origin",
+                "Ability score distribution",
+                "Key skill proficiencies",
+                "Signature abilities and how they translate to D&D mechanics",
+                "Equipment and items that reflect their iconic gear",
+                "Personality traits to roleplay",
+                "Backstory adaptation"
+            ]
+        )
+    
+    def _create_custom_prompt(self, context: Dict[str, Any]) -> str:
+        """Create prompt for custom concept adaptation."""
+        params = context["parameters"]
+        concept_type = params.get("type", "")
+        description = params.get("description", "")
+        references = params.get("references", [])
+        power_level = params.get("power_level", "balanced")
+        
+        references_text = "\n".join([f"- {ref}" for ref in references]) if references else "None provided"
+        
+        # Customize instructions based on concept type
+        if concept_type == "translate_abilities":
+            title = "Translate conceptual abilities to D&D mechanics"
+            items = [
+                "Game mechanics that represent these abilities",
+                "Required class features or spells",
+                "Balance considerations and limitations",
+                "How to implement within existing D&D rules",
+                "Suggested level progression"
+            ]
+        elif concept_type == "reflavor_ability":
+            title = "Reflavor standard D&D ability"
+            items = [
+                "New thematic description",
+                "Visual effects and appearance",
+                "Roleplaying opportunities",
+                "Mechanical implications (if any)",
+                "Integration with character concept"
+            ]
+        elif concept_type == "cultural_elements":
+            title = "Incorporate cultural elements"
+            items = [
+                "Cultural equipment and attire",
+                "Traditions and practices",
+                "Values and beliefs",
+                "Language and communication style",
+                "Social structures and relationships"
+            ]
+        elif concept_type == "custom_feature":
+            title = "Create custom character feature"
+            items = [
+                "Feature name and description",
+                "Mechanical benefits and limitations",
+                "Usage frequency and conditions",
+                "Scaling with character level",
+                "Balance considerations"
+            ]
+        elif concept_type == "resource_system":
+            title = "Design custom resource system"
+            items = [
+                "Resource name and thematic description",
+                "How resources are gained and spent",
+                "Maximum capacity and limitations",
+                "Special abilities enabled by resources",
+                "Integration with existing D&D mechanics"
+            ]
+        else:
+            title = f"Adapt {concept_type} concept to D&D"
+            items = [
+                "D&D mechanics that best represent this concept",
+                "Required adjustments to make it work",
+                "Balance considerations",
+                "Roleplaying guidance",
+                "Integration with existing rules"
+            ]
+            
+        power_guidance = {
+            "low": "Create a modest implementation that's slightly below average power level",
+            "balanced": "Create a balanced implementation comparable to official D&D content",
+            "high": "Create a powerful implementation that's slightly above average",
+            "exceptional": "Create a uniquely powerful implementation for high-powered campaigns"
+        }
+        
+        return self._format_prompt(
+            title,
+            f"Concept: {description}\nReference elements:\n{references_text}\nPower level: {power_level} - {power_guidance.get(power_level, '')}",
+            items
+        )
+    
+    #---------------------------------------------------------------
+    # Response Parsing Methods
+    #---------------------------------------------------------------
+    
+    def _parse_concept_response(self, response: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse LLM response for character concept."""
+        return self._extract_structured_data(response, default_structure={
+            "class": {"suggestion": "Unknown", "rationale": ""},
+            "species": {"suggestion": "Unknown", "rationale": ""},
+            "background": {"suggestion": "Unknown", "rationale": ""},
+            "ability_scores": {"priority": []},
+            "personality": {"traits": [], "motivation": ""}
+        })
+    
+    def _parse_backstory_response(self, response: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse LLM response for backstory."""
+        return self._extract_structured_data(response, default_structure={
+            "origin": "",
+            "formative_events": [],
+            "connections": [],
+            "abilities_source": "",
+            "adventuring_catalyst": "",
+            "goals": []
+        })
+    
+    def _parse_optimization_response(self, response: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse LLM response for optimization suggestions."""
+        return self._extract_structured_data(response, default_structure={
+            "ability_scores": [],
+            "skills": [],
+            "equipment": [],
+            "feats": [],
+            "spells": [],
+            "multiclass": [],
+            "general_advice": ""
+        })
+    
+    def _parse_narrative_response(self, response: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse LLM response for narrative elements."""
+        if "scenario" in context["parameters"]:
+            default_structure = {
+                "initial_reaction": "",
+                "key_traits": [],
+                "dialogue_examples": [],
+                "mannerisms": "",
+                "internal_vs_external": ""
+            }
+        elif "situation" in context["parameters"]:
+            default_structure = {
+                "vignettes": [
+                    {"title": "Moment 1", "content": ""},
+                    {"title": "Moment 2", "content": ""}
+                ]
+            }
+        elif "decision_point" in context["parameters"]:
+            default_structure = {
+                "options": [
+                    {"option": "", "likelihood": "", "rationale": ""}
+                ],
+                "additional_options": []
+            }
+        else:
+            default_structure = {
+                "voice": "",
+                "reactions": {},
+                "relationships": {},
+                "quirks": []
+            }
+            
+        return self._extract_structured_data(response, default_structure)
+    
+    def _parse_mechanics_response(self, response: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse LLM response for mechanics explanations."""
+        return self._extract_structured_data(response, default_structure={
+            "rules_explanation": "",
+            "character_specific_context": "",
+            "examples": [],
+            "tips": []
+        })
+    
+    def _parse_development_response(self, response: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse LLM response for development suggestions."""
+        return self._extract_structured_data(response, default_structure={
+            "short_term": [],
+            "medium_term": [],
+            "long_term": [],
+            "abilities_focus": [],
+            "narrative_challenges": [],
+            "relationships": []
+        })
+    
+    def _parse_visuals_response(self, response: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse LLM response for visual elements."""
+        visual_type = context["parameters"].get("type", "portrait")
+        
+        if visual_type == "symbol":
+            default_structure = {
+                "symbols": [],
+                "colors": {},
+                "motifs": [],
+                "style": "",
+                "meaning": ""
+            }
+        else:
+            default_structure = {
+                "physical_description": "",
+                "clothing_and_equipment": "",
+                "pose_and_expression": "",
+                "lighting_and_background": "",
+                "artistic_style": "",
+                "complete_prompt": ""
+            }
+            
+        return self._extract_structured_data(response, default_structure)
+    
+    def _parse_resolution_response(self, response: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse LLM response for conflict resolutions."""
+        return self._extract_structured_data(response, default_structure={
+            "resolutions": [
+                {
+                    "conflict_type": "",
+                    "analysis": "",
+                    "options": [],
+                    "recommendation": "",
+                    "integration": ""
+                }
+            ]
+        })
+    
+    def _parse_adaptation_response(self, response: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse LLM response for character adaptation."""
+        return self._extract_structured_data(response, default_structure={
+            "class": {"name": "", "subclass": "", "rationale": ""},
+            "species": {"name": "", "rationale": ""},
+            "background": {"name": "", "rationale": ""},
+            "ability_scores": {},
+            "skills": [],
+            "signature_abilities": [],
+            "equipment": [],
+            "personality": [],
+            "backstory": ""
+        })
+    
+    def _parse_custom_response(self, response: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse LLM response for custom concept adaptation."""
+        concept_type = context["parameters"].get("type", "")
+        
+        # Different default structures based on concept type
+        if concept_type == "translate_abilities":
+            default_structure = {
+                "mechanics": [],
+                "features": [],
+                "balance": {},
+                "implementation": "",
+                "progression": {}
+            }
+        elif concept_type == "reflavor_ability":
+            default_structure = {
+                "new_description": "",
+                "visual_effects": "",
+                "roleplaying": [],
+                "mechanics": {},
+                "integration": ""
+            }
+        elif concept_type == "custom_feature":
+            default_structure = {
+                "name": "",
+                "description": "",
+                "mechanics": {},
+                "limitations": "",
+                "scaling": {}
+            }
+        elif concept_type == "resource_system":
+            default_structure = {
+                "name": "",
+                "description": "",
+                "acquisition": "",
+                "expenditure": "",
+                "limitations": "",
+                "abilities": []
+            }
+        else:
+            default_structure = {
+                "mechanics": {},
+                "adjustments": [],
+                "balance": {},
+                "roleplaying": "",
+                "integration": ""
+            }
+            
+        return self._extract_structured_data(response, default_structure)
+    
+    #---------------------------------------------------------------
+    # Helper Methods
+    #---------------------------------------------------------------
+    
+    def _format_prompt(self, title: str, context: str, elements: List[str]) -> str:
+        """Format a standard prompt with consistent structure."""
+        elements_text = "\n".join([f"- {element}" for element in elements])
+        
         return (
-            f"Character Summary: {character_summary}\n\n"
-            f"Identified Conflicts/Inconsistencies:\n{conflicts_text}\n\n"
-            "Please suggest ways to resolve each of these conflicts while preserving the character concept "
-            "as much as possible. For each conflict include:\n"
-            "1. Analysis of why the conflict exists\n"
-            "2. 2-3 possible resolution approaches\n"
-            "3. Recommendation for the best approach\n"
-            "4. How to integrate the resolution into the character's narrative\n\n"
-            "Prioritize solutions that maintain the core character concept and player's intent.\n\n"
-            "Format the response as structured data that can be parsed into a JSON object."
+            f"# {title}\n\n"
+            f"{context}\n\n"
+            f"Include the following elements:\n{elements_text}\n\n"
+            "Format your response as structured data that can be parsed into a JSON object."
         )
     
     def _create_character_summary(self, character_data: Dict[str, Any]) -> str:
-        """Create a brief summary of the character for context in prompts."""
-        name = character_data.get("name", "Unnamed character")
-        species = character_data.get("species", {}).get("name", "Unknown species")
-        class_name = character_data.get("class", {}).get("name", "Unknown class")
-        level = character_data.get("class", {}).get("level", 1)
-        background = character_data.get("background", {}).get("name", "Unknown background")
-        
-        personality = character_data.get("personality", {})
-        traits = personality.get("traits", [])
-        ideals = personality.get("ideals", [])
-        bonds = personality.get("bonds", [])
-        flaws = personality.get("flaws", [])
-        
-        personality_summary = ""
-        if traits or ideals or bonds or flaws:
-            parts = []
-            if traits:
-                parts.append(f"Traits: {', '.join(traits[:2])}")
-            if ideals:
-                parts.append(f"Ideals: {', '.join(ideals[:1])}")
-            if bonds:
-                parts.append(f"Bonds: {', '.join(bonds[:1])}")
-            if flaws:
-                parts.append(f"Flaws: {', '.join(flaws[:1])}")
-                
-            personality_summary = f" Personality: {'; '.join(parts)}."
-        
-        ability_scores = character_data.get("ability_scores", {})
-        if ability_scores:
-            top_abilities = sorted(
-                [(k, v) for k, v in ability_scores.items()],
-                key=lambda x: x[1],
-                reverse=True
-            )[:2]
-            abilities_summary = f" Top abilities: {top_abilities[0][0].capitalize()} ({top_abilities[0][1]}), {top_abilities[1][0].capitalize()} ({top_abilities[1][1]})."
-        else:
-            abilities_summary = ""
+        """Create a brief character summary for context in prompts."""
+        # Handle case where character data is empty
+        if not character_data:
+            return "New character under development"
             
-        return f"{name}, a level {level} {species} {class_name} with a {background} background.{personality_summary}{abilities_summary}"
+        name = character_data.get("name", "Unnamed character")
+        
+        # Extract basic character info using safe gets with defaults
+        species = self._safe_get(character_data, ["species", "name"], "Unknown species")
+        class_name = self._safe_get(character_data, ["class", "name"], "Unknown class")
+        level = self._safe_get(character_data, ["class", "level"], 1)
+        background = self._safe_get(character_data, ["background", "name"], "Unknown background")
+        
+        # Collect personality traits if available
+        personality_parts = []
+        personality = character_data.get("personality", {})
+        
+        for trait_type in ["traits", "ideals", "bonds", "flaws"]:
+            traits = personality.get(trait_type, [])
+            if traits and len(traits) > 0:
+                trait_name = trait_type.rstrip('s').capitalize() # Remove plural 's' if present
+                personality_parts.append(f"{trait_name}: {traits[0]}")
+        
+        personality_text = f" ({'; '.join(personality_parts)})" if personality_parts else ""
+        
+        # Add ability scores if available
+        ability_text = ""
+        if "ability_scores" in character_data:
+            scores = character_data["ability_scores"]
+            if scores:
+                top_abilities = sorted(
+                    [(k.capitalize(), v) for k, v in scores.items()],
+                    key=lambda x: x[1],
+                    reverse=True
+                )[:2]
+                ability_text = f" Top abilities: {top_abilities[0][0]} ({top_abilities[0][1]}), {top_abilities[1][0]} ({top_abilities[1][1]})."
+        
+        return f"{name}, level {level} {species} {class_name} with {background} background{personality_text}.{ability_text}"
     
-    # Parser methods for LLM responses
-    # These methods would parse the text responses from the LLM into structured data
-    # In a real implementation, these would be more sophisticated based on the actual LLM output format
+    def _safe_get(self, data_dict: Dict[str, Any], key_path: List[str], default: Any = None) -> Any:
+        """Safely get a nested value from a dictionary."""
+        current = data_dict
+        for key in key_path:
+            if not isinstance(current, dict) or key not in current:
+                return default
+            current = current[key]
+        return current
     
-    def _parse_concept_response(self, response: str) -> Dict[str, Any]:
-        """Parse LLM response for character concept."""
-        # This is a simplified parser - a real implementation would be more robust
-        # depending on the format of the LLM response
+    def _extract_structured_data(self, response: str, default_structure: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract structured data from LLM response with fallback to default structure."""
+        # First try to extract JSON directly
+        try:
+            # Look for JSON patterns
+            import re
+            import json
+            
+            # Try to match JSON inside the response
+            json_pattern = r'```(?:json)?\s*({[\s\S]*?}|[[\s\S]*?])\s*```|({[\s\S]*}|[[\s\S]*])'
+            matches = re.search(json_pattern, response)
+            
+            if matches:
+                json_str = matches.group(1) or matches.group(2)
+                parsed_data = json.loads(json_str)
+                
+                # Ensure all expected keys are present
+                for key, default_value in default_structure.items():
+                    if key not in parsed_data:
+                        parsed_data[key] = default_value
+                        
+                return parsed_data
+        except Exception as e:
+            logger.warning(f"Failed to parse JSON from response: {str(e)}")
         
-        # For now, just create a basic structure with dummy sections
-        sections = response.split("\n\n")
-        concept = {
-            "class": {
-                "suggestion": "Unknown",
-                "rationale": "Could not parse class suggestion from LLM response"
-            },
-            "species": {
-                "suggestion": "Unknown",
-                "rationale": "Could not parse species suggestion from LLM response"
-            },
-            "background": {
-                "suggestion": "Unknown",
-                "rationale": "Could not parse background suggestion from LLM response"
-            },
-            "ability_scores": {
-                "priority": []
-            },
-            "personality": {
-                "traits": [],
-                "motivation": "Could not parse motivation from LLM response"
-            },
-            "full_response": response
-        }
-        
-        # In a real implementation, we would parse the LLM response to extract structured data
-        # For now, this is just a placeholder implementation
-        
-        return concept
-
-    def _parse_optimization_response(self, response: str) -> Dict[str, Any]:
-        """Parse LLM response for optimization suggestions."""
-        # Placeholder implementation
-        return {
-            "suggestions": [
-                {
-                    "category": "ability_scores",
-                    "recommendation": "Placeholder ability score recommendation",
-                    "rationale": "Placeholder rationale"
-                },
-                {
-                    "category": "equipment",
-                    "recommendation": "Placeholder equipment recommendation",
-                    "rationale": "Placeholder rationale"
-                }
-            ],
-            "full_response": response
-        }
-
-    def _parse_backstory_response(self, response: str) -> Dict[str, Any]:
-        """Parse LLM response for character backstory."""
-        # Placeholder implementation
-        return {
-            "origin": "Placeholder origin story",
-            "formative_events": ["Event 1", "Event 2"],
-            "connections": ["Connection 1", "Connection 2"],
-            "full_backstory": response
-        }
-
-    def _parse_narrative_choices_response(self, response: str) -> Dict[str, Any]:
-        """Parse LLM response for narrative choice suggestions."""
-        # Placeholder implementation
-        return {
-            "options": [
-                {
-                    "option": "Option 1",
-                    "likelihood": "High",
-                    "rationale": "Placeholder rationale"
-                },
-                {
-                    "option": "Option 2",
-                    "likelihood": "Medium",
-                    "rationale": "Placeholder rationale"
-                }
-            ],
-            "full_response": response
-        }
-
-    def _parse_mechanics_explanation_response(self, response: str) -> Dict[str, Any]:
-        """Parse LLM response for mechanics explanations."""
-        # Placeholder implementation
-        return {
-            "rules_explanation": "Placeholder rules explanation",
-            "character_specific_context": "Placeholder character-specific context",
-            "examples": ["Example 1", "Example 2"],
-            "full_explanation": response
-        }
-
-    def _parse_development_response(self, response: str) -> Dict[str, Any]:
-        """Parse LLM response for character development suggestions."""
-        # Placeholder implementation
-        return {
-            "short_term": ["Short-term goal 1", "Short-term goal 2"],
-            "medium_term": ["Medium-term goal 1", "Medium-term goal 2"],
-            "long_term": ["Long-term goal 1", "Long-term goal 2"],
-            "full_development_plan": response
-        }
-
-    def _parse_character_moments_response(self, response: str) -> Dict[str, Any]:
-        """Parse LLM response for character vignettes."""
-        # Placeholder implementation
-        return {
-            "vignettes": [
-                {
-                    "title": "Vignette 1",
-                    "content": "Placeholder vignette content"
-                },
-                {
-                    "title": "Vignette 2",
-                    "content": "Placeholder vignette content"
-                }
-            ],
-            "full_response": response
-        }
-
-    def _parse_roleplaying_response(self, response: str) -> Dict[str, Any]:
-        """Parse LLM response for roleplaying suggestions."""
-        # Placeholder implementation
-        return {
-            "initial_reaction": "Placeholder initial reaction",
-            "key_traits": ["Trait 1", "Trait 2"],
-            "dialogue_examples": ["Example 1", "Example 2"],
-            "full_suggestions": response
-        }
-
-    def _parse_portrait_prompt_response(self, response: str) -> Dict[str, Any]:
-        """Parse LLM response for portrait generation prompt."""
-        # Placeholder implementation
-        return {
-            "physical_description": "Placeholder physical description",
-            "clothing_and_equipment": "Placeholder clothing and equipment description",
-            "pose_and_expression": "Placeholder pose and expression",
-            "complete_prompt": response
-        }
-
-    def _parse_conflict_resolution_response(self, response: str) -> Dict[str, Any]:
-        """Parse LLM response for conflict resolutions."""
-        # Placeholder implementation
-        return {
-            "resolutions": [
-                {
-                    "conflict_type": "Conflict type 1",
-                    "suggested_resolution": "Placeholder resolution",
-                    "rationale": "Placeholder rationale"
-                },
-                {
-                    "conflict_type": "Conflict type 2",
-                    "suggested_resolution": "Placeholder resolution",
-                    "rationale": "Placeholder rationale"
-                }
-            ],
-            "full_response": response
-        }
+        # If JSON parsing fails, try to extract structured data based on headings
+        try:
+            # Simple extraction based on common patterns in the response
+            result = default_structure.copy()
+            result["full_response"] = response
+            
+            return result
+        except Exception as e:
+            logger.error(f"Failed to extract structured data: {str(e)}")
+            
+            # Return default structure with full response
+            result = default_structure.copy()
+            result["full_response"] = response
+            return result

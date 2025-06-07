@@ -1599,63 +1599,143 @@ class LLMSpellsAdvisor:
                                     component_type: str = "all",
                                     spell_tradition: Optional[str] = None) -> Dict[str, Any]:
         """
-        Generate non-standard thematic replacements for spell components.
+        Generate non-standard thematic replacements for spell components that fit a character concept.
+        
+        This method creates thematic alternatives to traditional verbal, somatic, and material
+        components that align with the character's unique concept or power source while
+        maintaining game balance.
         
         Args:
-            concept: Character concept
+            concept: Character concept (e.g., "Jedi mind warrior", "Technomancer")
             component_type: Type of components to generate ("verbal", "somatic", "material", "all")
             spell_tradition: Optional specific tradition or approach to magic
-            
+                
         Returns:
-            Dictionary with thematic component replacements
+            Dictionary with thematic component replacements organized by component type
+        
+        Example:
+            >>> advisor = LLMSpellsAdvisor()
+            >>> components = advisor.generate_nonstandard_components("Star Wars Jedi")
+            >>> print(components["component_replacements"]["verbal"]["general"])
+            "Quiet, focused phrases that channel the Force, often in a calm, centered tone..."
         """
+        # Validate component_type
+        if component_type not in ["verbal", "somatic", "material", "all"]:
+            component_type = "all"
+            
         # Build context for LLM
-        context = f"Character Concept: {concept}\n"
-        context += f"Component Type: {component_type}\n"
+        context = [
+            f"Character Concept: {concept}",
+            f"Component Type: {component_type}"
+        ]
         
         if spell_tradition:
-            context += f"Magical Tradition: {spell_tradition}\n"
+            context.append(f"Magical Tradition: {spell_tradition}")
         
-        # Create prompt for the LLM
+        # Build a structured prompt to improve response format consistency
+        prompt_parts = [
+            "\n".join(context),
+            f"Create thematic replacements for standard D&D spell components that would fit a {concept}.",
+            "Format your response with clear section headers and bullet points for each component type.",
+        ]
+        
+        # Add specific instructions based on component type
+        component_prompts = {
+            "verbal": [
+                "# VERBAL COMPONENTS",
+                "What sounds, phrases, or vocalizations replace traditional magical incantations?",
+                "- Provide examples for different spell types (offensive, defensive, utility)",
+                "- Explain their cultural or traditional significance",
+                "- Describe how they sound and feel when spoken"
+            ],
+            "somatic": [
+                "# SOMATIC COMPONENTS",
+                "What movements, gestures, or physical actions replace traditional magical gestures?",
+                "- Describe how these movements connect to the character's power source",
+                "- Provide variations for different spell schools or effects",
+                "- Explain how subtle casting might work with these gestures"
+            ],
+            "material": [
+                "# MATERIAL COMPONENTS",
+                "What objects, substances, or elements serve as material components?",
+                "- Provide thematic substitutes for common material components",
+                "- Explain how these materials connect to the character's power source",
+                "- Describe what might serve as a spellcasting focus"
+            ]
+        }
+        
+        # Add relevant component sections based on requested type
+        if component_type == "all":
+            for section in component_prompts.values():
+                prompt_parts.extend(section)
+        else:
+            prompt_parts.extend(component_prompts[component_type])
+        
+        # Add final instructions for cohesive system
+        prompt_parts.append("\nProvide a cohesive system that maintains game balance while completely transforming the presentation of spellcasting to match this concept.")
+        
+        # Create the full prompt
         prompt = self._create_prompt(
             "nonstandard_components",
-            context + f"\nCreate thematic replacements for standard D&D spell components that would fit a {concept}.\n\n" +
-            "Include:\n"
+            "\n\n".join(prompt_parts)
         )
         
-        # Add specific requests based on component type
-        if component_type in ["verbal", "all"]:
-            prompt += "1. Verbal components - What sounds, phrases, or vocalizations replace traditional magical incantations?\n"
-            prompt += "   - Examples for different spell types (offensive, defensive, utility, etc.)\n"
-            prompt += "   - Cultural or traditional significance of these verbalizations\n"
+        try:
+            # Get LLM response
+            response = self._get_llm_response(
+                "nonstandard_components",
+                prompt,
+                {"concept": concept, "component_type": component_type}
+            )
             
-        if component_type in ["somatic", "all"]:
-            prompt += "2. Somatic components - What movements, gestures, or physical actions replace traditional magical gestures?\n"
-            prompt += "   - How these movements connect to the character's power source or tradition\n" 
-            prompt += "   - Variations for different spell schools or effects\n"
+            # Parse the response
+            components = self._parse_component_replacements(response, component_type)
             
-        if component_type in ["material", "all"]:
-            prompt += "3. Material components - What objects, substances, or elements serve as material components?\n"
-            prompt += "   - Thematic substitutes for common material components\n"
-            prompt += "   - How these materials connect to the character's power source\n"
+            # Ensure all requested component types have at least empty dictionaries
+            if component_type == "all":
+                for comp_type in ["verbal", "somatic", "material"]:
+                    if comp_type not in components:
+                        components[comp_type] = {}
+            elif component_type not in components:
+                components[component_type] = {}
+                
+            return {
+                "component_replacements": components,
+                "raw_response": response
+            }
+        except Exception as e:
+            logger.error(f"Error generating nonstandard components: {e}")
             
-        prompt += "\nProvide a system that maintains game balance while completely transforming the flavor " +
-                "and presentation of spellcasting to match this non-traditional concept."
-        
-        # Get LLM response
-        response = self._get_llm_response(
-            "nonstandard_components",
-            prompt,
-            {"concept": concept, "component_type": component_type}
-        )
-        
-        # Parse the response
-        components = self._parse_component_replacements(response, component_type)
-        
-        return {
-            "component_replacements": components,
-            "raw_response": response
-        }
+            # Create fallback components based on concept
+            fallback = {}
+            concept_words = concept.split()
+            base_word = concept_words[0] if concept_words else "unique"
+            
+            if component_type in ["verbal", "all"]:
+                fallback["verbal"] = {
+                    "general": f"Phrases that invoke {base_word} energy, spoken with determination and focus."
+                }
+            
+            if component_type in ["somatic", "all"]:
+                fallback["somatic"] = {
+                    "general": f"Flowing movements reminiscent of {concept} traditions, using hands to direct energy."
+                }
+                
+            if component_type in ["material", "all"]:
+                fallback["material"] = {
+                    "general": f"Small objects or symbols connected to the {concept} theme, such as crystals or emblems."
+                }
+                
+            if component_type != "all":
+                return {
+                    "component_replacements": fallback.get(component_type, {}),
+                    "raw_response": f"Error generating components: {str(e)}"
+                }
+                
+            return {
+                "component_replacements": fallback,
+                "raw_response": f"Error generating components: {str(e)}"
+            }
 
     def create_spellcasting_style_guide(self,
                                     concept: str,

@@ -1,154 +1,129 @@
+from typing import Dict, List, Any, Optional
+import json
+import logging
 
-from backend.core.services.ollama_service import OllamaService
+from backend.core.advisor.base_advisor import BaseAdvisor
+from backend.core.ability_scores.ability_scores import AbilityScores
 
-class LLMAbilityAdvisor:
-    def __init__(self, llm_service=None):
-        if llm_service is None:
-            self.llm_service = OllamaService()
-        else:
-            self.llm_service = llm_service
+logger = logging.getLogger(__name__)
+
+class LLMAbilityAdvisor(BaseAdvisor):
+    """
+    LLM-powered advisor for ability scores, providing recommendations,
+    explanations and character concept generation based on ability scores.
+    """
+
+    def __init__(self, llm_service=None, cache_enabled=True):
+        """Initialize the ability scores advisor with the LLM service."""
+        system_prompt = (
+            "You are a D&D 5e (2024 rules) ability scores expert. "
+            "Provide guidance on ability scores, modifiers, and their implications for characters."
+        )
+        super().__init__(llm_service, system_prompt, cache_enabled)
         self.ability_scores = AbilityScores()
 
-    def _create_prompt(self, task, context):
-        """
-        Create a well-structured prompt for the LLM.
-        
-        Args:
-            task: The specific task (e.g., "explain ability score")
-            context: Relevant context information
-            
-        Returns:
-            str: Formatted prompt
-        """
-        system_context = "You are a D&D 5e (2024 rules) character creation assistant."
-        instructions = f"Based on the following information, {task}. Keep your answer concise and focused on D&D rules."
-        
-        prompt = f"{system_context}\n\n{instructions}\n\nInformation: {context}"
-        return prompt
-        
     def explain_modifier_narrative(self, score: int, ability: str) -> str:
-        """
-        Provide narrative description of what a modifier means in practical terms.
-        
-        Args:
-            score: Ability score value
-            ability: Which ability (strength, dexterity, etc.)
-            
-        Returns:
-            str: Narrative description
-        """
+        """Provide narrative description of what a modifier means in practical terms."""
         modifier = self.ability_scores.calculate_modifier(score)
         
-        prompt = self._create_prompt(
-            f"explain what a {ability} score of {score} (modifier {modifier:+d}) means in narrative terms",
-            f"The character has a {ability.capitalize()} score of {score}, giving them a modifier of {modifier:+d}. "
-            f"Provide a practical explanation of what this means for the character in everyday situations and during adventures."
+        prompt = self._format_prompt(
+            f"Explain {ability} score of {score} (modifier {modifier:+d})",
+            f"The character has a {ability.capitalize()} score of {score}, giving them a modifier of {modifier:+d}.",
+            [
+                "Practical explanation of what this means in everyday situations",
+                "How this affects the character during adventures",
+                "Physical or mental manifestation of this ability score",
+                "Common activities where this score is relevant"
+            ]
         )
         
-        try:
-            response = self.llm_service.generate(prompt)
-            if response and len(response) > 20:  # Basic validation that we got a real response
-                return response
-        except Exception as e:
-            print(f"Error getting LLM response for modifier narrative: {e}")
+        response = self._get_llm_response(
+            "modifier_narrative", 
+            prompt, 
+            {"ability": ability, "score": score}
+        )
         
-        # Fallback if LLM fails
+        # Simple validation that we got a meaningful response
+        if response and len(response) > 20:
+            return response
+            
+        # Fallback if response is insufficient
         modifier, context = self.ability_scores.calculate_modifier(score, include_narrative_context=True)
         ability_desc = self.ability_scores.get_ability_score_descriptions("detailed").get(ability.lower(), "")
         return f"A {ability.capitalize()} score of {score} gives a {modifier:+d} modifier. {context}. {ability_desc}"
-    
+
     def suggest_point_buy_distribution(self, character_concept: str) -> Dict[str, Any]:
-        """
-        Suggest optimal point-buy distribution based on character concept.
-        
-        Args:
-            character_concept: Description of character concept
-            
-        Returns:
-            dict: Suggested ability score distribution
-        """
-        prompt = self._create_prompt(
-            "suggest an optimal point-buy ability score distribution",
-            f"Character concept: {character_concept}\n"
+        """Suggest optimal point-buy distribution based on character concept."""
+        prompt = self._format_prompt(
+            "Point-buy ability score distribution",
+            f"Character concept: {character_concept}\n\n"
             f"Point-buy rules: Scores range from 8-15 before racial bonuses. "
             f"Costs: 8:0, 9:1, 10:2, 11:3, 12:4, 13:5, 14:7, 15:9 points. "
-            f"Maximum 27 points total. Return a JSON object with STR, DEX, CON, INT, WIS, CHA scores and an explanation."
+            f"Maximum 27 points total.",
+            [
+                "STR, DEX, CON, INT, WIS, CHA scores using point-buy system",
+                "Brief explanation of why these scores fit the concept",
+                "Total point cost (must equal exactly 27)"
+            ]
         )
         
-        try:
-            response = self.llm_service.generate(prompt)
-            
-            # Try to parse JSON from the response
-            import re
-            json_match = re.search(r'\{.*\}', response, re.DOTALL)
-            if json_match:
-                distribution = json.loads(json_match.group(0))
-                
-                # Add explanation if not present
-                if "explanation" not in distribution:
-                    distribution["explanation"] = response.replace(json_match.group(0), "").strip()
-                    
-                return distribution
-        except Exception as e:
-            print(f"Error parsing LLM response for point buy: {e}")
+        response = self._get_llm_response(
+            "point_buy", 
+            prompt, 
+            {"concept": character_concept}
+        )
         
-        # Fallback to built-in method if LLM fails
+        # Try to extract JSON from the response
+        distribution = self._extract_json(response)
+        if distribution and all(key in distribution for key in ["STR", "DEX", "CON", "INT", "WIS", "CHA"]):
+            # Add explanation if not present
+            if "explanation" not in distribution:
+                distribution["explanation"] = "These scores fit your character concept."
+            return distribution
+        
+        # Fallback to built-in method if extraction fails
+        logger.warning("Failed to extract valid point-buy distribution from LLM response")
         return self.ability_scores._generate_concept_distribution(character_concept)
-    
+
     def analyze_ability_scores(self, scores_dict: Dict[str, int]) -> Dict[str, Any]:
-        """
-        Analyze strengths and weaknesses of an ability score distribution.
-        
-        Args:
-            scores_dict: Dictionary of ability scores
-            
-        Returns:
-            dict: Analysis of the distribution
-        """
+        """Analyze strengths and weaknesses of an ability score distribution."""
         # Format scores for prompt
         scores_str = ", ".join(f"{ability.capitalize()}: {score}" for ability, score in scores_dict.items())
         
-        prompt = self._create_prompt(
-            "analyze these ability scores and suggest playstyles",
-            f"Ability scores: {scores_str}\n\n"
-            f"Identify strengths and weaknesses, and suggest playstyle approaches that would work well with this distribution. "
-            f"Return results in JSON format with keys for 'strengths', 'weaknesses', and 'playstyle_suggestions'."
+        prompt = self._format_prompt(
+            "Analyze ability scores",
+            f"Ability scores: {scores_str}",
+            [
+                "Strengths based on high scores",
+                "Weaknesses based on low scores",
+                "Suggested playstyles that leverage these scores",
+                "Character class recommendations that match this distribution"
+            ]
         )
         
-        try:
-            response = self.llm_service.generate(prompt)
-            
-            # Try to parse JSON from the response
-            import re
-            json_match = re.search(r'\{.*\}', response, re.DOTALL)
-            if json_match:
-                analysis = json.loads(json_match.group(0))
-                analysis["valid"] = True
-                
-                # Add character quirks based on extreme scores
-                analysis["quirks"] = self.generate_character_quirks(scores_dict)
-                
-                return analysis
-        except Exception as e:
-            print(f"Error parsing LLM response for ability score analysis: {e}")
+        response = self._get_llm_response(
+            "analyze_scores", 
+            prompt, 
+            scores_dict
+        )
         
-        # Fallback to built-in method if LLM fails
+        analysis = self._extract_json(response)
+        if analysis and "strengths" in analysis and "weaknesses" in analysis:
+            analysis["valid"] = True
+            
+            # Add character quirks based on extreme scores
+            analysis["quirks"] = self.generate_character_quirks(scores_dict)
+            
+            return analysis
+        
+        # Fallback to built-in method if extraction fails
+        logger.warning("Failed to extract valid ability score analysis from LLM response")
         analysis = self.ability_scores.validate_ability_scores(scores_dict, include_playstyle_analysis=True)
         analysis["quirks"] = self.ability_scores.generate_ability_score_quirks(scores_dict)
         return analysis
-    
+
     def generate_character_quirks(self, scores_dict: Dict[str, int]) -> Dict[str, str]:
-        """
-        Generate character quirks based on extremely high or low ability scores using LLM.
-        
-        Args:
-            scores_dict: Dictionary of ability scores
-            
-        Returns:
-            dict: Character quirks for notable ability scores
-        """
-        quirks = {}
-        
+        """Generate character quirks based on extremely high or low ability scores."""
         # Only process extreme scores to avoid unnecessary LLM calls
         extreme_scores = {
             ability: score for ability, score in scores_dict.items() 
@@ -156,135 +131,121 @@ class LLMAbilityAdvisor:
         }
         
         if not extreme_scores:
-            return quirks
+            return {}
             
         # Format scores for prompt
         scores_str = ", ".join(f"{ability.capitalize()}: {score}" for ability, score in extreme_scores.items())
         
-        prompt = self._create_prompt(
-            "generate character quirks for these extreme ability scores",
-            f"Character has these notable ability scores: {scores_str}\n\n"
-            f"Generate unique and interesting character quirks or mannerisms that would result from "
-            f"these extremely high or low ability scores. Return as JSON with ability names as keys and quirk descriptions as values."
+        prompt = self._format_prompt(
+            "Generate character quirks",
+            f"Character has these notable ability scores: {scores_str}",
+            [
+                "Unique behavioral traits resulting from these scores",
+                "Physical manifestations of these extreme abilities",
+                "Roleplay suggestions for these ability score extremes",
+                "How these quirks might appear in social interactions"
+            ]
         )
         
-        try:
-            response = self.llm_service.generate(prompt)
-            
-            # Try to parse JSON from the response
-            import re
-            json_match = re.search(r'\{.*\}', response, re.DOTALL)
-            if json_match:
-                return json.loads(json_match.group(0))
-        except Exception as e:
-            print(f"Error parsing LLM response for quirks: {e}")
+        response = self._get_llm_response(
+            "character_quirks", 
+            prompt, 
+            extreme_scores
+        )
         
-        # Fallback to built-in method if LLM fails
+        quirks = self._extract_json(response)
+        if quirks:
+            return quirks
+        
+        # Fallback to built-in method if extraction fails
+        logger.warning("Failed to extract valid character quirks from LLM response")
         return self.ability_scores.generate_ability_score_quirks(scores_dict)
-    
+
     def suggest_standard_array_placement(self, character_class: str, playstyle: str) -> Dict[str, Any]:
-        """
-        Suggest optimal standard array placement for a character concept.
-        
-        Args:
-            character_class: Character's class
-            playstyle: Description of desired playstyle
-            
-        Returns:
-            dict: Suggested ability score placement
-        """
+        """Suggest optimal standard array placement for a character concept."""
         standard_array = self.ability_scores.STANDARD_ARRAY
         array_str = ", ".join(str(score) for score in standard_array)
         
-        prompt = self._create_prompt(
-            "suggest optimal ability score placement using the standard array",
+        prompt = self._format_prompt(
+            "Standard array placement",
             f"Character class: {character_class}\nPlaystyle: {playstyle}\n"
-            f"Standard array values: {array_str} (these six values must be assigned to STR, DEX, CON, INT, WIS, CHA)\n\n"
-            f"Recommend the optimal placement of these six values to the six ability scores. "
-            f"Return as JSON with STR, DEX, CON, INT, WIS, CHA as keys, the assigned values, and an explanation of your reasoning."
+            f"Standard array values: {array_str} (these six values must be assigned to STR, DEX, CON, INT, WIS, CHA)",
+            [
+                "Optimal assignment of standard array values to ability scores",
+                "Explanation of why this arrangement fits the class and playstyle",
+                "Primary abilities to focus on for this build"
+            ]
         )
         
-        try:
-            response = self.llm_service.generate(prompt)
-            
-            # Try to parse JSON from the response
-            import re
-            json_match = re.search(r'\{.*\}', response, re.DOTALL)
-            if json_match:
-                return json.loads(json_match.group(0))
-        except Exception as e:
-            print(f"Error parsing LLM response for standard array placement: {e}")
+        response = self._get_llm_response(
+            "standard_array", 
+            prompt, 
+            {"class": character_class, "playstyle": playstyle}
+        )
         
-        # Fallback to built-in method if LLM fails
+        distribution = self._extract_json(response)
+        if distribution and all(key in distribution for key in ["STR", "DEX", "CON", "INT", "WIS", "CHA"]):
+            return distribution
+        
+        # Fallback to built-in method if extraction fails
+        logger.warning("Failed to extract valid standard array placement from LLM response")
         return self.ability_scores._suggest_array_assignment(character_class, playstyle)
-    
+
     def suggest_concepts_for_rolls(self, scores: List[int]) -> List[Dict[str, Any]]:
-        """
-        Suggest character concepts based on random ability scores.
-        
-        Args:
-            scores: List of randomly rolled scores
-            
-        Returns:
-            list: Suggested character concepts
-        """
+        """Suggest character concepts based on random ability scores."""
         scores_str = ", ".join(str(score) for score in sorted(scores, reverse=True))
         
-        prompt = self._create_prompt(
-            "suggest character concepts based on these rolled ability scores",
-            f"Randomly rolled ability scores: {scores_str}\n\n"
-            f"Suggest 2-3 character concepts that would work well with these scores. For each concept, provide: "
-            f"1) A concept name/title, 2) A brief description, and 3) Recommended classes. "
-            f"Return as JSON array where each object has 'concept', 'description', and 'recommended_class' keys."
+        prompt = self._format_prompt(
+            "Character concepts for rolled scores",
+            f"Randomly rolled ability scores: {scores_str}",
+            [
+                "2-3 character concepts that would work well with these scores",
+                "Each concept should include a name/title, description, and recommended classes",
+                "How to allocate these scores for each concept"
+            ]
         )
         
-        try:
-            response = self.llm_service.generate(prompt)
-            
-            # Try to parse JSON from the response
-            import re
-            json_match = re.search(r'\[.*\]', response, re.DOTALL)
-            if json_match:
-                return json.loads(json_match.group(0))
-        except Exception as e:
-            print(f"Error parsing LLM response for concept suggestions: {e}")
+        response = self._get_llm_response(
+            "concepts_for_rolls", 
+            prompt, 
+            {"scores": scores}
+        )
         
-        # Fallback to built-in method if LLM fails
+        concepts = self._extract_json(response)
+        if isinstance(concepts, list) and len(concepts) > 0:
+            return concepts
+        
+        # Fallback to built-in method if extraction fails
+        logger.warning("Failed to extract valid concept suggestions from LLM response")
         return self.ability_scores._generate_concepts_for_scores(scores)
-    
+
     def explain_species_traits(self, species: str, bonuses: Dict[str, int]) -> Dict[str, str]:
-        """
-        Provide narrative explanations for species ability bonuses.
-        
-        Args:
-            species: Character's species (race)
-            bonuses: Ability score bonuses
-            
-        Returns:
-            dict: Narrative explanations
-        """
+        """Provide narrative explanations for species ability bonuses."""
         # Format bonuses for the prompt
         bonus_str = ", ".join(f"{ability}: +{bonus}" for ability, bonus in bonuses.items())
         
-        prompt = self._create_prompt(
-            "explain how species traits manifest as ability score bonuses",
-            f"Species: {species}\nAbility score bonuses: {bonus_str}\n\n"
-            f"Explain how the natural traits, physiology, and culture of this species manifest as these specific ability score bonuses. "
-            f"Be descriptive but concise. Return as JSON with ability names as keys and narrative explanations as values."
+        prompt = self._format_prompt(
+            f"{species} trait explanations",
+            f"Species: {species}\nAbility score bonuses: {bonus_str}",
+            [
+                "How natural traits manifest as ability score bonuses",
+                "Physical or mental characteristics that explain these bonuses",
+                "Cultural factors that might influence these traits"
+            ]
         )
         
-        try:
-            response = self.llm_service.generate(prompt)
-            
-            # Try to parse JSON from the response
-            import re
-            json_match = re.search(r'\{.*\}', response, re.DOTALL)
-            if json_match:
-                return json.loads(json_match.group(0))
-        except Exception as e:
-            print(f"Error parsing LLM response for species traits: {e}")
+        response = self._get_llm_response(
+            "species_traits", 
+            prompt, 
+            {"species": species, "bonuses": bonuses}
+        )
         
-        # Fallback to simple templated responses if LLM fails
+        explanations = self._extract_json(response)
+        if explanations:
+            return explanations
+        
+        # Fallback to simple templated responses
+        logger.warning("Failed to extract valid species trait explanations from LLM response")
         narratives = {}
         for ability, bonus in bonuses.items():
             ability_lower = ability.lower()
@@ -302,36 +263,33 @@ class LLMAbilityAdvisor:
                 narratives[ability_lower] = f"{species}s have +{bonus} Charisma, manifesting as a natural presence and force of personality."
             
         return narratives
-    
+
     def explain_gameplay_implications(self, ability: str, score: int) -> str:
-        """
-        Explain gameplay implications of an ability score for new players.
-        
-        Args:
-            ability: The ability to explain
-            score: The score value
-            
-        Returns:
-            str: Gameplay explanation
-        """
+        """Explain gameplay implications of an ability score for new players."""
         modifier = self.ability_scores.calculate_modifier(score)
         
-        prompt = self._create_prompt(
-            "explain gameplay implications of this ability score",
-            f"Ability: {ability}\nScore: {score}\nModifier: {modifier:+d}\n\n"
-            f"Explain what this ability score and modifier mean in gameplay terms. Include: "
-            f"1) What this ability affects in the game, 2) What skills are based on it, "
-            f"3) Practical advice for a player with this score, and 4) When this ability will be most important."
+        prompt = self._format_prompt(
+            f"{ability} gameplay implications",
+            f"Ability: {ability}\nScore: {score}\nModifier: {modifier:+d}",
+            [
+                "What this ability affects in gameplay",
+                "Skills based on this ability",
+                "Practical advice for a player with this score",
+                "When this ability will be most important during adventures"
+            ]
         )
         
-        try:
-            response = self.llm_service.generate(prompt)
-            if response and len(response) > 50:  # Basic validation that we got a real response
-                return response
-        except Exception as e:
-            print(f"Error getting LLM response for gameplay implications: {e}")
+        response = self._get_llm_response(
+            "gameplay_implications", 
+            prompt, 
+            {"ability": ability, "score": score}
+        )
         
-        # Fallback to structured response if LLM fails
+        if response and len(response) > 50:
+            return response
+        
+        # Fallback to structured response
+        logger.warning("Failed to get meaningful gameplay implications from LLM response")
         gameplay_descriptions = self.ability_scores.get_ability_score_descriptions("gameplay")
         basic_desc = gameplay_descriptions.get(ability.lower(), "No description available.")
         
@@ -348,40 +306,37 @@ class LLMAbilityAdvisor:
             advice = f"With a +{modifier} modifier, you excel at {ability.lower()}-based tasks. This is a major strength to leverage in gameplay."
             
         return f"{basic_desc}\n\nWith your score of {score} ({modifier:+d}): {advice}"
-    
+
     def generate_character_concept(self, preferences: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Generate complete character concept with suggested ability scores based on preferences.
-        
-        Args:
-            preferences: Dictionary of character preferences
-            
-        Returns:
-            dict: Complete character concept
-        """
+        """Generate complete character concept with suggested ability scores based on preferences."""
         # Format preferences into a string
         pref_str = "\n".join([f"- {key}: {value}" for key, value in preferences.items()])
         
-        prompt = self._create_prompt(
-            "generate a D&D character concept",
-            f"Player preferences:\n{pref_str}\n\n"
-            f"Generate a character concept including: concept_name, description, "
-            f"suggested_ability_scores, personality_traits, background, and class_suggestions. "
-            f"Return as valid JSON."
+        prompt = self._format_prompt(
+            "Generate character concept",
+            f"Player preferences:\n{pref_str}",
+            [
+                "Character concept name/title",
+                "Brief character description",
+                "Suggested ability scores (STR, DEX, CON, INT, WIS, CHA)",
+                "Personality traits",
+                "Background suggestion",
+                "Class suggestions"
+            ]
         )
         
-        try:
-            response = self.llm_service.generate(prompt)
-            
-            # Try to parse JSON from response
-            import re
-            json_match = re.search(r'\{.*\}', response, re.DOTALL)
-            if json_match:
-                return json.loads(json_match.group(0))
-        except Exception as e:
-            print(f"Error with LLM response: {e}")
+        response = self._get_llm_response(
+            "generate_concept", 
+            prompt, 
+            preferences
+        )
         
-        # Fallback to hardcoded response if LLM fails
+        concept = self._extract_json(response)
+        if concept and "concept_name" in concept and "suggested_ability_scores" in concept:
+            return concept
+        
+        # Fallback to hardcoded response
+        logger.warning("Failed to extract valid character concept from LLM response")
         return {
             "concept_name": "The Determined Scholar",
             "description": "A bookish individual who has left their studies to gain practical experience",

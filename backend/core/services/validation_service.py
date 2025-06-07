@@ -1,3 +1,8 @@
+# Base validation service that:
+# - Defines common validation patterns
+# - Provides hooks for domain-specific validation
+# - Integrates with CharacterContextService
+
 from typing import Dict, List, Any, Tuple
 from backend.core.character.character_validator import CharacterValidator
 from backend.core.services.class_validation_service import ClassValidationService

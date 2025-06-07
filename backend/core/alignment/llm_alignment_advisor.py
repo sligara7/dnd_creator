@@ -1,39 +1,42 @@
+import logging
+from typing import Dict, List, Any, Optional, Tuple
 
-class LLMAlignmentAdvisor(Alignment):
+from backend.core.alignment.alignment import Alignment
+from backend.core.advisor.base_advisor import BaseAdvisor
+
+logger = logging.getLogger(__name__)
+
+class LLMAlignmentAdvisor(Alignment, BaseAdvisor):
     """
     LLM-enhanced alignment advisor that provides nuanced, personalized
     alignment guidance using an LLM service.
     """
     
-    def __init__(self, llm_service=None, data_path: str = None):
+    def __init__(self, llm_service=None, data_path: str = None, cache_enabled=True):
         """
         Initialize the LLM alignment advisor.
         
         Args:
             llm_service: LLM service for alignment advice
             data_path: Optional path to alignment data files
+            cache_enabled: Whether to enable response caching
         """
-        super().__init__(data_path)
+        # Initialize Alignment parent
+        Alignment.__init__(self, data_path)
         
-        # Initialize LLM service
-        if llm_service is None:
-            self.llm_service = OllamaService()
-        else:
-            self.llm_service = llm_service
-
+        # Initialize BaseAdvisor parent with an alignment-specific system prompt
+        system_prompt = (
+            "You are a D&D 5e (2024 rules) alignment expert. "
+            "You understand the nuances of the nine alignments (Lawful Good through Chaotic Evil) "
+            "and how they affect character choices and development."
+        )
+        BaseAdvisor.__init__(self, llm_service, system_prompt, cache_enabled)
+    
     def get_all_alignments(self, suggest_for_backstory: bool = False,
                          backstory: str = None,
                          character_data: Dict[str, Any] = None) -> List[Dict[str, Any]]:
         """
         Return a list of all available alignments with LLM enhancements.
-        
-        Args:
-            suggest_for_backstory: If True, recommend alignments based on character backstory
-            backstory: Character backstory text
-            character_data: Optional character data for more context
-            
-        Returns:
-            List[Dict[str, Any]]: List of alignment data dictionaries
         """
         # Get base alignments first
         alignments = super().get_all_alignments(False)
@@ -44,18 +47,31 @@ class LLMAlignmentAdvisor(Alignment):
             
         try:
             # Create prompt for LLM
-            prompt = self._create_alignment_suggestion_prompt(backstory, character_data)
+            prompt = self._format_prompt(
+                "Suggest D&D alignments based on character backstory",
+                self._build_character_context(backstory, character_data),
+                [
+                    "List the most fitting D&D alignments in order of relevance",
+                    "For each alignment, provide a brief rationale explaining why it fits",
+                    "Consider contradictions or tensions in the backstory",
+                    "Note which traits suggest particular ethical or moral leanings"
+                ]
+            )
             
-            # Get response from LLM
-            llm_response = self.llm_service.generate_response(prompt)
+            # Get response from LLM using cached response if available
+            response = self._get_llm_response(
+                "alignment_suggestions", 
+                prompt, 
+                {"backstory": backstory[:100], "class": character_data.get("class", {}).get("name", "") if character_data else ""}
+            )
             
             # Parse the response to get recommended alignments
-            recommended_alignments = self._parse_alignment_recommendations(llm_response, alignments)
+            recommended_alignments = self._parse_alignment_recommendations(response, alignments)
             
             return recommended_alignments
             
         except Exception as e:
-            print(f"Error using LLM for alignment suggestions: {e}")
+            logger.error(f"Error using LLM for alignment suggestions: {e}")
             # Fall back to basic implementation
             return super().get_all_alignments(suggest_for_backstory, backstory, character_data)
 
@@ -63,13 +79,6 @@ class LLMAlignmentAdvisor(Alignment):
                                character_perspective: str = None) -> str:
         """
         Get a nuanced description of what an alignment means with LLM enhancement.
-        
-        Args:
-            alignment_name: Name of the alignment
-            character_perspective: Optional character perspective to contextualize the description
-            
-        Returns:
-            str: Enhanced description of the alignment
         """
         # Get the base description first
         base_description = super().get_alignment_description(alignment_name, None)
@@ -79,17 +88,29 @@ class LLMAlignmentAdvisor(Alignment):
             return base_description
             
         try:
-            # Create prompt for LLM
-            prompt = self._create_alignment_perspective_prompt(alignment_name, base_description, character_perspective)
+            prompt = self._format_prompt(
+                f"Explain {alignment_name} from a character's perspective",
+                f"Alignment: {alignment_name}\nStandard Description: {base_description}\n\nCharacter Perspective: {character_perspective}",
+                [
+                    "How this character would uniquely interpret this alignment",
+                    "How their background affects their view of this alignment",
+                    "Any tension between their worldview and the alignment's tenets",
+                    "Practical examples of how they might express this alignment"
+                ]
+            )
             
-            # Get response from LLM
-            llm_response = self.llm_service.generate_response(prompt)
+            # Get LLM response with caching
+            response = self._get_llm_response(
+                "alignment_perspective", 
+                prompt, 
+                {"alignment": alignment_name, "perspective": character_perspective[:100]}
+            )
             
             # Return the enhanced description
-            return llm_response if llm_response else base_description
+            return response if response else base_description
             
         except Exception as e:
-            print(f"Error using LLM for alignment description: {e}")
+            logger.error(f"Error using LLM for alignment description: {e}")
             # Fall back to basic implementation
             return super().get_alignment_description(alignment_name, character_perspective)
 
@@ -98,14 +119,6 @@ class LLMAlignmentAdvisor(Alignment):
                         character_data: Dict[str, Any] = None) -> Tuple[bool, Optional[str]]:
         """
         Check if an alignment is valid with LLM-enhanced conflict explanation.
-        
-        Args:
-            alignment: Alignment to validate
-            explain_conflicts: If True, provide explanation for conflicts
-            character_data: Optional character data to check for conflicts
-            
-        Returns:
-            Tuple[bool, Optional[str]]: Tuple containing validity and optional explanation
         """
         # Validate using base method
         is_valid, base_explanation = super().validate_alignment(alignment, False)
@@ -115,17 +128,30 @@ class LLMAlignmentAdvisor(Alignment):
             return (is_valid, base_explanation)
             
         try:
-            # Create prompt for LLM
-            prompt = self._create_alignment_conflict_prompt(alignment, character_data)
+            # Create prompt using base advisor method
+            prompt = self._format_prompt(
+                f"Analyze {alignment} alignment conflicts",
+                self._build_alignment_conflict_context(alignment, character_data),
+                [
+                    "Identify contradictions between alignment and character elements",
+                    "Point out where character elements reinforce this alignment",
+                    "Suggest ways to resolve any tensions through roleplay",
+                    "Note how these conflicts might create interesting character depth"
+                ]
+            )
             
-            # Get response from LLM
-            llm_response = self.llm_service.generate_response(prompt)
+            # Get response from LLM using the base advisor's method
+            response = self._get_llm_response(
+                "alignment_conflicts", 
+                prompt, 
+                {"alignment": alignment, "class": character_data.get("class", {}).get("name", "")}
+            )
             
             # Return the enhanced explanation
-            return (is_valid, llm_response if llm_response else base_explanation)
+            return (is_valid, response if response else base_explanation)
             
         except Exception as e:
-            print(f"Error using LLM for alignment conflict explanation: {e}")
+            logger.error(f"Error using LLM for alignment conflict explanation: {e}")
             # Fall back to basic implementation
             return super().validate_alignment(alignment, explain_conflicts, character_data)
 
@@ -135,15 +161,6 @@ class LLMAlignmentAdvisor(Alignment):
                                         key_traits: List[str] = None) -> List[str]:
         """
         Provide LLM-enhanced roleplay guidance based on alignment and character elements.
-        
-        Args:
-            alignment: Character alignment
-            character_class: Optional character class for tailored suggestions
-            background: Optional character background for tailored suggestions
-            key_traits: Optional list of character traits for further tailoring
-            
-        Returns:
-            List[str]: List of roleplay suggestions
         """
         # Get base suggestions first
         base_suggestions = super().get_alignment_roleplay_suggestions(alignment, character_class, background, key_traits)
@@ -153,16 +170,36 @@ class LLMAlignmentAdvisor(Alignment):
             return base_suggestions
             
         try:
-            # Create prompt for LLM
-            prompt = self._create_roleplay_suggestions_prompt(
-                alignment, character_class, background, key_traits
+            # Build character context
+            context = f"Alignment: {alignment}"
+            if character_class:
+                context += f"\nClass: {character_class}"
+            if background:
+                context += f"\nBackground: {background}"
+            if key_traits:
+                context += f"\nKey Traits: {', '.join(key_traits)}"
+            
+            # Create prompt using base advisor method
+            prompt = self._format_prompt(
+                f"Roleplay suggestions for {alignment} character",
+                context,
+                [
+                    "5-7 specific roleplay suggestions for this character",
+                    "Examples of dialogue or behavior that reflect the alignment",
+                    "Unique ways this character might express their alignment",
+                    "How their class abilities and background relate to their moral stance"
+                ]
             )
             
-            # Get response from LLM
-            llm_response = self.llm_service.generate_response(prompt)
+            # Get response from LLM using the base advisor's method
+            response = self._get_llm_response(
+                "roleplay_suggestions", 
+                prompt, 
+                {"alignment": alignment, "class": character_class or "", "background": background or ""}
+            )
             
-            # Parse the response
-            enhanced_suggestions = self._parse_roleplay_suggestions(llm_response)
+            # Parse the response using base advisor's helper method
+            enhanced_suggestions = self._extract_list_items(response)
             
             # Combine with base suggestions, removing duplicates
             all_suggestions = base_suggestions + [
@@ -173,7 +210,7 @@ class LLMAlignmentAdvisor(Alignment):
             return all_suggestions
             
         except Exception as e:
-            print(f"Error using LLM for roleplay suggestions: {e}")
+            logger.error(f"Error using LLM for roleplay suggestions: {e}")
             # Fall back to basic implementation
             return base_suggestions
 
@@ -181,25 +218,45 @@ class LLMAlignmentAdvisor(Alignment):
                                  narrative_events: List[str]) -> Dict[str, Any]:
         """
         Suggest how character alignment might evolve based on narrative events.
-        
-        Args:
-            character_data: Current character data
-            narrative_events: List of significant narrative events
-            
-        Returns:
-            Dict[str, Any]: Alignment evolution suggestions
         """
         current_alignment = character_data.get("alignment", "True Neutral")
         
         try:
-            # Create prompt for LLM
-            prompt = self._create_alignment_evolution_prompt(character_data, narrative_events)
+            # Build context for prompt
+            context = self._build_character_summary(character_data)
+            context += "\n\nRecent significant events in the character's journey:\n"
+            for i, event in enumerate(narrative_events, 1):
+                context += f"{i}. {event}\n"
             
-            # Get response from LLM
-            llm_response = self.llm_service.generate_response(prompt)
+            # Create prompt using base advisor method
+            prompt = self._format_prompt(
+                "Analyze potential alignment evolution",
+                context,
+                [
+                    "How these events might challenge or reinforce the character's alignment",
+                    "Potential alignment shifts that might occur (if any)",
+                    "Internal conflicts the character might experience",
+                    "How these shifts would manifest in behavior"
+                ]
+            )
+            
+            # Get response from LLM using the base advisor's method
+            response = self._get_llm_response(
+                "alignment_evolution", 
+                prompt, 
+                {"alignment": current_alignment, "events_count": len(narrative_events)}
+            )
             
             # Parse the response
-            evolution_data = self._parse_alignment_evolution(llm_response)
+            evolution_data = self._extract_json(response) or {}
+            
+            # Ensure expected structure or use default
+            if not evolution_data or not isinstance(evolution_data, dict):
+                evolution_data = {
+                    "possible_shifts": self._extract_alignment_shifts(response),
+                    "explanation": response[:500] if response else "",
+                    "narrative_impact": ""
+                }
             
             return {
                 "current_alignment": current_alignment,
@@ -209,7 +266,7 @@ class LLMAlignmentAdvisor(Alignment):
             }
             
         except Exception as e:
-            print(f"Error using LLM for alignment evolution: {e}")
+            logger.error(f"Error using LLM for alignment evolution: {e}")
             # Provide a basic response
             return {
                 "current_alignment": current_alignment,
@@ -222,23 +279,42 @@ class LLMAlignmentAdvisor(Alignment):
                             campaign_setting: str = None) -> Dict[str, Any]:
         """
         Generate an alignment-testing moral dilemma tailored to the character.
-        
-        Args:
-            character_data: Character data
-            campaign_setting: Optional campaign setting for context
-            
-        Returns:
-            Dict[str, Any]: Moral dilemma scenario with options
         """
         try:
-            # Create prompt for LLM
-            prompt = self._create_moral_dilemma_prompt(character_data, campaign_setting)
+            # Build context
+            context = self._build_character_summary(character_data)
+            if campaign_setting:
+                context += f"\nCampaign Setting: {campaign_setting}"
             
-            # Get response from LLM
-            llm_response = self.llm_service.generate_response(prompt)
+            # Create prompt using base advisor method
+            prompt = self._format_prompt(
+                "Create a moral dilemma scenario",
+                context,
+                [
+                    "A complex moral/ethical choice with no clearly correct answer",
+                    "3-4 distinct possible responses to the dilemma",
+                    "Alignment implications for each possible choice",
+                    "How this dilemma specifically challenges the character's alignment"
+                ]
+            )
             
-            # Parse the response
-            dilemma_data = self._parse_moral_dilemma(llm_response)
+            # Get response from LLM using the base advisor's method
+            response = self._get_llm_response(
+                "moral_dilemma", 
+                prompt, 
+                {"alignment": character_data.get("alignment", ""), "setting": campaign_setting or ""}
+            )
+            
+            # Parse the response using the base advisor's JSON extraction
+            dilemma_data = self._extract_json(response)
+            
+            # If JSON extraction failed, use structured text parsing
+            if not dilemma_data:
+                dilemma_data = {
+                    "scenario": self._get_scenario_from_text(response),
+                    "options": self._extract_list_items(response),
+                    "alignment_implications": {"raw_text": response}
+                }
             
             return {
                 "scenario": dilemma_data.get("scenario", ""),
@@ -248,7 +324,7 @@ class LLMAlignmentAdvisor(Alignment):
             }
             
         except Exception as e:
-            print(f"Error using LLM for moral dilemma generation: {e}")
+            logger.error(f"Error using LLM for moral dilemma generation: {e}")
             # Provide a basic response
             return {
                 "scenario": "Failed to generate a moral dilemma scenario.",
@@ -256,43 +332,32 @@ class LLMAlignmentAdvisor(Alignment):
                 "alignment_implications": {},
                 "setting_context": campaign_setting
             }
-
-    # Helper methods for LLM prompts
     
-    def _create_alignment_suggestion_prompt(self, backstory: str, character_data: Dict[str, Any] = None) -> str:
-        """Create a prompt for suggesting alignments based on backstory."""
-        prompt = f"Based on the following character backstory, recommend the most fitting D&D alignments (Lawful Good, Neutral Good, etc.).\n\nBackstory:\n{backstory}\n\n"
+    # Helper methods specific to alignment domain
+    
+    def _build_character_context(self, backstory: str, character_data: Dict[str, Any] = None) -> str:
+        """Build character context from backstory and data."""
+        context = f"Backstory:\n{backstory}\n\n"
         
         if character_data:
             # Add more context if available
             class_name = character_data.get("class", {}).get("name", "")
             species = character_data.get("species", {}).get("name", "")
             if class_name:
-                prompt += f"Character Class: {class_name}\n"
+                context += f"Character Class: {class_name}\n"
             if species:
-                prompt += f"Character Species: {species}\n"
+                context += f"Character Species: {species}\n"
             
             # Add personality traits if available
             personality = character_data.get("personality", {})
             traits = personality.get("traits", [])
             if traits:
-                prompt += f"Personality Traits: {', '.join(traits)}\n"
-        
-        prompt += "\nFor each recommended alignment, explain why it fits the character and rank them from most fitting to least fitting."
-        return prompt
+                context += f"Personality Traits: {', '.join(traits)}\n"
+                
+        return context
     
-    def _create_alignment_perspective_prompt(self, alignment_name: str, base_description: str, character_perspective: str) -> str:
-        """Create a prompt for contextualizing alignment description based on character perspective."""
-        return (
-            f"Alignment: {alignment_name}\n"
-            f"Standard Description: {base_description}\n\n"
-            f"Explain what the {alignment_name} alignment means from the perspective of a character who: {character_perspective}.\n\n"
-            "Focus on how this character might uniquely interpret the alignment based on their background and worldview. "
-            "Keep the explanation under 200 words and make it insightful and nuanced."
-        )
-    
-    def _create_alignment_conflict_prompt(self, alignment: str, character_data: Dict[str, Any]) -> str:
-        """Create a prompt for explaining potential alignment conflicts."""
+    def _build_alignment_conflict_context(self, alignment: str, character_data: Dict[str, Any]) -> str:
+        """Build context for alignment conflict analysis."""
         # Extract relevant character info
         class_name = character_data.get("class", {}).get("name", "Unknown class")
         background = character_data.get("background", {}).get("name", "Unknown background")
@@ -300,111 +365,52 @@ class LLMAlignmentAdvisor(Alignment):
         traits = personality.get("traits", [])
         ideals = personality.get("ideals", [])
         
-        prompt = (
-            f"Analyze potential conflicts or synergies between the {alignment} alignment and the following character elements:\n\n"
+        context = (
+            f"Alignment: {alignment}\n"
             f"Class: {class_name}\n"
             f"Background: {background}\n"
         )
         
         if traits:
-            prompt += f"Personality Traits: {', '.join(traits)}\n"
+            context += f"Personality Traits: {', '.join(traits)}\n"
         if ideals:
-            prompt += f"Ideals: {', '.join(ideals)}\n"
+            context += f"Ideals: {', '.join(ideals)}\n"
             
-        prompt += (
-            "\nIdentify any contradictions or tensions that might exist between this alignment and the character elements. "
-            "Also note where the alignment reinforces certain character aspects. "
-            "If there are conflicts, suggest how they might be resolved or explained through character development."
-        )
-            
-        return prompt
+        return context
     
-    def _create_roleplay_suggestions_prompt(self, alignment: str,
-                                        character_class: str = None,
-                                        background: str = None,
-                                        key_traits: List[str] = None) -> str:
-        """Create a prompt for generating roleplay suggestions."""
-        prompt = f"Provide specific roleplay suggestions for a {alignment} character"
-        
-        # Add specifics if available
-        if character_class:
-            prompt += f" of the {character_class} class"
-        if background:
-            prompt += f" with a {background} background"
-        if key_traits:
-            prompt += f" who has the following traits: {', '.join(key_traits)}"
-            
-        prompt += (
-            ".\n\nProvide 5-7 specific suggestions that:\n"
-            "1. Reflect the alignment's values and worldview\n"
-            "2. Are tailored to the character's specific elements (class, background, traits)\n"
-            "3. Could be used in practical roleplay situations\n"
-            "4. Include specific examples of behaviors, decisions, or dialogue\n\n"
-            "Format each suggestion as a clear, actionable statement."
-        )
-        
-        return prompt
-    
-    def _create_alignment_evolution_prompt(self, character_data: Dict[str, Any], narrative_events: List[str]) -> str:
-        """Create a prompt for suggesting alignment evolution."""
-        current_alignment = character_data.get("alignment", "True Neutral")
-        
-        # Extract relevant character info
+    def _build_character_summary(self, character_data: Dict[str, Any]) -> str:
+        """Create a summary of character data for prompts."""
+        # Extract basic character info
         name = character_data.get("name", "The character")
+        alignment = character_data.get("alignment", "Unknown alignment")
         class_name = character_data.get("class", {}).get("name", "Unknown class")
         background = character_data.get("background", {}).get("name", "Unknown background")
         
-        prompt = (
-            f"Character: {name}, a {class_name} with {background} background, currently {current_alignment} alignment.\n\n"
-            "Recent significant events in the character's journey:\n"
-        )
-        
-        # Add narrative events
-        for i, event in enumerate(narrative_events, 1):
-            prompt += f"{i}. {event}\n"
-            
-        prompt += (
-            "\nBased on these events and the character's current alignment, analyze:\n"
-            "1. How might these events challenge or reinforce the character's moral compass?\n"
-            "2. What potential alignment shifts might occur (if any)?\n"
-            "3. What internal conflicts might the character experience?\n"
-            "4. How would these shifts manifest in the character's behavior?\n\n"
-            "Provide a thoughtful analysis of possible alignment evolution with specific examples."
-        )
-        
-        return prompt
-    
-    def _create_moral_dilemma_prompt(self, character_data: Dict[str, Any], campaign_setting: str = None) -> str:
-        """Create a prompt for generating moral dilemmas."""
-        # Extract relevant character info
-        alignment = character_data.get("alignment", "True Neutral")
-        class_name = character_data.get("class", {}).get("name", "Unknown class")
-        
-        prompt = f"Create a moral dilemma scenario for a {alignment} {class_name} character that tests their alignment values."
-        
-        if campaign_setting:
-            prompt += f" The campaign is set in {campaign_setting}."
-            
-        prompt += (
-            "\n\nThe scenario should:\n"
-            "1. Present a complex moral or ethical choice with no clearly 'correct' answer\n"
-            "2. Be relevant to the character's class abilities and alignment\n"
-            "3. Include at least 3-4 distinct possible responses\n"
-            "4. Explain the potential alignment implications of each choice\n"
-            "5. Be specific enough to use in a D&D session\n\n"
-            "Provide the scenario, options, and analysis of alignment implications for each option."
-        )
-        
-        return prompt
-    
-    # Parser methods for LLM responses
+        return f"Character: {name}, a {alignment} {class_name} with {background} background."
     
     def _parse_alignment_recommendations(self, llm_response: str, 
                                       all_alignments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Parse LLM response for alignment recommendations."""
-        # This is a simplified parser - a real implementation would be more sophisticated
-        # For now, we'll just look for alignment names in the response
+        # Try to parse as JSON first using the base advisor method
+        parsed_data = self._extract_json(llm_response)
+        if parsed_data and isinstance(parsed_data, list):
+            result = []
+            for item in parsed_data:
+                alignment_name = item.get("alignment", "")
+                rationale = item.get("rationale", "")
+                
+                # Find the matching alignment data
+                for alignment_data in all_alignments:
+                    if alignment_data["name"] == alignment_name:
+                        new_data = alignment_data.copy()
+                        new_data["llm_rationale"] = rationale
+                        result.append(new_data)
+                        break
+            
+            if result:
+                return result
         
+        # Fallback to text-based parsing
         result = []
         alignment_names = [alignment["name"] for alignment in all_alignments]
         
@@ -421,27 +427,28 @@ class LLMAlignmentAdvisor(Alignment):
         found_alignments.sort(key=lambda x: x[1])
         
         # Create the ordered result
-        for alignment_name, _ in found_alignments:
+        for alignment_name, pos in found_alignments:
             # Find the full alignment data
             for alignment_data in all_alignments:
                 if alignment_data["name"] == alignment_name:
                     # Add LLM rationale
                     try:
                         # Extract text after the alignment name up to next alignment or paragraph
-                        start_pos = llm_response.find(alignment_name) + len(alignment_name)
+                        start_pos = pos + len(alignment_name)
                         end_pos = min(
                             [llm_response.find(other_name, start_pos) for other_name, _ in found_alignments if other_name != alignment_name and llm_response.find(other_name, start_pos) > 0] + 
                             [llm_response.find("\n\n", start_pos), len(llm_response)]
                         )
                         
                         rationale = llm_response[start_pos:end_pos].strip(" :\n-")
-                        alignment_data = alignment_data.copy()
-                        alignment_data["llm_rationale"] = rationale
-                    except:
-                        alignment_data = alignment_data.copy()
-                        alignment_data["llm_rationale"] = "Rationale could not be extracted."
+                        new_data = alignment_data.copy()
+                        new_data["llm_rationale"] = rationale
+                    except Exception as e:
+                        logger.warning(f"Error extracting rationale for {alignment_name}: {e}")
+                        new_data = alignment_data.copy()
+                        new_data["llm_rationale"] = "Rationale could not be extracted."
                     
-                    result.append(alignment_data)
+                    result.append(new_data)
                     break
         
         # If we didn't find any alignments, return the original list
@@ -450,145 +457,38 @@ class LLMAlignmentAdvisor(Alignment):
             
         return result
     
-    def _parse_roleplay_suggestions(self, llm_response: str) -> List[str]:
-        """Parse LLM response for roleplay suggestions."""
-        # Look for numbered lists, bullet points, or paragraphs
-        suggestions = []
-        
-        # Split by numbers at the start of lines
-        number_splits = []
-        for i in range(1, 10):  # Check for numbers 1-9
-            number_splits.extend([line.strip() for line in llm_response.split(f"\n{i}. ") if line.strip()])
-            number_splits.extend([line.strip() for line in llm_response.split(f"\n{i}) ") if line.strip()])
-            
-        # Split by bullet points
-        bullet_splits = []
-        for bullet in ["- ", "• "]:
-            bullet_splits.extend([line.strip() for line in llm_response.split(f"\n{bullet}") if line.strip()])
-            
-        # Combine and clean up results
-        all_splits = number_splits + bullet_splits
-        
-        if all_splits:
-            # Remove the first item if it's likely a header or intro text
-            if len(all_splits) > 1 and len(all_splits[0].split()) > 15:
-                all_splits = all_splits[1:]
-                
-            # Clean up items
-            for item in all_splits:
-                # Remove leading numbers or bullets
-                cleaned = item
-                for prefix in [f"{i}. " for i in range(1, 10)] + [f"{i}) " for i in range(1, 10)] + ["- ", "• "]:
-                    if cleaned.startswith(prefix):
-                        cleaned = cleaned[len(prefix):]
-                        
-                suggestions.append(cleaned)
-                
-        # If no structured items found, split by newlines
-        if not suggestions:
-            suggestions = [line.strip() for line in llm_response.split('\n') if line.strip() and len(line.strip()) > 10]
-            
-        return suggestions
-    
-    def _parse_alignment_evolution(self, llm_response: str) -> Dict[str, Any]:
-        """Parse LLM response for alignment evolution data."""
-        # This is a simplified parser
-        result = {
-            "possible_shifts": [],
-            "explanation": llm_response[:500],  # Truncate for explanation
-            "narrative_impact": ""
-        }
-        
-        # Look for alignment names in the response to identify possible shifts
+    def _extract_alignment_shifts(self, text: str) -> List[str]:
+        """Extract potential alignment shifts from text."""
         standard_alignments = [
             "Lawful Good", "Neutral Good", "Chaotic Good",
             "Lawful Neutral", "True Neutral", "Chaotic Neutral",
             "Lawful Evil", "Neutral Evil", "Chaotic Evil"
         ]
         
+        shifts = []
         for alignment in standard_alignments:
-            if alignment in llm_response:
+            if alignment in text:
                 # Check if it appears to be suggested as a shift
                 for shift_phrase in ["shift toward", "move toward", "change to", "become", "shift to"]:
-                    if f"{shift_phrase} {alignment}" in llm_response.lower():
-                        result["possible_shifts"].append(alignment)
+                    if f"{shift_phrase} {alignment}".lower() in text.lower():
+                        shifts.append(alignment)
                         break
-        
-        # Look for narrative impact section
-        impact_markers = ["narrative impact", "impact on the character", "behavioral changes"]
-        for marker in impact_markers:
-            if marker in llm_response.lower():
-                pos = llm_response.lower().find(marker)
-                result["narrative_impact"] = llm_response[pos:pos+300]  # Take a portion after the marker
-                break
-                
-        return result
+                        
+        return shifts
     
-    def _parse_moral_dilemma(self, llm_response: str) -> Dict[str, Any]:
-        """Parse LLM response for moral dilemma data."""
-        # This is a simplified parser
-        result = {
-            "scenario": "",
-            "options": [],
-            "alignment_implications": {}
-        }
-        
-        # Try to find a scenario section
-        scenario_markers = ["scenario:", "dilemma:", "situation:"]
-        for marker in scenario_markers:
-            if marker in llm_response.lower():
-                pos = llm_response.lower().find(marker) + len(marker)
-                end_pos = llm_response.find("\n\n", pos)
+    def _get_scenario_from_text(self, text: str) -> str:
+        """Extract scenario description from text response."""
+        # Look for scenario section
+        for marker in ["scenario:", "dilemma:", "situation:"]:
+            if marker in text.lower():
+                start_pos = text.lower().find(marker) + len(marker)
+                end_pos = text.find("\n\n", start_pos)
                 if end_pos > 0:
-                    result["scenario"] = llm_response[pos:end_pos].strip()
-                    break
+                    return text[start_pos:end_pos].strip()
         
-        # If no scenario found, use the first paragraph
-        if not result["scenario"]:
-            paragraphs = llm_response.split("\n\n")
-            if paragraphs:
-                result["scenario"] = paragraphs[0]
-                
-        # Look for options section
-        options_section = ""
-        options_markers = ["options:", "choices:", "possible actions:"]
-        for marker in options_markers:
-            if marker in llm_response.lower():
-                pos = llm_response.lower().find(marker) + len(marker)
-                end_pos = llm_response.find("\n\n", pos)
-                options_section = llm_response[pos:end_pos if end_pos > 0 else len(llm_response)].strip()
-                break
-        
-        # Parse options
-        if options_section:
-            # Try to split by numbering or bullet points
-            option_splits = []
-            for prefix in [r"\n\d+\. ", r"\n\d+\) ", r"\n- ", r"\n• "]:
-                import re
-                splits = re.split(prefix, options_section)
-                if len(splits) > 1:
-                    option_splits = splits[1:]  # Skip the first split which is before any marker
-                    break
+        # If no scenario marker found, use the first paragraph
+        paragraphs = text.split("\n\n")
+        if paragraphs:
+            return paragraphs[0].strip()
             
-            # If we found structured options
-            if option_splits:
-                result["options"] = [option.strip() for option in option_splits]
-            else:
-                # Fallback to paragraph splits
-                option_splits = options_section.split("\n")
-                result["options"] = [option.strip() for option in option_splits if option.strip()]
-                
-        # Look for alignment implications
-        implications_section = ""
-        implication_markers = ["alignment implications:", "implications:", "alignment consequences:"]
-        for marker in implication_markers:
-            if marker in llm_response.lower():
-                pos = llm_response.lower().find(marker) + len(marker)
-                implications_section = llm_response[pos:].strip()
-                break
-        
-        # Parse implications (simplified - just store the whole section)
-        if implications_section:
-            result["alignment_implications"] = {"text": implications_section}
-                
-        return result
+        return text[:200].strip()  # Fallback to first 200 chars

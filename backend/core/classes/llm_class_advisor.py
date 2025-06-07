@@ -1109,3 +1109,10 @@ class LLMClassAdvisor:
         collection["theme_mechanics"] = f"All subclasses share a connection to {theme}, manifesting differently for each class."
         
         return collection
+    
+    def _preprocess_class_data(self, class_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Standardize and clean up class data from LLM responses"""
+        # Handle spellcasting_type conversion
+        # Handle saving_throws naming convention
+        # Other standardizations
+        return processed_data

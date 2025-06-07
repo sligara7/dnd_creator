@@ -102,7 +102,80 @@ class CharacterClassManager:
         } for class_name in self.CORE_CLASSES}
     
     # ----- CORE CLASS METHODS -----
-    
+    def refine_class(self, class_id, refinement_request):
+        """Refine an existing class based on user feedback."""
+        if class_id not in self.custom_classes:
+            raise ValueError(f"No custom class found with ID: {class_id}")
+        
+        original_class = self.custom_classes[class_id]
+        
+        # Add to history before refining
+        if class_id not in self.class_history:
+            self.class_history[class_id] = []
+        self.class_history[class_id].append(original_class.to_dict())
+        
+        # Try to generate refined class
+        try:
+            prompt = self.llm_creator._create_prompt(
+                "refine a character class",
+                f"Original class: {json.dumps(original_class.to_dict())}\n"
+                f"Refinement request: {refinement_request}\n\n"
+                f"Update this class according to the refinement request while maintaining game balance. "
+                f"Preserve the core concept and only change what's necessary to address the request. "
+                f"Return the complete refined class as JSON with the same structure."
+            )
+            
+            response = self.llm_service.generate(prompt)
+            refined_data = self.llm_creator._extract_json(response)
+            
+            if not refined_data:
+                logger.warning("LLM response contained no valid JSON, using targeted modification approach")
+                # Fall back to targeted modification based on keywords
+                refined_data = self._perform_targeted_refinement(original_class.to_dict(), refinement_request)
+            
+            # Standardize and process the data
+            refined_data = self.llm_creator.standardize_class_data(refined_data)
+            
+            # Create refined class
+            refined_class = CustomClass(**refined_data)
+            
+            # Validate and apply corrections
+            is_valid, issues = self.validation_service.validate_class(refined_class)
+            if not is_valid:
+                refined_class = self.validation_service.apply_balance_corrections(refined_class, issues)
+                is_valid, issues = self.validation_service.validate_class(refined_class)
+            
+            # Add refinement metadata
+            refined_class.refinement_version = len(self.class_history[class_id])
+            refined_class.refinement_history = refinement_request
+            
+            # Store the refined class
+            self.custom_classes[refined_class.custom_id] = refined_class
+            
+            return refined_class, issues
+            
+        except Exception as e:
+            logger.error(f"Error refining class: {e}")
+            # Important: restore original class on failure
+            return original_class, [{"component": "refinement", 
+                                "issue": f"Error during refinement: {str(e)}",
+                                "severity": "error"}]
+
+    def revert_to_previous_version(self, class_id):
+        """Revert to previous version of a class."""
+        if class_id not in self.class_history or len(self.class_history[class_id]) < 2:
+            raise ValueError(f"No previous versions available for class: {class_id}")
+        
+        # Remove last version and get the previous one
+        current = self.class_history[class_id].pop()
+        previous = self.class_history[class_id][-1]
+        
+        # Recreate class from previous version
+        reverted_class = CustomClass(**previous)
+        self.custom_classes[reverted_class.custom_id] = reverted_class
+        
+        return reverted_class   
+
     def get_all_classes(self, filtered_by_concept=False, character_concept=None):
         """Get all available classes, optionally filtered by character concept."""
         standard_class_data = list(self.standard_classes.values())
@@ -139,7 +212,82 @@ class CharacterClassManager:
         return details
     
     # ----- CLASS CREATION & MODIFICATION -----
-    
+    def suggest_refinements(self, class_id: str) -> List[Dict[str, Any]]:
+        """Suggest specific refinements to improve a class."""
+        if class_id not in self.custom_classes:
+            raise ValueError(f"No custom class found with ID: {class_id}")
+            
+        custom_class = self.custom_classes[class_id]
+        is_valid, issues = self.validation_service.validate_class(custom_class, validation_level="strict")
+        
+        suggestions = []
+        
+        for issue in issues:
+            component = issue.get("component")
+            problem = issue.get("issue")
+            recommendation = issue.get("recommendation", "")
+            
+            suggestions.append({
+                "component": component,
+                "issue": problem,
+                "recommendation": recommendation,
+                "suggested_prompt": f"Refine the {component} to address: {problem}"
+            })
+        
+        return suggestions
+
+    def request_specific_change(self, class_id: str, component: str, change_description: str) -> CustomClass:
+        """
+        Apply a specific change to one component of a class.
+        
+        Args:
+            class_id: ID of the class to modify
+            component: Component to change (e.g. "name", "features", "hit_die")
+            change_description: Description of the requested change
+        
+        Returns:
+            Updated CustomClass
+        """
+        if class_id not in self.custom_classes:
+            raise ValueError(f"No custom class found with ID: {class_id}")
+            
+        original_class = self.custom_classes[class_id]
+        class_data = original_class.to_dict()
+        
+        prompt = self.llm_creator._create_prompt(
+            f"modify the {component} of this class",
+            f"Original class: {json.dumps(class_data)}\n"
+            f"Component to modify: {component}\n"
+            f"Requested change: {change_description}\n\n"
+            f"Update only the {component} component of this class according to the request. "
+            f"Return a JSON object containing only the updated {component} component."
+        )
+        
+        try:
+            response = self.llm_service.generate(prompt)
+            modification = self.llm_creator._extract_json(response)
+            
+            if modification and component in modification:
+                # Apply the change to the specific component
+                class_data[component] = modification[component]
+                
+                # Create updated class
+                updated_class = CustomClass(**class_data)
+                
+                # Validate
+                is_valid, issues = self.validation_service.validate_class(updated_class)
+                if issues:
+                    logger.warning(f"Validation issues after modifying {component}: {issues}")
+                
+                # Store regardless of validation issues (user can further refine)
+                self.custom_classes[updated_class.custom_id] = updated_class
+                return updated_class
+                
+        except Exception as e:
+            logger.error(f"Error modifying {component}: {e}")
+            
+        return original_class
+
     def create_custom_class(self, class_data):
         """Create a custom class from complete data, partial data, or just a concept."""
         # Create from concept or partial data

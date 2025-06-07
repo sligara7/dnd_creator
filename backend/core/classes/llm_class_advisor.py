@@ -1112,7 +1112,49 @@ class LLMClassAdvisor:
     
     def _preprocess_class_data(self, class_data: Dict[str, Any]) -> Dict[str, Any]:
         """Standardize and clean up class data from LLM responses"""
+        processed_data = class_data.copy()
+        
         # Handle spellcasting_type conversion
+        if "spellcasting_type" in processed_data and isinstance(processed_data["spellcasting_type"], str):
+            try:
+                processed_data["spellcasting_type"] = SpellcastingType(processed_data["spellcasting_type"])
+            except ValueError:
+                processed_data["spellcasting_type"] = SpellcastingType.NONE
+        
         # Handle saving_throws naming convention
-        # Other standardizations
+        if "saving_throws" in processed_data and "saving_throw_proficiencies" not in processed_data:
+            processed_data["saving_throw_proficiencies"] = processed_data.pop("saving_throws")
+        
+        # Ensure class features are using string keys
+        if "class_features" in processed_data:
+            features = {}
+            for level, level_features in processed_data["class_features"].items():
+                features[str(level)] = level_features
+            processed_data["class_features"] = features
+        
+        # Ensure primary_ability is a list
+        if "primary_ability" in processed_data and isinstance(processed_data["primary_ability"], str):
+            processed_data["primary_ability"] = [processed_data["primary_ability"]]
+        
         return processed_data
+    
+    def standardize_class_data(self, class_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Ensure class data follows a consistent format before CustomClass creation."""
+        std_data = self._preprocess_class_data(class_data)
+        
+        # Ensure all required fields exist
+        required_fields = ["name", "hit_die", "primary_ability", "saving_throw_proficiencies", "class_features"]
+        for field in required_fields:
+            if field not in std_data:
+                if field == "name":
+                    std_data[field] = "Custom Class"
+                elif field == "hit_die":
+                    std_data[field] = 8
+                elif field == "primary_ability":
+                    std_data[field] = ["Dexterity"]
+                elif field == "saving_throw_proficiencies":
+                    std_data[field] = ["Dexterity", "Constitution"]
+                elif field == "class_features":
+                    std_data[field] = {"1": [{"name": "Basic Feature", "description": "A basic class feature."}]}
+        
+        return std_data

@@ -11,23 +11,14 @@ import datetime
 import re
 from pathlib import Path
 
-try:
-    from backend.core.ability_scores.ability_scores import AbilityScores
-    from backend.core.ollama_service import OllamaService
-    from backend.core.creature.abstract_creature import AbstractCreature
-except ImportError:
-    # Fallback for development
-    class AbilityScores:
-        def calculate_modifier(self, score): return (score - 10) // 2
-    
-    class OllamaService:
-        def __init__(self): pass
-        def generate(self, prompt): return "LLM service not available"
-    
-    AbstractCreature = object
+from backend.core.advisor.base_advisor import BaseAdvisor
+from backend.core.ability_scores.ability_scores import AbilityScores
+from backend.core.creature.abstract_creature import AbstractCreature
 
+import logging
+logger = logging.getLogger(__name__)
 
-class LLMCreatureAdvisor:
+class LLMCreatureAdvisor(BaseAdvisor):
     """
     Provides AI-powered assistance for D&D creature creation and enhancement.
     
@@ -36,18 +27,20 @@ class LLMCreatureAdvisor:
     coherence, balance assessment, and flavor enhancement.
     """
 
-    def __init__(self, llm_service=None, data_path: str = None):
+    def __init__(self, llm_service=None, data_path: str = None, cache_enabled=True):
         """
         Initialize the LLM creature advisor.
         
         Args:
             llm_service: LLM service client for generating responses
             data_path: Optional path to creature data
+            cache_enabled: Whether to enable response caching
         """
-        # Initialize LLM service
-        self.llm_service = llm_service or OllamaService()
+        # Initialize base advisor with creature-specific system prompt
+        system_prompt = "You are a D&D 5e (2024 rules) creature design expert specializing in balanced monsters with compelling ecology and behavior."
+        super().__init__(llm_service, system_prompt, cache_enabled)
             
-        # Set up paths and data
+        # Set up paths and data - specific to creature advisor
         self.data_path = Path(data_path) if data_path else Path("backend/data/creatures")
         self.ability_scores = AbilityScores()
         self._load_reference_data()
@@ -80,7 +73,7 @@ class LLMCreatureAdvisor:
                 self.creature_type_data = {}
                 
         except Exception as e:
-            print(f"Error loading reference data: {e}")
+            logger.error(f"Error loading reference data: {e}")
             self.cr_data = {}
             self.environment_data = {}
             self.creature_type_data = {}
@@ -108,24 +101,27 @@ class LLMCreatureAdvisor:
         if campaign_theme:
             context += f"Campaign Theme: {campaign_theme}\n"
             
-        # Create prompt for creature generation
-        prompt = self._create_prompt(
-            "generate a thematic creature",
-            context + "\n"
-            "Create a coherent D&D creature that fits this ecological niche and campaign needs.\n"
-            "Include the following information in your response:\n"
-            "- Creature name and type (beast, monstrosity, etc.)\n"
-            "- Size and general appearance\n"
-            "- Key abilities and traits that make it interesting\n"
-            "- Attack options that reflect its nature\n"
-            "- Brief ecological role and behavior\n"
-            "- Challenge rating suggestion and reasoning\n\n"
-            "Make sure the creature is balanced for the target party level if provided."
+        # Create prompt using base advisor's format_prompt method
+        prompt = self._format_prompt(
+            "Generate a thematic creature",
+            context,
+            [
+                "Creature name and type (beast, monstrosity, etc.)",
+                "Size and general appearance", 
+                "Key abilities and traits that make it interesting",
+                "Attack options that reflect its nature",
+                "Brief ecological role and behavior",
+                "Challenge rating suggestion and reasoning"
+            ]
         )
         
         try:
-            # Generate creature concept with LLM
-            response = self.llm_service.generate(prompt)
+            # Generate creature concept with LLM using base advisor's method
+            response = self._get_llm_response(
+                "creature_create", 
+                prompt, 
+                {"ecology": ecology_description[:50], "party_level": party_level}
+            )
             
             # Parse the response into structured creature data
             creature_data = self._parse_creature_response(response)
@@ -143,6 +139,7 @@ class LLMCreatureAdvisor:
                 "raw_response": response
             }
         except Exception as e:
+            logger.error(f"Failed to generate creature concept: {str(e)}")
             return {
                 "success": False,
                 "error": f"Failed to generate creature concept: {str(e)}"
@@ -167,7 +164,7 @@ class LLMCreatureAdvisor:
         if not include_balance_feedback or not standard_validation.get("is_valid", False):
             return standard_validation
             
-        # Create prompt for balance assessment
+        # Create context for balance assessment
         creature_type = creature_data.get("type", "unknown")
         creature_cr = creature_data.get("challenge_rating", "unknown")
         
@@ -184,27 +181,32 @@ class LLMCreatureAdvisor:
         if abilities:
             context += "Abilities:\n"
             for ability in abilities:
-                context += f"- {ability.get('name')}: {ability.get('description')}\n"
+                context += f"- {ability.get('name')}: {ability.get('description', '')}\n"
                 
         if attacks:
             context += "Attacks:\n"
             for attack in attacks:
                 context += f"- {attack.get('name')}: {attack.get('damage', 'N/A')} damage\n"
                 
-        prompt = self._create_prompt(
-            "assess creature balance",
-            context + "\n"
-            "Analyze this creature for D&D 5e balance at the given CR. Provide:\n"
-            "1. Assessment of overall balance (underpowered, balanced, or overpowered)\n"
-            "2. Specific mechanics that may need adjustment\n"
-            "3. Thematic suggestions to maintain the creature concept while improving balance\n"
-            "4. Any synergies between abilities that might cause balance issues\n\n"
-            "Focus on maintaining the thematic elements while achieving appropriate challenge."
+        # Use base advisor's format_prompt method
+        prompt = self._format_prompt(
+            "Assess creature balance",
+            context,
+            [
+                "Overall balance assessment (underpowered, balanced, or overpowered)",
+                "Specific mechanics that may need adjustment",
+                "Thematic suggestions to maintain the concept while improving balance",
+                "Synergies between abilities that might cause balance issues"
+            ]
         )
         
         try:
-            # Generate balance assessment
-            response = self.llm_service.generate(prompt)
+            # Generate balance assessment using base advisor's method
+            response = self._get_llm_response(
+                "creature_validate", 
+                prompt, 
+                {"creature": creature_data.get("name", "unknown"), "cr": creature_cr}
+            )
             
             # Parse the assessment
             assessment = self._parse_balance_assessment(response)
@@ -215,6 +217,7 @@ class LLMCreatureAdvisor:
             
             return standard_validation
         except Exception as e:
+            logger.error(f"Error during balance assessment: {e}")
             standard_validation["balance_assessment"] = {"error": str(e)}
             standard_validation["has_balance_feedback"] = False
             return standard_validation
@@ -243,7 +246,7 @@ class LLMCreatureAdvisor:
                 "has_tactical_analysis": False
             }
             
-        # Create prompt for tactical analysis
+        # Create context for tactical analysis
         context = f"Creature: {creature_stats.get('name', 'Unnamed creature')}\n"
         context += f"Calculated CR: {base_cr}\n"
         context += f"HP: {creature_stats.get('hit_points', 0)}\n"
@@ -260,21 +263,25 @@ class LLMCreatureAdvisor:
         for i, member in enumerate(party_composition, 1):
             context += f"Member {i}: Level {member.get('level', '?')} {member.get('class', '?')}\n"
             
-        prompt = self._create_prompt(
-            "analyze tactical implications",
-            context + "\n"
-            "Analyze how this creature would challenge this specific party composition. Provide:\n"
-            "1. Overall assessment of the encounter difficulty (easy, medium, hard, deadly)\n"
-            "2. Tactical advantages the creature has against this party\n"
-            "3. Tactical advantages the party has against this creature\n"
-            "4. Suggested tactics for the creature to maximize effectiveness\n"
-            "5. Key party members who might struggle or excel in this encounter\n\n"
-            "Consider damage types, special abilities, and party composition in your analysis."
+        prompt = self._format_prompt(
+            "Analyze tactical implications",
+            context,
+            [
+                "Overall encounter difficulty (easy, medium, hard, deadly)",
+                "Tactical advantages the creature has against this party",
+                "Tactical advantages the party has against this creature",
+                "Suggested tactics for the creature to maximize effectiveness",
+                "Key party members who might struggle or excel"
+            ]
         )
         
         try:
-            # Generate tactical analysis
-            response = self.llm_service.generate(prompt)
+            # Generate tactical analysis using base advisor's method
+            response = self._get_llm_response(
+                "creature_tactics", 
+                prompt, 
+                {"creature": creature_stats.get("name", "unknown"), "party_size": len(party_composition)}
+            )
             
             # Parse the analysis
             tactical_analysis = self._parse_tactical_analysis(response)
@@ -285,6 +292,7 @@ class LLMCreatureAdvisor:
                 "has_tactical_analysis": True
             }
         except Exception as e:
+            logger.error(f"Error during tactical analysis: {e}")
             return {
                 "challenge_rating": base_cr,
                 "tactical_analysis": {"error": str(e)},
@@ -321,7 +329,7 @@ class LLMCreatureAdvisor:
             result["has_physical_description"] = False
             return result
             
-        # Create prompt for physical description
+        # Create context for physical description
         context = f"Hit Points: {hit_points}\n"
         context += f"Hit Dice: {hit_dice}\n"
         context += f"Constitution: {constitution}\n"
@@ -329,24 +337,31 @@ class LLMCreatureAdvisor:
         if resistances:
             context += f"Resistances: {', '.join(resistances)}\n"
             
-        prompt = self._create_prompt(
-            "describe physical resilience",
-            context + "\n"
-            "Create an evocative physical description that conveys this creature's toughness and resilience.\n"
-            "Focus on how its body structure, hide, scales, or other features reflect its durability.\n"
-            "If the creature has any damage resistances, describe the physical characteristics that explain these resistances.\n"
-            "The description should be vivid, specific, and help players visualize why this creature is so tough."
+        prompt = self._format_prompt(
+            "Describe physical resilience",
+            context,
+            [
+                "Evocative physical description that conveys toughness",
+                "How body structure reflects durability",
+                "Physical characteristics that explain damage resistances (if any)",
+                "Visual details that help players understand the creature's toughness"
+            ]
         )
         
         try:
-            # Generate physical description
-            response = self.llm_service.generate(prompt)
+            # Generate physical description using base advisor's method
+            response = self._get_llm_response(
+                "creature_resilience", 
+                prompt, 
+                {"hit_points": hit_points, "constitution": constitution}
+            )
             
             result["physical_description"] = response.strip()
             result["has_physical_description"] = True
             
             return result
         except Exception as e:
+            logger.error(f"Error generating physical description: {e}")
             result["physical_description"] = f"Error generating description: {str(e)}"
             result["has_physical_description"] = False
             return result
@@ -376,7 +391,7 @@ class LLMCreatureAdvisor:
                 "has_thematic_attacks": False
             }
             
-        # Create prompt for thematic attacks
+        # Create context for thematic attacks
         context = f"Creature Type: {creature_type}\n"
         context += f"Challenge Rating: {cr}\n"
         
@@ -394,24 +409,27 @@ class LLMCreatureAdvisor:
         else:
             context += "Attack Expectation: Multiple attacks with significant damage and special effects\n"
             
-        prompt = self._create_prompt(
-            "create thematic attacks",
-            context + "\n"
-            "Create unique and thematic attacks for this creature that go beyond standard options.\n"
-            "For each attack, provide:\n"
-            "1. Name of the attack\n"
-            "2. Attack type (melee, ranged, area)\n"
-            "3. Attack bonus or save DC\n"
-            "4. Damage amount and type\n"
-            "5. Any special effects or conditions\n"
-            "6. Brief flavor description\n\n"
-            "Create at least one standard attack and one signature ability that's unique to this creature.\n"
-            "Ensure the attacks are balanced for the creature's CR while remaining thematically interesting."
+        prompt = self._format_prompt(
+            "Create thematic attacks",
+            context,
+            [
+                "Name of each attack",
+                "Attack type (melee, ranged, area)",
+                "Attack bonus or save DC",
+                "Damage amount and type",
+                "Special effects or conditions",
+                "Brief flavor description",
+                "At least one signature ability unique to this creature"
+            ]
         )
         
         try:
-            # Generate thematic attacks
-            response = self.llm_service.generate(prompt)
+            # Generate thematic attacks using base advisor's method
+            response = self._get_llm_response(
+                "creature_attacks", 
+                prompt, 
+                {"creature_type": creature_type, "cr": str(cr)}
+            )
             
             # Parse the attacks
             thematic_attacks = self._parse_attack_response(response)
@@ -430,6 +448,7 @@ class LLMCreatureAdvisor:
                 "has_thematic_attacks": True
             }
         except Exception as e:
+            logger.error(f"Error generating thematic attacks: {e}")
             return {
                 "attacks": standard_attacks,
                 "thematic_error": str(e),
@@ -465,7 +484,7 @@ class LLMCreatureAdvisor:
         if not adaptation_level:
             adaptation_level = "moderate"
             
-        # Create prompt for environmental traits
+        # Create context for environmental traits
         context = f"Creature Type: {creature_type}\n"
         context += f"Environment: {environment}\n"
         
@@ -474,27 +493,29 @@ class LLMCreatureAdvisor:
             
         context += f"Adaptation Level: {adaptation_level}\n"
             
-        prompt = self._create_prompt(
-            "generate environmental traits",
-            context + "\n"
-            "Develop environmentally-appropriate traits and behaviors for this creature.\n"
-            "Consider how evolution in this environment would shape the creature's:\n"
-            "1. Sensory capabilities\n"
-            "2. Movement and locomotion\n"
-            "3. Hunting or foraging strategies\n"
-            "4. Defense mechanisms\n"
-            "5. Social behavior\n\n"
-            "For each trait, provide:\n"
-            "- Name of the trait\n"
-            "- Mechanical effect in game terms\n"
-            "- Brief description of how it manifests\n"
-            "- Ecological reasoning behind the adaptation\n\n"
-            "Create traits that are balanced but provide the creature with unique advantages in its environment."
+        prompt = self._format_prompt(
+            "Generate environmental traits",
+            context,
+            [
+                "Name of each trait",
+                "Mechanical effect in game terms",
+                "Brief description of how it manifests",
+                "Ecological reasoning behind the adaptation",
+                "How the trait provides unique advantages in the environment"
+            ]
         )
         
         try:
-            # Generate environmental traits
-            response = self.llm_service.generate(prompt)
+            # Generate environmental traits using base advisor's method
+            response = self._get_llm_response(
+                "creature_traits", 
+                prompt, 
+                {
+                    "creature_type": creature_type, 
+                    "environment": environment,
+                    "focus": behavioral_focus or "general"
+                }
+            )
             
             # Parse the traits
             environmental_traits = self._parse_traits_response(response)
@@ -513,59 +534,12 @@ class LLMCreatureAdvisor:
                 "has_environmental_traits": True
             }
         except Exception as e:
+            logger.error(f"Error generating environmental traits: {e}")
             return {
                 "traits": standard_traits,
                 "environmental_error": str(e),
                 "has_environmental_traits": False
             }
-
-    def export_creature_statblock(self, creature_data: Dict[str, Any],
-                                include_ecology: bool = False,
-                                encounter_suggestions: bool = False,
-                                format: str = 'pdf') -> Dict[str, Any]:
-        """
-        Export creature statblock with optional behavioral notes and ecology.
-        
-        Args:
-            creature_data: Base creature data
-            include_ecology: Whether to include ecology information
-            encounter_suggestions: Whether to include encounter suggestions
-            format: Output format ('pdf', 'json', 'markdown', etc.)
-            
-        Returns:
-            Dict[str, Any]: Enhanced statblock data and export information
-        """
-        # Start with base creature data
-        enhanced_data = creature_data.copy()
-        
-        # If requested, enhance the creature with ecology information
-        if include_ecology:
-            ecology_data = self._generate_ecology_description(creature_data)
-            enhanced_data["ecology"] = ecology_data
-        
-        # Format-specific export handling
-        export_result = {
-            "format": format,
-            "creature_id": creature_data.get("id", "unknown"),
-            "export_time": datetime.datetime.now().isoformat()
-        }
-        
-        if format.lower() == 'pdf':
-            # PDF generation would happen here
-            export_result["status"] = "PDF generation not implemented"
-        elif format.lower() == 'json':
-            export_result["data"] = enhanced_data
-            export_result["status"] = "success"
-        elif format.lower() == 'markdown':
-            export_result["data"] = self._convert_to_markdown(enhanced_data)
-            export_result["status"] = "success"
-        else:
-            export_result["status"] = f"Unsupported format: {format}"
-            
-        return {
-            "enhanced_creature": enhanced_data,
-            "export_result": export_result
-        }
 
     def generate_creature_illustration_prompt(self, creature_data: Dict[str, Any],
                                            style: str = "realistic") -> Dict[str, Any]:
@@ -579,7 +553,7 @@ class LLMCreatureAdvisor:
         Returns:
             Dict[str, Any]: Illustration prompt and details
         """
-        # Create prompt for illustration
+        # Create context for illustration
         context = f"Creature: {creature_data.get('name', 'Unnamed creature')}\n"
         context += f"Type: {creature_data.get('type', 'unknown')}\n"
         context += f"Size: {creature_data.get('size', 'medium')}\n\n"
@@ -602,24 +576,26 @@ class LLMCreatureAdvisor:
                 
         context += f"\nDesired Art Style: {style}\n"
             
-        prompt = self._create_prompt(
-            "generate illustration prompt",
-            context + "\n"
-            "Create a detailed prompt for an AI image generator to create an illustration of this creature.\n"
-            "The prompt should include:\n"
-            "1. Detailed physical description and anatomy\n"
-            "2. Color scheme and textures\n"
-            "3. Pose and action\n"
-            "4. Environmental elements and background\n"
-            "5. Lighting and mood\n"
-            "6. Artistic style specifications\n\n"
-            "The prompt should be highly detailed but focus on the most visually distinctive elements.\n"
-            "Format the prompt to be effective for image generation models like Stable Diffusion or Midjourney."
+        prompt = self._format_prompt(
+            "Generate illustration prompt",
+            context,
+            [
+                "Detailed physical description and anatomy",
+                "Color scheme and textures",
+                "Pose and action",
+                "Environmental elements and background",
+                "Lighting and mood",
+                "Artistic style specifications suitable for image generation"
+            ]
         )
         
         try:
-            # Generate illustration prompt
-            response = self.llm_service.generate(prompt)
+            # Generate illustration prompt using base advisor's method
+            response = self._get_llm_response(
+                "creature_illustration", 
+                prompt, 
+                {"creature": creature_data.get("name", "unknown"), "style": style}
+            )
             
             return {
                 "success": True,
@@ -627,6 +603,7 @@ class LLMCreatureAdvisor:
                 "style": style
             }
         except Exception as e:
+            logger.error(f"Error generating illustration prompt: {e}")
             return {
                 "success": False,
                 "error": f"Failed to generate illustration prompt: {str(e)}"
@@ -647,7 +624,7 @@ class LLMCreatureAdvisor:
         # Get intelligence from creature data or default to 10
         intelligence = creature_data.get("ability_scores", {}).get("intelligence", 10)
             
-        # Create prompt for tactics
+        # Create context for tactics
         context = f"Creature: {creature_data.get('name', 'Unnamed creature')}\n"
         context += f"Type: {creature_data.get('type', 'unknown')}\n"
         context += f"CR: {creature_data.get('challenge_rating', 'unknown')}\n"
@@ -670,24 +647,30 @@ class LLMCreatureAdvisor:
         if environment:
             context += f"\nEnvironment: {environment}\n"
             
-        prompt = self._create_prompt(
-            "suggest creature tactics",
-            context + "\n"
-            "Suggest realistic combat tactics for this creature based on its abilities and intelligence.\n"
-            "Consider:\n"
-            "1. Opening moves and initial approach\n"
-            "2. Primary targets and priorities\n"
-            "3. Effective use of abilities and attacks\n"
-            "4. Environmental tactics and positioning\n"
-            "5. Retreat conditions and self-preservation\n"
-            "6. Group tactics if applicable\n\n"
-            f"The tactics should reflect the creature's intelligence ({intelligence}) and instincts.\n"
-            "Provide tactical suggestions that a DM could implement to make this creature challenging but fair."
+        prompt = self._format_prompt(
+            "Suggest creature tactics",
+            context,
+            [
+                "Opening moves and initial approach",
+                "Primary targets and priorities",
+                "Effective use of abilities and attacks",
+                "Environmental tactics and positioning",
+                "Retreat conditions and self-preservation",
+                "Group tactics if applicable"
+            ]
         )
         
         try:
-            # Generate tactical suggestions
-            response = self.llm_service.generate(prompt)
+            # Generate tactical suggestions using base advisor's method
+            response = self._get_llm_response(
+                "creature_combat_tactics", 
+                prompt, 
+                {
+                    "creature": creature_data.get("name", "unknown"),
+                    "intelligence": intelligence,
+                    "environment": environment or "any"
+                }
+            )
             
             # Parse the tactics
             tactics = self._parse_tactics_response(response)
@@ -697,17 +680,14 @@ class LLMCreatureAdvisor:
                 "tactics": tactics
             }
         except Exception as e:
+            logger.error(f"Error suggesting combat tactics: {e}")
             return {
                 "success": False,
                 "error": f"Failed to suggest tactics: {str(e)}"
             }
 
-    # Helper methods
+    # Domain-specific helper methods - keeping these as is for creature functionality
 
-    def _create_prompt(self, task: str, content: str) -> str:
-        """Create a structured prompt for the LLM."""
-        return f"Task: {task}\n\n{content}"
-    
     def _validate_creature_mechanics(self, creature_data: Dict[str, Any]) -> Dict[str, Any]:
         """Perform basic mechanical validation of creature stats."""
         errors = []
@@ -874,119 +854,8 @@ class LLMCreatureAdvisor:
             })
         
         return traits
-    
-    def _generate_ecology_description(self, creature_data: Dict[str, Any]) -> Dict[str, str]:
-        """Generate ecological description for a creature."""
-        # Create prompt for ecology description
-        context = f"Creature: {creature_data.get('name', 'Unnamed creature')}\n"
-        context += f"Type: {creature_data.get('type', 'unknown')}\n"
-        context += f"Size: {creature_data.get('size', 'medium')}\n"
-        
-        # Include abilities or traits if available
-        traits = creature_data.get("traits", [])
-        if traits:
-            context += "\nTraits:\n"
-            for trait in traits[:3]:  # Limit to top 3 traits
-                context += f"- {trait.get('name', 'Unnamed trait')}\n"
-        
-        prompt = self._create_prompt(
-            "generate ecology description",
-            context + "\n"
-            "Create an ecological profile for this creature, including:\n"
-            "1. Habitat and preferred environment\n"
-            "2. Diet and hunting/feeding patterns\n"
-            "3. Social structure and behaviors\n"
-            "4. Reproduction and lifecycle\n"
-            "5. Interactions with other species\n\n"
-            "The description should be coherent with the creature's traits and abilities."
-        )
-        
-        try:
-            # Generate ecology description
-            response = self.llm_service.generate(prompt)
-            
-            # Extract sections
-            ecology = {
-                "habitat": "",
-                "diet": "",
-                "social": "",
-                "lifecycle": "",
-                "interactions": "",
-                "full_text": response
-            }
-            
-            # Try to extract habitat
-            habitat_match = re.search(r"(?:Habitat|Environment):\s*([^\n]+(?:\n[^\n]+)*?)(?:\n\n|\Z)", response, re.IGNORECASE)
-            if habitat_match:
-                ecology["habitat"] = habitat_match.group(1).strip()
-                
-            # Try to extract diet
-            diet_match = re.search(r"(?:Diet|Feeding):\s*([^\n]+(?:\n[^\n]+)*?)(?:\n\n|\Z)", response, re.IGNORECASE)
-            if diet_match:
-                ecology["diet"] = diet_match.group(1).strip()
-                
-            # Try to extract social behavior
-            social_match = re.search(r"(?:Social|Behavior):\s*([^\n]+(?:\n[^\n]+)*?)(?:\n\n|\Z)", response, re.IGNORECASE)
-            if social_match:
-                ecology["social"] = social_match.group(1).strip()
-            
-            return ecology
-            
-        except Exception as e:
-            return {
-                "error": f"Failed to generate ecology: {str(e)}",
-                "full_text": ""
-            }
-    
-    def _convert_to_markdown(self, creature_data: Dict[str, Any]) -> str:
-        """Convert creature data to markdown format."""
-        md = f"# {creature_data.get('name', 'Unnamed Creature')}\n\n"
-        md += f"*{creature_data.get('size', 'Medium')} {creature_data.get('type', 'beast')}*\n\n"
-        
-        md += f"**Armor Class:** {creature_data.get('armor_class', 10)}\n"
-        md += f"**Hit Points:** {creature_data.get('hit_points', 0)} ({creature_data.get('hit_dice', '1d8')})\n"
-        md += f"**Speed:** {creature_data.get('speed', '30 ft.')}\n\n"
-        
-        # Ability scores if available
-        ability_scores = creature_data.get("ability_scores", {})
-        if ability_scores:
-            md += "| STR | DEX | CON | INT | WIS | CHA |\n"
-            md += "|-----|-----|-----|-----|-----|-----|\n"
-            md += f"| {ability_scores.get('strength', 10)} | {ability_scores.get('dexterity', 10)} | "
-            md += f"{ability_scores.get('constitution', 10)} | {ability_scores.get('intelligence', 10)} | "
-            md += f"{ability_scores.get('wisdom', 10)} | {ability_scores.get('charisma', 10)} |\n\n"
-        
-        # Traits
-        traits = creature_data.get("traits", [])
-        if traits:
-            md += "## Traits\n\n"
-            for trait in traits:
-                md += f"***{trait.get('name', 'Unnamed Trait')}.*** {trait.get('description', '')}\n\n"
-        
-        # Actions
-        attacks = creature_data.get("attacks", [])
-        if attacks:
-            md += "## Actions\n\n"
-            for attack in attacks:
-                md += f"***{attack.get('name', 'Unnamed Attack')}.*** {attack.get('description', '')}\n\n"
-        
-        # Ecology if available
-        if "ecology" in creature_data:
-            ecology = creature_data["ecology"]
-            md += "## Ecology\n\n"
-            
-            if "habitat" in ecology and ecology["habitat"]:
-                md += f"**Habitat:** {ecology['habitat']}\n\n"
-                
-            if "diet" in ecology and ecology["diet"]:
-                md += f"**Diet:** {ecology['diet']}\n\n"
-                
-            if "social" in ecology and ecology["social"]:
-                md += f"**Social Behavior:** {ecology['social']}\n\n"
-        
-        return md
 
-    # Parser methods for LLM responses
+    # Parser methods for LLM responses - keeping these for creature-specific parsing
     
     def _parse_creature_response(self, response: str) -> Dict[str, Any]:
         """Parse LLM response for creature generation."""
@@ -1000,6 +869,12 @@ class LLMCreatureAdvisor:
             "challenge_rating": 1
         }
         
+        # Try to use BaseAdvisor's JSON extraction first
+        extracted_json = self._extract_json(response)
+        if extracted_json:
+            return {**creature_data, **extracted_json}
+        
+        # Otherwise fall back to regex parsing
         # Try to extract creature name
         name_match = re.search(r"(?:Creature name|Name):\s*([^\n]+)", response, re.IGNORECASE)
         if name_match:
@@ -1087,6 +962,11 @@ class LLMCreatureAdvisor:
             "suggestions": []
         }
         
+        # Try BaseAdvisor's JSON extraction first
+        extracted_json = self._extract_json(response)
+        if extracted_json:
+            return {**assessment, **extracted_json}
+            
         # Try to determine overall balance rating
         if "underpowered" in response.lower():
             assessment["overall_balance"] = "underpowered"
@@ -1095,30 +975,16 @@ class LLMCreatureAdvisor:
         else:
             assessment["overall_balance"] = "balanced"
             
-        # Extract issues and suggestions
-        lines = response.split("\n")
-        current_section = None
+        # Extract issues and suggestions - use BaseAdvisor's extract_list_items method
+        issues = self._extract_list_items(response, ["issue", "problem", "concern"])
+        suggestions = self._extract_list_items(response, ["suggest", "recommend", "adjustment"])
         
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-                
-            lower_line = line.lower()
-            
-            if "issue" in lower_line or "problem" in lower_line or "concern" in lower_line:
-                current_section = "issues"
-                continue
-            elif "suggest" in lower_line or "recommend" in lower_line or "adjustment" in lower_line:
-                current_section = "suggestions"
-                continue
-                
-            if current_section and line.startswith("-"):
-                assessment[current_section].append(line[1:].strip())
-            elif current_section and line[0].isdigit() and ". " in line:
-                point = line.split(". ", 1)[1]
-                assessment[current_section].append(point.strip())
-            
+        if issues:
+            assessment["issues"] = issues
+        
+        if suggestions:
+            assessment["suggestions"] = suggestions
+        
         return assessment
     
     def _parse_tactical_analysis(self, response: str) -> Dict[str, Any]:
@@ -1130,6 +996,11 @@ class LLMCreatureAdvisor:
             "tactical_suggestions": []
         }
         
+        # Try BaseAdvisor's JSON extraction first
+        extracted_json = self._extract_json(response)
+        if extracted_json:
+            return {**analysis, **extracted_json}
+            
         # Try to determine difficulty assessment
         if "easy" in response.lower():
             analysis["difficulty_assessment"] = "easy"
@@ -1140,43 +1011,30 @@ class LLMCreatureAdvisor:
         elif "deadly" in response.lower():
             analysis["difficulty_assessment"] = "deadly"
             
-        # Extract advantages and suggestions
-        lines = response.split("\n")
-        current_section = None
+        # Extract different sections using BaseAdvisor's extract_list_items method
+        creature_advantages = self._extract_list_items(response, ["creature advantage", "tactical advantage"])
+        party_advantages = self._extract_list_items(response, ["party advantage"])
+        tactical_suggestions = self._extract_list_items(response, ["tactic", "suggest", "recommend"])
         
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-                
-            lower_line = line.lower()
+        if creature_advantages:
+            analysis["creature_advantages"] = creature_advantages
+        
+        if party_advantages:
+            analysis["party_advantages"] = party_advantages
             
-            if ("creature advantage" in lower_line or 
-                "tactical advantage" in lower_line and "creature" in lower_line):
-                current_section = "creature_advantages"
-                continue
-            elif "party advantage" in lower_line:
-                current_section = "party_advantages"
-                continue
-            elif "tactic" in lower_line and ("suggest" in lower_line or "recommend" in lower_line):
-                current_section = "tactical_suggestions"
-                continue
-                
-            if current_section and (line.startswith("-") or (line[0].isdigit() and ". " in line)):
-                # Clean up the bullet point or numbering
-                point = line
-                if line.startswith("-"):
-                    point = line[1:].strip()
-                elif line[0].isdigit() and ". " in line:
-                    point = line.split(". ", 1)[1].strip()
-                    
-                analysis[current_section].append(point)
+        if tactical_suggestions:
+            analysis["tactical_suggestions"] = tactical_suggestions
                 
         return analysis
     
     def _parse_attack_response(self, response: str) -> List[Dict[str, Any]]:
         """Parse LLM response for thematic attacks."""
         attacks = []
+        
+        # Try BaseAdvisor's JSON extraction first
+        extracted_json = self._extract_json(response)
+        if extracted_json and isinstance(extracted_json, list):
+            return extracted_json
         
         # Look for attack blocks
         attack_blocks = re.findall(r"(?:Attack|Ability):\s*([^\n]+)(?:\n(?:[^\n]+))*", response, re.IGNORECASE)
@@ -1231,6 +1089,11 @@ class LLMCreatureAdvisor:
         """Parse LLM response for environmental traits."""
         traits = []
         
+        # Try BaseAdvisor's JSON extraction first
+        extracted_json = self._extract_json(response)
+        if extracted_json and isinstance(extracted_json, list):
+            return extracted_json
+        
         # Look for trait blocks
         trait_blocks = re.findall(r"(?:Trait|Ability|Adaptation):\s*([^\n]+)(?:\n(?:[^\n]+))*", response, re.IGNORECASE)
         if not trait_blocks:
@@ -1275,29 +1138,26 @@ class LLMCreatureAdvisor:
             "full_description": response
         }
         
-        # Try to extract opening moves
-        opening_match = re.search(r"(?:Opening|Initial|First)(?:[^:]*?):\s*([^\n]+(?:\n[^\n]+)*?)(?:\n\n|\Z)", response, re.IGNORECASE)
-        if opening_match:
-            tactics["opening_moves"] = opening_match.group(1).strip()
-            
-        # Try to extract targets
-        targets_match = re.search(r"(?:Target|Priority)(?:[^:]*?):\s*([^\n]+(?:\n[^\n]+)*?)(?:\n\n|\Z)", response, re.IGNORECASE)
-        if targets_match:
-            tactics["priority_targets"] = targets_match.group(1).strip()
-            
-        # Try to extract ability usage
-        ability_match = re.search(r"(?:Abilities|Special|Ability Usage)(?:[^:]*?):\s*([^\n]+(?:\n[^\n]+)*?)(?:\n\n|\Z)", response, re.IGNORECASE)
-        if ability_match:
-            tactics["ability_usage"] = ability_match.group(1).strip()
-            
-        # Try to extract positioning
-        position_match = re.search(r"(?:Position|Environmental|Terrain)(?:[^:]*?):\s*([^\n]+(?:\n[^\n]+)*?)(?:\n\n|\Z)", response, re.IGNORECASE)
-        if position_match:
-            tactics["positioning"] = position_match.group(1).strip()
-            
-        # Try to extract retreat conditions
-        retreat_match = re.search(r"(?:Retreat|Withdrawal|Flee)(?:[^:]*?):\s*([^\n]+(?:\n[^\n]+)*?)(?:\n\n|\Z)", response, re.IGNORECASE)
-        if retreat_match:
-            tactics["retreat_conditions"] = retreat_match.group(1).strip()
+        # Try BaseAdvisor's JSON extraction first
+        extracted_json = self._extract_json(response)
+        if extracted_json:
+            return {**tactics, **extracted_json}
+        
+        # Use BaseAdvisor's extract section method if available (added as helper)
+        sections = {
+            "opening_moves": ["Opening", "Initial", "First"],
+            "priority_targets": ["Target", "Priority"],
+            "ability_usage": ["Abilities", "Special", "Ability Usage"],
+            "positioning": ["Position", "Environmental", "Terrain"],
+            "retreat_conditions": ["Retreat", "Withdrawal", "Flee"]
+        }
+        
+        for key, terms in sections.items():
+            for term in terms:
+                pattern = rf"(?:{term})(?:[^:]*?):\s*([^\n]+(?:\n[^\n]+)*?)(?:\n\n|\Z)"
+                match = re.search(pattern, response, re.IGNORECASE)
+                if match:
+                    tactics[key] = match.group(1).strip()
+                    break
         
         return tactics

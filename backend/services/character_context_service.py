@@ -1,3 +1,9 @@
+# Central character state manager that:
+# - Maintains complete character state
+# - Broadcasts changes to interested components
+# - Coordinates validation across domains
+# - Preserves history for iterative refinement
+
 import logging
 import uuid
 from typing import Dict, Any, List, Callable, Optional, Set

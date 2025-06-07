@@ -1,11 +1,10 @@
-
 from typing import Dict, Any, List
 import re
 import json
 
-from backend.core.ollama_service import OllamaService
+from backend.core.advisor.base_advisor import BaseAdvisor
 
-class LLMFeatsAdvisor:
+class LLMFeatsAdvisor(BaseAdvisor):
     """
     Service for LLM-assisted feat recommendations and customization.
     
@@ -13,41 +12,17 @@ class LLMFeatsAdvisor:
     enhanced feat recommendations, narrative elements, and customization options.
     """
     
-    def __init__(self, llm_service=None):
-        """Initialize with optional custom LLM service"""
-        self.llm_service = llm_service or OllamaService()
-    
-    def _create_prompt(self, task, context):
+    def __init__(self, llm_service=None, cache_enabled=True):
         """
-        Create a well-structured prompt for the LLM.
+        Initialize the LLM feats advisor.
         
         Args:
-            task: The specific task (e.g., "recommend feats")
-            context: Relevant context information
-        
-        Returns:
-            str: Formatted prompt for the LLM
+            llm_service: LLM service client for generating responses
+            cache_enabled: Whether to enable response caching
         """
-        system_context = "You are a D&D 5e (2024 rules) character creation expert specializing in feats and character development."
-        instructions = f"Based on the following information, {task}. Focus on D&D 5e rules and character development."
-        
-        prompt = f"{system_context}\n\n{instructions}\n\nInformation: {context}"
-        return prompt
-    
-    def _extract_json(self, response):
-        """Extract JSON from LLM response."""
-        try:
-            json_match = re.search(r'\{.*\}', response, re.DOTALL)
-            if json_match:
-                return json.loads(json_match.group(0))
-            
-            # Try to extract an array response
-            json_array_match = re.search(r'\[.*\]', response, re.DOTALL)
-            if json_array_match:
-                return json.loads(json_array_match.group(0))
-        except Exception as e:
-            print(f"Error parsing LLM response: {e}")
-            return None
+        # Initialize base advisor with feats-specific system prompt
+        system_prompt = "You are a D&D 5e (2024 rules) character creation expert specializing in feats and character development."
+        super().__init__(llm_service, system_prompt, cache_enabled)
     
     def recommend_feats(self, character_data: Dict[str, Any], 
                       character_concept: str = None, 
@@ -78,23 +53,47 @@ class LLMFeatsAdvisor:
         if character_concept:
             context += f"Character Concept: {character_concept}\n"
         
-        prompt = self._create_prompt(
+        prompt = self._format_prompt(
             f"recommend the top {count} feats for this character",
-            context + "\n"
-            f"For each recommended feat, provide its name, a brief description, "
-            f"and an explanation of why it would be beneficial for this character. "
-            f"Consider mechanical synergies, character concept, and roleplaying opportunities. "
-            f"Return as a JSON array with 'name', 'description', and 'reason' keys."
+            context,
+            [
+                "For each recommended feat, provide its name",
+                "Include a brief description of each feat",
+                "Explain why it would be beneficial for this character",
+                "Consider mechanical synergies, character concept, and roleplaying opportunities"
+            ]
         )
         
         try:
-            response = self.llm_service.generate(prompt)
+            response = self._get_llm_response(
+                "feat_recommendations", 
+                prompt, 
+                {"class": class_name, "level": level, "count": count}
+            )
+            
+            # Extract JSON from response
             recommendations = self._extract_json(response)
             
             if recommendations:
                 return recommendations
+                
+            # If no JSON was found, try to parse the response
+            feats = []
+            feat_blocks = re.findall(r'(?:\d+\.\s+|\*\s+)([^:]+):', response, re.IGNORECASE) or []
+            
+            for i, feat_name in enumerate(feat_blocks[:count]):
+                feat = {
+                    "name": feat_name.strip(),
+                    "description": "Feat description unavailable",
+                    "reason": "Recommended for your character"
+                }
+                feats.append(feat)
+                
+            if feats:
+                return feats
+                
         except Exception as e:
-            print(f"Error getting feat recommendations: {e}")
+            self.logger.error(f"Error getting feat recommendations: {str(e)}")
         
         # Fallback
         return [{"name": "Alert", "description": "Always on watch", "reason": "Fallback recommendation"}]
@@ -115,24 +114,48 @@ class LLMFeatsAdvisor:
         class_name = character_data.get("class", {}).get("name", "Unknown")
         background = character_data.get("background", {}).get("name", "Unknown")
         
-        prompt = self._create_prompt(
+        context = f"Feat: {feat_name}\nDescription: {feat_desc}\n"
+        context += f"Character Class: {class_name}\nBackground: {background}\n"
+        
+        prompt = self._format_prompt(
             "create narrative elements for this feat",
-            f"Feat: {feat_name}\nDescription: {feat_desc}\n"
-            f"Character Class: {class_name}\nBackground: {background}\n\n"
-            f"Create narrative elements that describe how this feat manifests in the character's "
-            f"abilities, behavior, and fighting style. Include roleplay suggestions and storytelling "
-            f"opportunities. Return as JSON with 'manifestation', 'training_story', "
-            f"'roleplay_suggestions', and 'character_moments' keys."
+            context,
+            [
+                "Describe how this feat manifests in the character's abilities and behavior",
+                "Create a training story explaining how the character developed this ability",
+                "Provide roleplay suggestions for how to showcase this feat",
+                "Suggest dramatic character moments where this feat could shine"
+            ]
         )
         
         try:
-            response = self.llm_service.generate(prompt)
+            response = self._get_llm_response(
+                "feat_narrative", 
+                prompt, 
+                {"feat": feat_name, "class": class_name}
+            )
+            
+            # Extract JSON from response
             narrative = self._extract_json(response)
             
             if narrative:
                 return narrative
+                
+            # If no JSON was found, create a structured response manually
+            manifestation = re.search(r'(?:Manifestation|Abilities):(.*?)(?:\n\n|\n[A-Z])', response, re.IGNORECASE | re.DOTALL)
+            training = re.search(r'(?:Training|Story):(.*?)(?:\n\n|\n[A-Z])', response, re.IGNORECASE | re.DOTALL)
+            roleplay = re.search(r'(?:Roleplay|Suggestions):(.*?)(?:\n\n|\n[A-Z])', response, re.IGNORECASE | re.DOTALL)
+            moments = re.search(r'(?:Character|Moments|Dramatic):(.*?)(?:\n\n|\Z)', response, re.IGNORECASE | re.DOTALL)
+            
+            return {
+                "manifestation": manifestation.group(1).strip() if manifestation else f"The {feat_name} feat manifests as a unique ability.",
+                "training_story": training.group(1).strip() if training else "You developed this ability through practice.",
+                "roleplay_suggestions": roleplay.group(1).strip() if roleplay else "Consider how this ability affects your character.",
+                "character_moments": moments.group(1).strip() if moments else "This ability might shine in key dramatic moments."
+            }
+            
         except Exception as e:
-            print(f"Error generating narrative elements: {e}")
+            self.logger.error(f"Error generating narrative elements: {str(e)}")
         
         # Fallback
         return {
@@ -160,24 +183,36 @@ class LLMFeatsAdvisor:
         ability_scores = character_data.get("ability_scores", {})
         existing_feats = character_data.get("feats", [])
         
-        prompt = self._create_prompt(
+        context = f"Character Information:\nClass: {class_name}\nSubclass: {subclass}\n"
+        context += f"Current Level: {level}\nPlanning for: {future_levels} levels\n"
+        context += f"Ability Scores: {json.dumps(ability_scores)}\nExisting Feats: {', '.join(existing_feats)}\n"
+        
+        prompt = self._format_prompt(
             "suggest a feat development path",
-            f"Character Information:\nClass: {class_name}\nSubclass: {subclass}\n"
-            f"Current Level: {level}\nPlanning for: {future_levels} levels\n"
-            f"Ability Scores: {json.dumps(ability_scores)}\nExisting Feats: {', '.join(existing_feats)}\n\n"
-            f"Suggest a development path with feat choices for the next {future_levels} levels. "
-            f"For each suggested feat, explain how it builds on previous choices and advances the character concept. "
-            f"Return as JSON with a 'path' key containing an array of level recommendations."
+            context,
+            [
+                "Provide a step-by-step path for feat selection over the next few levels",
+                "Explain how each suggested feat builds on previous choices",
+                "Describe how the feat progression advances the character concept",
+                f"Include specific recommendations for the next {future_levels} levels"
+            ]
         )
         
         try:
-            response = self.llm_service.generate(prompt)
+            response = self._get_llm_response(
+                "feat_development_path", 
+                prompt, 
+                {"class": class_name, "level": level, "future_levels": future_levels}
+            )
+            
+            # Extract JSON from response
             path_data = self._extract_json(response)
             
             if path_data:
                 return path_data
+                
         except Exception as e:
-            print(f"Error generating development path: {e}")
+            self.logger.error(f"Error generating development path: {str(e)}")
         
         # Fallback
         return {
@@ -205,24 +240,36 @@ class LLMFeatsAdvisor:
         level = character_data.get("level", 1)
         ability_scores = character_data.get("ability_scores", {})
         
-        prompt = self._create_prompt(
+        context = f"Character Information:\nClass: {class_name}\nLevel: {level}\n"
+        context += f"Ability Scores: {json.dumps(ability_scores)}\n"
+        context += f"Feat: {feat_name}\nPrerequisites: {json.dumps(prerequisites)}\n"
+        
+        prompt = self._format_prompt(
             "suggest a path to qualify for this feat",
-            f"Character Information:\nClass: {class_name}\nLevel: {level}\n"
-            f"Ability Scores: {json.dumps(ability_scores)}\n"
-            f"Feat: {feat_name}\nPrerequisites: {json.dumps(prerequisites)}\n\n"
-            f"Suggest the most efficient path for this character to qualify for the {feat_name} feat. "
-            f"Consider ability score increases, multiclassing options, or other ways to meet prerequisites. "
-            f"Return as JSON with 'steps', 'estimated_levels', and 'alternative_approaches' keys."
+            context,
+            [
+                "Outline the most efficient steps to meet the feat prerequisites",
+                "Consider ability score increases, multiclassing options, or other methods",
+                "Estimate how many levels it would take to qualify",
+                "Suggest alternative approaches if the primary path is too lengthy"
+            ]
         )
         
         try:
-            response = self.llm_service.generate(prompt)
+            response = self._get_llm_response(
+                "feat_qualification_path", 
+                prompt, 
+                {"feat": feat_name, "class": class_name, "level": level}
+            )
+            
+            # Extract JSON from response
             path_data = self._extract_json(response)
             
             if path_data:
                 return path_data
+                
         except Exception as e:
-            print(f"Error generating qualification path: {e}")
+            self.logger.error(f"Error generating qualification path: {str(e)}")
         
         # Fallback
         return {
@@ -246,33 +293,42 @@ class LLMFeatsAdvisor:
         class_name = character_data.get("class", {}).get("name", "Unknown")
         background = character_data.get("background", {}).get("name", "Unknown")
         
-        prompt = self._create_prompt(
+        context = f"Character Information:\nClass: {class_name}\nBackground: {background}\n"
+        context += f"Feat Being Gained: {feat_name}\n"
+        
+        prompt = self._format_prompt(
             "create a narrative for gaining this feat",
-            f"Character Information:\nClass: {class_name}\nBackground: {background}\n"
-            f"Feat Being Gained: {feat_name}\n\n"
-            f"Create a short narrative describing how this character discovers and develops "
-            f"the abilities granted by the {feat_name} feat. This could involve training, "
-            f"a dramatic event, a revelation, or a combination of factors. The narrative "
-            f"should feel personal to this character's journey."
+            context,
+            [
+                "Write a short, evocative story describing how the character discovers this ability",
+                "Include details about the training, event, or revelation that leads to this feat",
+                "Make the narrative feel personal to this character's journey",
+                "Focus on storytelling rather than mechanics"
+            ]
         )
         
         try:
-            response = self.llm_service.generate(prompt)
+            response = self._get_llm_response(
+                "feat_transition_narrative", 
+                prompt, 
+                {"feat": feat_name, "class": class_name}
+            )
             
             # Remove any JSON formatting if present
             clean_response = re.sub(r'```.*?```', '', response, flags=re.DOTALL)
             clean_response = re.sub(r'\{.*?\}', '', clean_response, flags=re.DOTALL)
             
             return clean_response.strip()
+            
         except Exception as e:
-            print(f"Error generating transition narrative: {e}")
+            self.logger.error(f"Error generating transition narrative: {str(e)}")
         
         # Fallback
         return f"Through practice and determination, your character develops the abilities granted by the {feat_name} feat."
     
     def create_custom_feat(self, concept: str = None, 
                          character_data: Dict[str, Any] = None,
-                         partial_data: Dict[str, Any] = None) -> CustomFeat:
+                         partial_data: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         Create a custom feat based on a concept or partial data.
         
@@ -282,72 +338,67 @@ class LLMFeatsAdvisor:
             partial_data: Partial feat data to complete
             
         Returns:
-            CustomFeat: Custom feat instance
+            Dict[str, Any]: Custom feat data
         """
         if not concept and not partial_data:
             raise ValueError("Must provide either concept or partial_data")
         
         if partial_data:
-            context = f"Partial feat data: {json.dumps(partial_data)}\n\n"
+            context = f"Partial feat data: {json.dumps(partial_data)}\n"
             if character_data:
                 context += f"Character class: {character_data.get('class', {}).get('name', 'Unknown')}\n"
-                context += f"Character level: {character_data.get('level', 1)}\n\n"
-            context += "Create a complete, balanced feat by filling in missing attributes."
+                context += f"Character level: {character_data.get('level', 1)}\n"
             task = "complete this partial feat definition"
         else:
-            context = f"Feat concept: {concept}\n\n"
+            context = f"Feat concept: {concept}\n"
             if character_data:
                 context += f"Character class: {character_data.get('class', {}).get('name', 'Unknown')}\n"
-                context += f"Character level: {character_data.get('level', 1)}\n\n"
-            context += "Create a complete, balanced feat based on this concept."
+                context += f"Character level: {character_data.get('level', 1)}\n"
             task = "create a complete custom feat"
         
-        prompt = self._create_prompt(
+        prompt = self._format_prompt(
             task,
-            context + "\n\n"
-            "Include the following attributes in your JSON response:\n"
-            "- name: The feat name\n"
-            "- description: Complete description\n"
-            "- prerequisites: Object with any prerequisites\n"
-            "- benefits: Object with mechanical benefits\n"
-            "- category: Feat category\n"
-            "- rarity: Feat rarity\n"
-            "- narrative_elements: Object with roleplay elements\n"
-            "- training_required: Boolean for training requirement\n"
-            "- training_description: Description of training if required"
+            context,
+            [
+                "Create a complete, balanced feat definition",
+                "Include name, description, prerequisites, and benefits",
+                "Define the feat category and rarity",
+                "Add narrative elements and training requirements",
+                "Ensure the feat follows D&D 5e design principles"
+            ]
         )
         
         try:
-            response = self.llm_service.generate(prompt)
+            response = self._get_llm_response(
+                "custom_feat_creation", 
+                prompt, 
+                {"concept": concept or "partial", "class": character_data.get("class", {}).get("name", "Unknown") if character_data else "Any"}
+            )
+            
+            # Extract JSON from response
             feat_data = self._extract_json(response)
             
             if feat_data:
-                # Convert category and rarity strings to enums if needed
-                if "category" in feat_data and isinstance(feat_data["category"], str):
-                    try:
-                        feat_data["category"] = FeatCategory(feat_data["category"])
-                    except ValueError:
-                        feat_data["category"] = FeatCategory.CUSTOM
+                return feat_data
                 
-                if "rarity" in feat_data and isinstance(feat_data["rarity"], str):
-                    try:
-                        feat_data["rarity"] = FeatRarity(feat_data["rarity"])
-                    except ValueError:
-                        feat_data["rarity"] = FeatRarity.CUSTOM
-                
-                # Create the custom feat
-                return CustomFeat(**feat_data)
         except Exception as e:
-            print(f"Error creating custom feat: {e}")
+            self.logger.error(f"Error creating custom feat: {str(e)}")
         
         # Fallback
         name = (partial_data or {}).get("name", f"Custom{concept.split()[0].title() if concept else ''}Feat")
-        return CustomFeat(
-            name=name,
-            description=concept or "Custom feat",
-            category=FeatCategory.CUSTOM,
-            rarity=FeatRarity.CUSTOM
-        )
+        return {
+            "name": name,
+            "description": concept or "Custom feat",
+            "prerequisites": {},
+            "benefits": {},
+            "category": "CUSTOM",
+            "rarity": "UNCOMMON",
+            "narrative_elements": {
+                "flavor_text": "This feat represents a unique ability developed through training and experience."
+            },
+            "training_required": False,
+            "training_description": ""
+        }
     
     def analyze_feat_synergies(self, feat_list: List[str], 
                              character_data: Dict[str, Any] = None) -> Dict[str, Any]:
@@ -361,29 +412,40 @@ class LLMFeatsAdvisor:
         Returns:
             Dict[str, Any]: Synergy analysis
         """
-        context = f"Feats: {', '.join(feat_list)}\n\n"
+        context = f"Feats: {', '.join(feat_list)}\n"
         
         if character_data:
             class_name = character_data.get("class", {}).get("name", "Unknown")
             context += f"Character Class: {class_name}\n"
-            context += f"Character Level: {character_data.get('level', 1)}\n\n"
+            context += f"Character Level: {character_data.get('level', 1)}\n"
         
-        prompt = self._create_prompt(
+        prompt = self._format_prompt(
             "analyze feat synergies",
-            context + 
-            "Analyze how these feats synergize with each other. Identify combinations that work well together, "
-            "any redundancies, and how they complement each other mechanically and narratively. "
-            "Return as JSON with 'strong_synergies', 'weak_synergies', and 'overall_assessment' keys."
+            context,
+            [
+                "Identify combinations of feats that work well together",
+                "Note any redundancies or conflicting mechanics",
+                "Explain how the feats complement each other mechanically",
+                "Describe potential narrative synergies between the feats",
+                "Provide an overall assessment of the feat combination"
+            ]
         )
         
         try:
-            response = self.llm_service.generate(prompt)
+            response = self._get_llm_response(
+                "feat_synergy_analysis", 
+                prompt, 
+                {"feats": feat_list, "class": character_data.get("class", {}).get("name", "Unknown") if character_data else "Any"}
+            )
+            
+            # Extract JSON from response
             analysis = self._extract_json(response)
             
             if analysis:
                 return analysis
+                
         except Exception as e:
-            print(f"Error analyzing feat synergies: {e}")
+            self.logger.error(f"Error analyzing feat synergies: {str(e)}")
         
         # Fallback
         return {
@@ -391,4 +453,3 @@ class LLMFeatsAdvisor:
             "weak_synergies": ["No significant conflicts identified"],
             "overall_assessment": "The selected feats form a coherent build"
         }
-

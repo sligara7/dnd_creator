@@ -1,0 +1,1 @@
+# Core Character entity

@@ -1,0 +1,1 @@
+# AbilityScore value object

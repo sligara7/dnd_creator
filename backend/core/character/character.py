@@ -18,7 +18,7 @@ try:
     from backend.core.character.ability_scores import AbilityScores
     from backend.core.character.character_validator import CharacterValidator
     from backend.core.character.character_progression import CharacterProgression
-    from backend.core.character.character_exporter import CharacterExporter
+    from backend.core.services.data_exporter import CharacterExporter
 except ImportError:
     # Fallback for development
     AbstractCharacterClass = object

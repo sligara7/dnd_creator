@@ -20,7 +20,7 @@ from backend.core.character.character import Character
 from backend.core.character.character_validator import CharacterValidator
 from backend.core.character.ability_scores import AbilityScores
 from backend.core.character.character_progression import CharacterProgression
-from backend.core.character.character_exporter import CharacterExporter
+from backend.core.services.data_exporter import CharacterExporter
 from backend.core.character.llm_character_advisor import LLMCharacterAdvisor
 
 # Define what gets imported with "from backend.core.character import *"

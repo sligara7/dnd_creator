@@ -9,7 +9,7 @@ from pathlib import Path
 
 try:
     from backend.core.alignment.abstract_alignment import AbstractAlignment
-    from backend.core.ollama_service import OllamaService
+    from backend.core.services.ollama_service import OllamaService
 except ImportError:
     # Fallback for development
     AbstractAlignment = object

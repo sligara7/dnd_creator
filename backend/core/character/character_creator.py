@@ -20,7 +20,7 @@ except ImportError:
 from backend.core.character.ability_scores import AbilityScores
 from backend.core.character.character_validator import CharacterValidator
 from backend.core.character.llm_character_advisor import LLMCharacterAdvisor
-from backend.core.ollama_service import OllamaService
+from backend.core.services.ollama_service import OllamaService
 from backend.data.character_repository import CharacterRepository
 
 

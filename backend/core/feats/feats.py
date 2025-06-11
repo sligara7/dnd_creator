@@ -7,7 +7,7 @@ import re
 import uuid
 from enum import Enum
 
-from backend.core.ollama_service import OllamaService
+from backend.core.services.ollama_service import OllamaService
 from backend.core.feats.llm_feats_advisor import LLMFeatsAdvisor
 
 class FeatRarity(Enum):

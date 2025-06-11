@@ -5,7 +5,7 @@ from typing import Dict, List, Optional, Union, Any
 import re
 import json
 
-from backend.core.ollama_service import OllamaService
+from backend.core.services.ollama_service import OllamaService
 
 class LLMEquipmentAdvisor:
     """

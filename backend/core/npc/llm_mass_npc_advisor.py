@@ -16,7 +16,7 @@ from pathlib import Path
 try:
     from backend.core.npc.llm_npc_advisor import LLMNPCAdvisor
     from backend.core.npc.abstract_npc import AbstractNPCAdvisor
-    from backend.core.ollama_service import OllamaService
+    from backend.core.services.ollama_service import OllamaService
 except ImportError:
     # Fallback for development
     class LLMNPCAdvisor:

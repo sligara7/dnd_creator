@@ -9,7 +9,7 @@ from enum import Enum
 import math
 import importlib
 
-from backend.core.ollama_service import OllamaService
+from backend.core.services.ollama_service import OllamaService
 
 class EquipmentCategory(Enum):
     """Categories of equipment"""

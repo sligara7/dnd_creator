@@ -159,3 +159,44 @@ class ContentValidationService:
             ))
         
         return issues
+    
+def validate_domain_integrity() -> dict:
+    """
+    Validate that all domain components are properly integrated.
+    """
+    results = {
+        "valid": True,
+        "issues": [],
+        "component_status": {},
+        "implementation_completeness": {}
+    }
+    
+    for category, status in DOMAIN_COMPONENTS.items():
+        implemented = status.get("implemented", [])
+        missing = status.get("missing", [])
+        
+        results["component_status"][category] = {
+            "implemented_count": len(implemented),
+            "missing_count": len(missing),
+            "completion_rate": len(implemented) / (len(implemented) + len(missing)) * 100
+        }
+        
+        if missing:
+            results["valid"] = False
+            results["issues"].extend([
+                f"Missing {category} component: {component}" 
+                for component in missing
+            ])
+    
+    # Calculate overall completeness
+    total_implemented = sum(len(s.get("implemented", [])) for s in DOMAIN_COMPONENTS.values())
+    total_missing = sum(len(s.get("missing", [])) for s in DOMAIN_COMPONENTS.values())
+    
+    results["implementation_completeness"] = {
+        "total_components": total_implemented + total_missing,
+        "implemented": total_implemented,
+        "missing": total_missing,
+        "completion_percentage": (total_implemented / (total_implemented + total_missing)) * 100
+    }
+    
+    return results

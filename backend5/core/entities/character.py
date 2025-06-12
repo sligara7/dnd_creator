@@ -1,16 +1,57 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Set, Optional, Any
 from datetime import datetime
-from .character_state import CharacterState
-
-from ..value_objects.proficiency import ProficiencyLevel
 from ..value_objects.ability_score import AbilityScore
+from ..value_objects.proficiency import ProficiencyLevel
 from ..value_objects.alignment import Alignment
+from .generated_content import GeneratedContent
+
+
+@dataclass
+class CharacterState:
+    """
+    Pure entity representing character's current gameplay state.
+    Contains only data and simple getters - no business logic.
+    """
+    
+    # Health and Resources
+    current_hit_points: int = 0
+    temporary_hit_points: int = 0
+    hit_dice_remaining: Dict[str, int] = field(default_factory=dict)
+    
+    # Spellcasting State
+    spell_slots_remaining: Dict[int, int] = field(default_factory=dict)
+    spells_prepared: List[str] = field(default_factory=list)
+    
+    # Action Economy
+    actions_used: int = 0
+    bonus_actions_used: int = 0
+    reactions_used: int = 0
+    
+    # Conditions and Effects
+    active_conditions: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    exhaustion_level: int = 0
+    
+    # Equipment State
+    armor: Optional[str] = None
+    shield: bool = False
+    attuned_items: List[str] = field(default_factory=list)
+    
+    # Currency
+    currency: Dict[str, int] = field(default_factory=lambda: {
+        "copper": 0, "silver": 0, "electrum": 0, "gold": 0, "platinum": 0
+    })
+    
+    # Session Tracking
+    last_long_rest: Optional[datetime] = None
+    last_short_rest: Optional[datetime] = None
+    notes: Dict[str, str] = field(default_factory=dict)
+
 
 @dataclass
 class Character:
     """
-    Core Character entity representing a D&D 5e character.
+    Core Character entity with generated content support for the Creative Content Framework.
     
     This is the heart of the domain model - a clean representation of what
     a character IS. It combines immutable character build aspects with 
@@ -55,13 +96,13 @@ class Character:
     background_feature: str = ""
     feats: List[str] = field(default_factory=list)
     
+    # === GENERATED CONTENT SUPPORT ===
+    generated_content: List[GeneratedContent] = field(default_factory=list)
+    custom_content_ids: Set[str] = field(default_factory=set)  # Track which content is custom
+    
     # === CURRENT STATE ===
-    current_hit_points: int = 0
     maximum_hit_points: int = 0
-    temporary_hit_points: int = 0
     experience_points: int = 0
-
-    # === Gameplay State ===
     state: CharacterState = field(default_factory=CharacterState)
     
     # === SPELLCASTING ===
@@ -121,11 +162,9 @@ class Character:
         return bool(self.spellcasting_classes)
     
     @property
-    def armor_class_base(self) -> int:
-        """Get base armor class (10 + Dex modifier)."""
-        return 10 + self.get_ability_modifier("dexterity")
-    
-    # === STATISTICAL CALCULATIONS ===
+    def has_generated_content(self) -> bool:
+        """Check if character uses any generated content."""
+        return len(self.generated_content) > 0
     
     @property
     def armor_class(self) -> int:
@@ -145,61 +184,46 @@ class Character:
         return 10 + self.get_skill_modifier("perception")
     
     @property
-    def passive_investigation(self) -> int:
-        """Calculate passive Investigation score."""
-        return 10 + self.get_skill_modifier("investigation")
-    
-    @property
-    def passive_insight(self) -> int:
-        """Calculate passive Insight score."""
-        return 10 + self.get_skill_modifier("insight")
-    
-    @property
     def speed(self) -> int:
         """Get character's movement speed."""
         # Base speed from species, modified by conditions/equipment
         base_speed = self._get_base_speed()
-        # Apply modifications
         return base_speed
     
-    def get_attack_bonus(self, weapon_type: str = "melee") -> int:
-        """Calculate attack bonus for weapon type."""
-        if weapon_type == "melee":
-            ability_mod = max(
-                self.get_ability_modifier("strength"),
-                self.get_ability_modifier("dexterity")  # finesse weapons
-            )
-        else:  # ranged
-            ability_mod = self.get_ability_modifier("dexterity")
-        
-        return ability_mod + self.proficiency_bonus
+    # === GENERATED CONTENT METHODS ===
     
-    def get_spell_attack_bonus(self) -> int:
-        """Calculate spell attack bonus."""
-        if not self.spellcasting_ability:
-            return 0
-        ability_mod = self.get_ability_modifier(self.spellcasting_ability)
-        return ability_mod + self.proficiency_bonus
+    def add_generated_content(self, content: GeneratedContent) -> None:
+        """Add generated content to character."""
+        if content not in self.generated_content:
+            self.generated_content.append(content)
+            self.custom_content_ids.add(content.id)
+            self.last_modified = datetime.now()
     
-    def get_spell_save_dc(self) -> int:
-        """Calculate spell save DC."""
-        if not self.spellcasting_ability:
-            return 8
-        ability_mod = self.get_ability_modifier(self.spellcasting_ability)
-        return 8 + self.proficiency_bonus + ability_mod
-
+    def remove_generated_content(self, content_id: str) -> bool:
+        """Remove generated content from character."""
+        for i, content in enumerate(self.generated_content):
+            if content.id == content_id:
+                del self.generated_content[i]
+                self.custom_content_ids.discard(content_id)
+                self.last_modified = datetime.now()
+                return True
+        return False
+    
+    def get_generated_content_by_type(self, content_type: str) -> List[GeneratedContent]:
+        """Get all generated content of a specific type."""
+        return [
+            content for content in self.generated_content 
+            if content.content_type.value == content_type
+        ]
+    
+    def has_custom_content(self, content_id: str) -> bool:
+        """Check if character uses specific custom content."""
+        return content_id in self.custom_content_ids
+    
     # === DATA ACCESS METHODS ===
     
     def get_ability_score(self, ability: str) -> AbilityScore:
-        """
-        Get the AbilityScore object for a specific ability.
-        
-        Args:
-            ability: Name of ability (full name or abbreviation)
-            
-        Returns:
-            AbilityScore object for the requested ability
-        """
+        """Get the AbilityScore object for a specific ability."""
         ability_map = {
             "strength": self.strength, "str": self.strength,
             "dexterity": self.dexterity, "dex": self.dexterity,
@@ -227,15 +251,7 @@ class Character:
         return self.character_classes.get(class_name, 0)
     
     def get_skill_modifier(self, skill: str) -> int:
-        """
-        Calculate skill modifier including proficiency bonus.
-        
-        Args:
-            skill: Name of the skill
-            
-        Returns:
-            Total skill modifier (ability modifier + proficiency if applicable)
-        """
+        """Calculate skill modifier including proficiency bonus."""
         # Map skills to their associated abilities
         skill_abilities = {
             "acrobatics": "dexterity",
@@ -268,107 +284,17 @@ class Character:
         return base_modifier + proficiency_bonus
     
     def get_saving_throw_modifier(self, ability: str) -> int:
-        """
-        Calculate saving throw modifier including proficiency bonus.
-        
-        Args:
-            ability: Name of the ability for the saving throw
-            
-        Returns:
-            Total saving throw modifier
-        """
+        """Calculate saving throw modifier including proficiency bonus."""
         base_modifier = self.get_ability_modifier(ability)
         proficiency_level = self.saving_throw_proficiencies.get(ability, ProficiencyLevel.NONE)
         proficiency_bonus = self.proficiency_bonus * proficiency_level.multiplier
         
         return base_modifier + proficiency_bonus
     
-    def has_proficiency(self, proficiency_type: str, item: str) -> bool:
-        """
-        Check if character has proficiency in a specific item.
-        
-        Args:
-            proficiency_type: Type of proficiency ('skill', 'weapon', 'armor', 'tool', 'language')
-            item: Specific item to check
-            
-        Returns:
-            True if character has the proficiency
-        """
-        if proficiency_type == "skill":
-            return self.skill_proficiencies.get(item, ProficiencyLevel.NONE) != ProficiencyLevel.NONE
-        elif proficiency_type == "weapon":
-            return item in self.weapon_proficiencies
-        elif proficiency_type == "armor":
-            return item in self.armor_proficiencies
-        elif proficiency_type == "tool":
-            return self.tool_proficiencies.get(item, ProficiencyLevel.NONE) != ProficiencyLevel.NONE
-        elif proficiency_type == "language":
-            return item in self.languages
-        return False
-    
-    def get_spell_slots_for_level(self, spell_level: int) -> int:
-        """Get number of spell slots for a specific spell level."""
-        return self.spell_slots.get(spell_level, 0)
-    
-    def has_spell(self, spell_name: str, class_name: Optional[str] = None) -> bool:
-        """
-        Check if character knows a specific spell.
-        
-        Args:
-            spell_name: Name of the spell
-            class_name: Optional class to check (if None, checks all classes)
-            
-        Returns:
-            True if character knows the spell
-        """
-        if class_name:
-            return spell_name in self.spells_known.get(class_name, [])
-        
-        # Check all classes
-        for spells in self.spells_known.values():
-            if spell_name in spells:
-                return True
-        return False
-    
-    def has_feat(self, feat_name: str) -> bool:
-        """Check if character has a specific feat."""
-        return feat_name in self.feats
-    
-    def get_class_features_for_class(self, class_name: str) -> Dict[str, Any]:
-        """Get all class features for a specific class."""
-        return self.class_features.get(class_name, {})
-    
-    def has_class_feature(self, feature_name: str, class_name: Optional[str] = None) -> bool:
-        """
-        Check if character has a specific class feature.
-        
-        Args:
-            feature_name: Name of the feature
-            class_name: Optional class to check (if None, checks all classes)
-            
-        Returns:
-            True if character has the feature
-        """
-        if class_name:
-            class_features = self.class_features.get(class_name, {})
-            return feature_name in class_features
-        
-        # Check all classes
-        for features in self.class_features.values():
-            if feature_name in features:
-                return True
-        return False
-    
     # === MUTATION METHODS (for use by domain services) ===
     
     def update_ability_score(self, ability: str, new_score: AbilityScore) -> None:
-        """
-        Update an ability score.
-        
-        Args:
-            ability: Name of ability to update
-            new_score: New AbilityScore object
-        """
+        """Update an ability score."""
         ability_attrs = {
             "strength": "strength", "str": "strength",
             "dexterity": "dexterity", "dex": "dexterity", 
@@ -415,43 +341,14 @@ class Character:
         
         self.last_modified = datetime.now()
     
-    def add_feat(self, feat_name: str) -> None:
-        """Add a feat to the character."""
-        if feat_name not in self.feats:
-            self.feats.append(feat_name)
-            self.last_modified = datetime.now()
-    
-    def add_spell(self, class_name: str, spell_name: str) -> None:
-        """Add a spell to a specific class's spell list."""
-        if class_name not in self.spells_known:
-            self.spells_known[class_name] = []
-        
-        if spell_name not in self.spells_known[class_name]:
-            self.spells_known[class_name].append(spell_name)
-            self.last_modified = datetime.now()
-    
-    def set_spell_slots(self, spell_level: int, slots: int) -> None:
-        """Set number of spell slots for a specific level."""
-        self.spell_slots[spell_level] = slots
-        self.last_modified = datetime.now()
-    
-    def add_class_feature(self, class_name: str, feature_name: str, feature_data: Any) -> None:
-        """Add a class feature."""
-        if class_name not in self.class_features:
-            self.class_features[class_name] = {}
-        
-        self.class_features[class_name][feature_name] = feature_data
-        self.last_modified = datetime.now()
-    
     # === UTILITY METHODS ===
     
+    def _get_base_speed(self) -> int:
+        """Get base speed from species (would be implemented by domain services)."""
+        return 30  # Default human speed
+    
     def to_dict(self) -> Dict[str, Any]:
-        """
-        Convert character to dictionary representation.
-        
-        Returns:
-            Dictionary containing all character data
-        """
+        """Convert character to dictionary representation."""
         return {
             # Basic identity
             "name": self.name,
@@ -478,47 +375,28 @@ class Character:
                 "charisma": self.charisma.total_score
             },
             
-            # Proficiencies
-            "skill_proficiencies": {k: v.name for k, v in self.skill_proficiencies.items()},
-            "saving_throw_proficiencies": {k: v.name for k, v in self.saving_throw_proficiencies.items()},
-            "weapon_proficiencies": list(self.weapon_proficiencies),
-            "armor_proficiencies": list(self.armor_proficiencies),
-            "tool_proficiencies": {k: v.name for k, v in self.tool_proficiencies.items()},
-            "languages": list(self.languages),
-            
-            # Features
-            "species_traits": self.species_traits,
-            "class_features": self.class_features,
-            "background_feature": self.background_feature,
-            "feats": self.feats,
-            
-            # Current state
-            "current_hit_points": self.current_hit_points,
-            "maximum_hit_points": self.maximum_hit_points,
-            "temporary_hit_points": self.temporary_hit_points,
-            "experience_points": self.experience_points,
-            
-            # Spellcasting
-            "spellcasting_ability": self.spellcasting_ability,
-            "spellcasting_classes": self.spellcasting_classes,
-            "ritual_casting_classes": self.ritual_casting_classes,
-            "spell_slots": self.spell_slots,
-            "spells_known": self.spells_known,
-            
-            # Equipment
-            "equipment": self.equipment,
-            
-            # Metadata
-            "created_at": self.created_at.isoformat(),
-            "last_modified": self.last_modified.isoformat(),
-            "player_name": self.player_name,
-            "campaign": self.campaign,
-            "sources_used": list(self.sources_used),
+            # Generated content
+            "generated_content": [content.to_dict() for content in self.generated_content],
+            "custom_content_ids": list(self.custom_content_ids),
             
             # Computed values
             "total_level": self.total_level,
             "primary_class": self.primary_class,
-            "proficiency_bonus": self.proficiency_bonus
+            "proficiency_bonus": self.proficiency_bonus,
+            "has_generated_content": self.has_generated_content
+        }
+    
+    def get_character_summary(self) -> Dict[str, Any]:
+        """Get a summary of character information."""
+        return {
+            "name": self.name,
+            "level": self.total_level,
+            "class": self.primary_class,
+            "species": self.species,
+            "hit_points": f"{self.state.current_hit_points}/{self.maximum_hit_points}",
+            "armor_class": self.armor_class,
+            "proficiency_bonus": self.proficiency_bonus,
+            "generated_content_count": len(self.generated_content)
         }
     
     def __str__(self) -> str:
@@ -528,65 +406,9 @@ class Character:
             class_levels = [f"{cls} {lvl}" for cls, lvl in self.character_classes.items()]
             level_str = f"Level {self.total_level} ({'/'.join(class_levels)})"
         
-        return f"{self.name}, {level_str} {self.species} {self.primary_class}"
+        custom_note = " (with custom content)" if self.has_generated_content else ""
+        return f"{self.name}, {level_str} {self.species} {self.primary_class}{custom_note}"
     
     def __repr__(self) -> str:
         """Developer representation of character."""
-        return f"Character(name='{self.name}', species='{self.species}', level={self.total_level})"
-
-    # === DATA UTILITIES ===
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert character to dictionary representation."""
-        return {
-            "name": self.name,
-            "species": self.species,
-            "character_classes": self.character_classes,
-            "ability_scores": {
-                ability: getattr(self, ability).total_score 
-                for ability in ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]
-            },
-            # ... rest of character data
-        }
-    
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'Character':
-        """Create character from dictionary data."""
-        # Implementation for creating character from dict
-        pass
-    
-    def get_character_summary(self) -> Dict[str, Any]:
-        """Get a summary of character information."""
-        return {
-            "name": self.name,
-            "level": self.total_level,
-            "class": self.primary_class,
-            "species": self.species,
-            "hit_points": f"{self.current_hit_points}/{self.maximum_hit_points}",
-            "armor_class": self.armor_class,
-            "proficiency_bonus": self.proficiency_bonus
-        }
-
-    # Basic identity
-    name: str = ""
-    species: str = ""
-    character_classes: Dict[str, int] = field(default_factory=dict)
-    background: str = ""
-    level: int = 1
-    
-    # Core attributes from character_creator template
-    ability_scores: Dict[str, int] = field(default_factory=dict)
-    hit_points: int = 0
-    armor_class: int = 10
-    proficiency_bonus: int = 2
-    
-    # Simple calculated properties
-    @property
-    def total_level(self) -> int:
-        return sum(self.character_classes.values())
-    
-    @property
-    def primary_class(self) -> str:
-        if not self.character_classes:
-            return ""
-        return max(self.character_classes.items(), key=lambda x: x[1])[0]
+        return f"Character(name='{self.name}', species='{self.species}', level={self.total_level}, generated_content={len(self.generated_content)})"

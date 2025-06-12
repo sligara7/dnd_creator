@@ -367,3 +367,54 @@ Update application to:
 # └── workflows/
 #     ├── creative_pipeline.py        # ENHANCED: Complete generation pipeline
 #     └── iterative_refinement.py     # Content improvement workflows
+
+update /backend5/core architecture to:
+core/
+├── abstractions/                    # D&D Rule Contracts [MISSING - CRITICAL]
+│   ├── __init__.py
+│   ├── character_class.py          # AbstractCharacterClass contract
+│   ├── species.py                  # AbstractSpecies contract  
+│   ├── equipment.py                # AbstractEquipment/AbstractWeapon contracts
+│   ├── spell.py                    # AbstractSpell contract
+│   ├── feat.py                     # AbstractFeat contract
+│   └── content_validator.py        # AbstractContentValidator contract
+│
+├── entities/                       # Core Domain Entities [MISSING - CRITICAL]
+│   ├── __init__.py
+│   ├── character.py                # Character entity with generated content support
+│   ├── generated_content.py        # GeneratedContent entity
+│   ├── character_concept.py        # CharacterConcept entity for background-driven generation
+│   └── content_collection.py       # NEW: ContentCollection entity for thematic suites
+│
+├── value_objects/                  # Supporting Data Structures [MISSING - CRITICAL]
+│   ├── __init__.py
+│   ├── content_metadata.py         # ContentMetadata value object
+│   ├── generation_constraints.py   # GenerationConstraints value object
+│   ├── thematic_elements.py        # ThematicElements value object
+│   ├── validation_result.py        # ValidationResult value object
+│   └── balance_metrics.py          # NEW: BalanceMetrics value object
+│
+├── utils/                          # Pure Content Functions [MISSING - CRITICAL]
+│   ├── __init__.py
+│   ├── content_utils.py            # Content manipulation utilities
+│   ├── balance_calculator.py       # Balance scoring functions
+│   ├── naming_validator.py         # D&D naming convention validation
+│   ├── mechanical_parser.py        # Extract mechanical keywords from descriptions
+│   └── rule_checker.py             # Core D&D rule validation functions
+│
+├── enums/                          # NEW: Content Type Enumerations [MISSING]
+│   ├── __init__.py
+│   ├── content_types.py            # ContentType, ContentRarity enums
+│   ├── generation_methods.py       # GenerationMethod enum
+│   ├── validation_types.py         # ValidationType enum
+│   ├── mechanical_category.py       
+│   └── dnd_constants.py            # D&D mechanical constants
+│
+├── exceptions/                     # NEW: Core Domain Exceptions [MISSING]
+│   ├── __init__.py
+│   ├── generation_errors.py        # Content generation exceptions
+│   ├── validation_errors.py        # Validation failure exceptions
+│   └── rule_violation_errors.py    # D&D rule violation exceptions
+│
+└── __init__.py                     # Core module exports
+

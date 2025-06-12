@@ -1,0 +1,67 @@
+"""
+Core Domain Constants
+
+D&D 5e game rules, mechanical constants, and domain-specific values.
+These constants represent immutable domain knowledge.
+"""
+
+# Game mechanics
+from .mechanics import (
+    ABILITY_SCORES,
+    SKILLS,
+    SPELL_SCHOOLS,
+    DAMAGE_TYPES,
+    CONDITION_TYPES,
+    CREATURE_SIZES,
+    ARMOR_CLASS_BASES,
+    WEAPON_PROPERTIES,
+    SPELL_COMPONENTS,
+    SAVING_THROWS
+)
+
+# Content generation constants
+from .content_generation import (
+    POWER_LEVEL_RANGES,
+    THEME_CATEGORIES,
+    CULTURAL_ARCHETYPES,
+    NAMING_CONVENTIONS,
+    RARITY_LEVELS,
+    GENERATION_COMPLEXITY_LEVELS
+)
+
+# Validation constants
+from .validation import (
+    RULE_COMPLIANCE_LEVELS,
+    VALIDATION_SEVERITIES,
+    CONTENT_REQUIREMENTS,
+    MANDATORY_FIELDS,
+    OPTIONAL_FIELDS
+)
+
+# Balance constants
+from .balance import (
+    BALANCE_THRESHOLDS,
+    POWER_SCALING_FACTORS,
+    MECHANICAL_LIMITS,
+    FEATURE_COSTS,
+    PROGRESSION_BENCHMARKS
+)
+
+__all__ = [
+    # Mechanics
+    'ABILITY_SCORES', 'SKILLS', 'SPELL_SCHOOLS', 'DAMAGE_TYPES',
+    'CONDITION_TYPES', 'CREATURE_SIZES', 'ARMOR_CLASS_BASES',
+    'WEAPON_PROPERTIES', 'SPELL_COMPONENTS', 'SAVING_THROWS',
+    
+    # Content Generation
+    'POWER_LEVEL_RANGES', 'THEME_CATEGORIES', 'CULTURAL_ARCHETYPES',
+    'NAMING_CONVENTIONS', 'RARITY_LEVELS', 'GENERATION_COMPLEXITY_LEVELS',
+    
+    # Validation
+    'RULE_COMPLIANCE_LEVELS', 'VALIDATION_SEVERITIES', 'CONTENT_REQUIREMENTS',
+    'MANDATORY_FIELDS', 'OPTIONAL_FIELDS',
+    
+    # Balance
+    'BALANCE_THRESHOLDS', 'POWER_SCALING_FACTORS', 'MECHANICAL_LIMITS',
+    'FEATURE_COSTS', 'PROGRESSION_BENCHMARKS'
+]

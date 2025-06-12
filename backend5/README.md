@@ -300,3 +300,25 @@ if concept_response.success:
 - **Player Agency** - Players drive content through their background concepts
 
 This architecture provides a solid foundation for generating high-quality, balanced, and thematically consistent D&D content while maintaining clean separation of concerns and testability.
+
+# update the architecture with:
+
+backend5/
+├── core/
+│   ├── constants/
+│   │   ├── __init__.py
+│   │   ├── mechanics.py           # D&D 5e game mechanics
+│   │   ├── content_generation.py  # Content generation constants
+│   │   ├── validation.py          # Validation rules and thresholds
+│   │   └── balance.py             # Game balance constants
+│   └── ...
+├── infrastructure/
+│   ├── config/
+│   │   ├── __init__.py
+│   │   ├── settings.py            # Application settings (Pydantic)
+│   │   ├── database.py            # Database configuration
+│   │   ├── external_services.py   # External API configurations
+│   │   └── environment.py         # Environment-specific configs
+│   └── ...
+└── config/                        # DELETE THIS DIRECTORY
+    └── game_constants.py           # DELETE THIS FILE

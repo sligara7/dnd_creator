@@ -227,3 +227,55 @@ class ThematicElements:
             "complexity_preference": self.complexity_preference,
             "theme_weights": self.theme_weights
         }
+    
+from dataclasses import dataclass
+from typing import List, Optional
+from enum import Enum
+
+class ThemeCategory(Enum):
+    """Categories for organizing themes."""
+    MAGICAL = "magical"
+    MARTIAL = "martial"
+    CULTURAL = "cultural" 
+    ENVIRONMENTAL = "environmental"
+    SUPERNATURAL = "supernatural"
+
+@dataclass(frozen=True)
+class ThematicElements:
+    """Immutable thematic elements for content generation."""
+    primary_themes: List[str]
+    theme_keywords: List[str]
+    cultural_elements: List[str]
+    power_level: float = 1.0
+    theme_categories: List[ThemeCategory] = None
+    
+    def __post_init__(self):
+        if self.theme_categories is None:
+            object.__setattr__(self, 'theme_categories', self._categorize_themes())
+    
+    def _categorize_themes(self) -> List[ThemeCategory]:
+        """Categorize themes automatically."""
+        categories = []
+        magical_themes = {'arcane', 'divine', 'elemental', 'celestial', 'infernal'}
+        martial_themes = {'martial', 'military', 'warrior'}
+        cultural_themes = {'noble', 'urban', 'nomadic', 'scholarly'}
+        environmental_themes = {'nature', 'aquatic', 'aerial'}
+        supernatural_themes = {'shadow', 'celestial', 'infernal'}
+        
+        for theme in self.primary_themes:
+            if theme in magical_themes:
+                categories.append(ThemeCategory.MAGICAL)
+            elif theme in martial_themes:
+                categories.append(ThemeCategory.MARTIAL)
+            elif theme in cultural_themes:
+                categories.append(ThemeCategory.CULTURAL)
+            elif theme in environmental_themes:
+                categories.append(ThemeCategory.ENVIRONMENTAL)
+            elif theme in supernatural_themes:
+                categories.append(ThemeCategory.SUPERNATURAL)
+        
+        return list(set(categories))
+    
+    def get_dominant_category(self) -> Optional[ThemeCategory]:
+        """Get the most prominent theme category."""
+        return self.theme_categories[0] if self.theme_categories else None

@@ -393,3 +393,41 @@ class CharacterConcept:
     def __repr__(self) -> str:
         """Developer representation of concept."""
         return f"CharacterConcept(name='{self.concept_name}', themes={len(self.all_themes)}, role='{self.preferred_role}')"
+    
+from dataclasses import dataclass
+from typing import List, Optional
+from datetime import datetime
+from core.value_objects import ThematicElements
+from core.enums import ContentType
+
+@dataclass
+class CharacterConcept:
+    """Enhanced character concept entity."""
+    concept_id: str
+    concept_name: str
+    background_story: str
+    thematic_elements: ThematicElements
+    target_level: int = 1
+    recommended_content_types: List[ContentType] = None
+    created_at: datetime = None
+    processing_metadata: dict = None
+    
+    def __post_init__(self):
+        if self.recommended_content_types is None:
+            self.recommended_content_types = []
+        if self.created_at is None:
+            self.created_at = datetime.now()
+        if self.processing_metadata is None:
+            self.processing_metadata = {}
+    
+    def get_primary_theme(self) -> Optional[str]:
+        """Get the primary theme for this concept."""
+        return self.thematic_elements.primary_themes[0] if self.thematic_elements.primary_themes else None
+    
+    def has_theme(self, theme: str) -> bool:
+        """Check if concept contains a specific theme."""
+        return theme in self.thematic_elements.primary_themes
+    
+    def get_power_level(self) -> float:
+        """Get the calculated power level."""
+        return self.thematic_elements.power_level

@@ -2,419 +2,301 @@
 
 ## Overview
 
-Backend5 is a **creative D&D character creation framework** that enables the generation of new species, classes, feats, weapons, armor, and spells while maintaining strict adherence to D&D 2024 rules. The system combines **maximum creative flexibility** with **modular rule compliance**, using LLM assistance to generate thematically consistent content that fits seamlessly into existing D&D mechanics.
+This is a **background-driven creative content framework** for D&D 2024, designed to generate balanced, thematic, and rule-compliant content based on character background stories and concepts.
 
-## Core Mission
+## Architecture
 
-### Primary Purpose: Creative Content Generation
-- **New Species Creation**: Generate unique species with balanced traits and cultural backgrounds
-- **Custom Class Design**: Create new character classes with proper progression and features
-- **Dynamic Equipment**: Design weapons, armor, and magical items aligned with character concepts
-- **Spell Innovation**: Develop new spells that fit thematic needs while respecting spell level mechanics
-- **Feat Development**: Create custom feats that enhance specific character builds
+The system follows **Clean Architecture** with **Domain-Driven Design** principles, organized into layers that maintain clear separation of concerns and dependency direction.
 
-### Creative Framework Principles
-1. **Background-Driven Creation**: All content generation stems from rich character backgrounds and concepts
-2. **Rule-Compliant Innovation**: Creative freedom operates within established D&D mechanical frameworks
-3. **Modular Integration**: New content seamlessly integrates with existing D&D systems
-4. **LLM-Assisted Generation**: AI helps create thematically rich, mechanically sound content
-5. **Validation-First Design**: All generated content passes through rigorous D&D rule validation
-
-## Architecture Analysis
-
-### Issues with Traditional Approaches
-
-1. **Static Content Libraries**: Limited to predefined options without creative expansion
-2. **Manual Content Creation**: Time-intensive process requiring deep system knowledge
-3. **Rule Inconsistency**: Custom content often breaks established mechanical balance
-4. **Integration Challenges**: New content doesn't fit cleanly into existing systems
-5. **Creative Limitations**: Background concepts constrained by available options
-
-### Creative Framework Solution
-
-Backend5 implements a **Clean Architecture for Creative Content Generation** where:
-- **Abstract contracts** define D&D rule boundaries
-- **Content generators** create new material within those boundaries  
-- **LLM integration** provides thematic richness and creative inspiration
-- **Validation engines** ensure mechanical balance and rule compliance
-- **Modular design** allows seamless integration of generated content
-
-## Directory Structure
+### Layer Structure
 
 ```
 backend5/
-├── core/                           # Creative Framework Foundation
-│   ├── abstractions/               # D&D Rule Contracts
-│   │   ├── character_class.py      # Class creation contract
-│   │   ├── species.py              # Species creation contract
-│   │   ├── equipment.py            # Equipment creation contract
-│   │   ├── spell.py                # Spell creation contract
-│   │   └── feat.py                 # Feat creation contract
-│   ├── entities/
-│   │   ├── character.py            # Core Character with generated content
-│   │   ├── generated_content.py    # Generated content entity
-│   │   └── character_concept.py    # Background-driven character concept
-│   ├── value_objects/
-│   │   ├── content_metadata.py     # Creation metadata and attribution
-│   │   ├── generation_constraints.py # Rule boundaries for generation
-│   │   └── thematic_elements.py    # Background theme components
-│   └── utils/
-│       └── content_utils.py        # Pure content manipulation functions
-│
-├── domain/                         # Creative Business Logic
-│   ├── services/
-│   │   ├── content_generator.py    # Master content generation orchestrator
-│   │   ├── species_generator.py    # Species creation service
-│   │   ├── class_generator.py      # Class creation service
-│   │   ├── equipment_generator.py  # Equipment creation service
-│   │   ├── spell_generator.py      # Spell creation service
-│   │   ├── feat_generator.py       # Feat creation service
-│   │   ├── character_builder.py    # Character assembly with custom content
-│   │   ├── theme_analyzer.py       # Background theme analysis
-│   │   ├── balance_validator.py    # Mechanical balance validation
-│   │   └── content_registry.py     # Generated content management
-│   ├── content/                    # Generated Content Implementations
-│   │   ├── species/
-│   │   │   ├── human.py            # Core species (template)
-│   │   │   ├── generated/          # LLM-generated species
-│   │   │   └── custom/             # User-created species
-│   │   ├── classes/
-│   │   │   ├── fighter.py          # Core classes (template)
-│   │   │   ├── generated/          # LLM-generated classes
-│   │   │   └── custom/             # User-created classes
-│   │   ├── equipment/
-│   │   │   ├── weapons/
-│   │   │   │   ├── core/           # PHB weapons
-│   │   │   │   └── generated/      # Custom weapons
-│   │   │   └── armor/
-│   │   │       ├── core/           # PHB armor
-│   │   │       └── generated/      # Custom armor
-│   │   ├── spells/
-│   │   │   ├── core/               # PHB spells
-│   │   │   └── generated/          # Custom spells
-│   │   └── feats/
-│   │       ├── core/               # PHB feats
-│   │       └── generated/          # Custom feats
-│   ├── rules/                      # D&D Rule Validation
-│   │   ├── content_validation.py   # Generated content validation
-│   │   ├── balance_rules.py        # Mechanical balance enforcement
-│   │   ├── multiclass_rules.py     # Multiclass integration rules
-│   │   └── progression_rules.py    # Level progression validation
-│   └── repositories/
-│       ├── content_repository.py   # Generated content persistence
-│       └── character_repository.py # Character with custom content
-│
-├── infrastructure/                 # Creative Content Infrastructure
-│   ├── llm/
-│   │   ├── content_llm_service.py  # LLM content generation
-│   │   ├── theme_llm_service.py    # Background theme analysis
-│   │   ├── balance_llm_service.py  # Mechanical balance consultation
-│   │   ├── ollama_integration.py   # Ollama LLM provider
-│   │   └── prompt_templates/       # Generation prompt library
-│   │       ├── species_prompts.py
-│   │       ├── class_prompts.py
-│   │       ├── equipment_prompts.py
-│   │       └── spell_prompts.py
-│   ├── data/
-│   │   ├── content_storage.py      # Generated content persistence
-│   │   ├── template_loader.py      # Content template management
-│   │   └── export_manager.py       # Content export/sharing
-│   ├── validation/
-│   │   ├── rule_engine.py          # D&D rule enforcement
-│   │   ├── balance_analyzer.py     # Statistical balance analysis
-│   │   └── integration_tester.py   # Content integration testing
-│   └── generation/
-│       ├── content_factory.py      # Generated content instantiation
-│       └── template_engine.py      # Content template processing
-│
-├── application/                    # Creative Workflows
-│   ├── use_cases/
-│   │   ├── generate_character_from_concept.py  # Complete character generation
-│   │   ├── create_custom_species.py            # Species generation workflow  
-│   │   ├── create_custom_class.py              # Class generation workflow
-│   │   ├── generate_thematic_equipment.py      # Equipment generation workflow
-│   │   ├── create_spell_suite.py               # Spell collection generation
-│   │   ├── design_custom_feat.py               # Feat creation workflow
-│   │   ├── validate_generated_content.py       # Content validation workflow
-│   │   └── integrate_custom_content.py         # Content integration workflow
-│   ├── dtos/
-│   │   ├── generation_request.py   # Content generation requests
-│   │   ├── content_response.py     # Generated content responses
-│   │   ├── theme_analysis.py       # Background analysis results
-│   │   └── validation_result.py    # Content validation results
-│   └── workflows/
-│       ├── creative_pipeline.py    # End-to-end generation pipeline
-│       └── iterative_refinement.py # Content refinement workflow
-│
-├── interfaces/                     # Creative Content Interfaces
-│   ├── cli/
-│   │   ├── content_creator_cli.py  # Main creative content interface
-│   │   ├── species_creator_cli.py  # Species creation interface
-│   │   ├── class_creator_cli.py    # Class creation interface
-│   │   ├── equipment_creator_cli.py # Equipment creation interface
-│   │   └── concept_analyzer_cli.py # Background concept analysis
-│   └── api/
-│       ├── content_generation_api.py # RESTful content generation
-│       └── validation_api.py       # Content validation endpoints
-│
-├── config/
-│   ├── generation_settings.py     # Content generation configuration
-│   ├── llm_settings.py            # LLM integration settings
-│   ├── balance_thresholds.py      # Mechanical balance parameters
-│   └── dnd_constants.py           # D&D 2024 rule constants
-│
-├── container.py                   # Creative framework dependency injection
-└── main.py                       # Creative character creator entry point
+├── core/                           # Domain Layer (Business Logic)
+├── application/                    # Application Layer (Use Cases)  
+├── infrastructure/                 # Infrastructure Layer (External Concerns)
+├── interfaces/                     # Interface Layer (API/UI)
+└── tests/                         # Test Layer (All Test Types)
 ```
 
-## Creative Content Generation Map
+## Core Domain Layer
 
-### From Concept to Character
+The `core/` directory contains the foundational domain model that defines D&D content creation and validation rules.
 
-| Input | Generation Process | Output |
-|-------|-------------------|---------|
-| Character Background/Concept | → Theme Analysis → Content Generation → Rule Validation | Complete Custom Character |
-| Cultural Description | → Species Generator → Trait Assignment → Balance Check | New Species Implementation |
-| Class Concept | → Feature Generation → Progression Design → Multiclass Integration | New Class Implementation |
-| Weapon/Armor Description | → Mechanical Design → Rarity Assignment → Game Integration | Custom Equipment |
-| Spell Concept | → Effect Design → Level Assignment → School Classification | New Spell Implementation |
-| Character Build Idea | → Feat Design → Prerequisite Setting → Power Level Validation | Custom Feat |
+### Updated Core Structure
 
-## Key Creative Framework Principles
+```
+/backend5/core/
+├── abstractions/                   # D&D Rule Contracts
+│   ├── __init__.py
+│   ├── character_class.py         # Abstract character class contracts
+│   ├── species.py                 # Abstract species contracts  
+│   ├── equipment.py               # Abstract equipment contracts
+│   ├── spell.py                   # Abstract spell contracts
+│   ├── feat.py                    # Abstract feat contracts
+│   └── content_validator.py       # Abstract validation contracts
+│
+├── entities/                      # Core Domain Entities  
+│   ├── __init__.py
+│   ├── character.py               # Character entity
+│   ├── generated_content.py       # Generated content entity
+│   ├── character_concept.py       # Character concept entity
+│   └── content_collection.py      # Content collection entity
+│
+├── value_objects/                 # Supporting Data Structures
+│   ├── __init__.py
+│   ├── balance_metrics.py         # Balance calculation data
+│   ├── validation_result.py       # Validation result data
+│   ├── content_metadata.py        # Content metadata
+│   ├── generation_constraints.py  # Generation constraint data
+│   └── thematic_elements.py       # Thematic element data
+│
+├── services/                      # Domain Services [NEW]
+│   ├── __init__.py
+│   ├── validation_coordinator.py  # Cross-entity validation coordination
+│   ├── content_generator.py       # Content generation orchestration
+│   └── balance_analyzer.py        # Balance analysis coordination
+│
+├── utils/                         # Pure Content Functions
+│   ├── __init__.py
+│   ├── content_utils.py           # Content manipulation utilities
+│   ├── balance_calculator.py      # Balance calculation functions
+│   ├── naming_validator.py        # Content naming validation
+│   ├── mechanical_parser.py       # Mechanical text parsing
+│   └── rule_checker.py            # D&D rule validation functions
+│
+├── enums/                         # Content Type Enumerations
+│   ├── __init__.py
+│   ├── content_types.py           # Content type definitions
+│   ├── generation_methods.py      # Generation method types
+│   ├── validation_types.py        # Validation type definitions
+│   ├── mechanical_category.py     # Mechanical categorization
+│   └── dnd_constants.py           # D&D mechanical constants
+│
+├── exceptions/                    # Core Domain Exceptions
+│   ├── __init__.py
+│   ├── generation_errors.py       # Content generation exceptions
+│   ├── validation_errors.py       # Validation failure exceptions
+│   └── rule_violation_errors.py   # D&D rule violation exceptions
+│
+└── __init__.py                    # Core module exports
+```
 
-### 1. Background-Driven Generation
+### Key Architectural Changes
+
+#### 1. Added Domain Services Layer (`/services/`)
+
+Domain services handle coordination between entities and complex business logic that doesn't naturally belong to a single entity:
+
+- **`validation_coordinator.py`** - Orchestrates validation across multiple content types
+- **`content_generator.py`** - Coordinates content generation workflows  
+- **`balance_analyzer.py`** - Performs complex balance analysis across content collections
+
+#### 2. Enhanced Abstractions (`/abstractions/`)
+
+Abstract base classes define D&D rule contracts that all concrete implementations must follow:
+
+- **Character Class Contracts** - Define class feature, progression, and multiclassing rules
+- **Species Contracts** - Define trait, ability score, and cultural feature rules
+- **Equipment Contracts** - Define weapon, armor, and magic item mechanics
+- **Spell Contracts** - Define spellcasting, targeting, and effect rules
+- **Content Validation Contracts** - Define validation pipeline interfaces
+
+#### 3. Structured Entities (`/entities/`)
+
+Core domain entities represent the primary business objects:
+
+- **`Character`** - Complete character with stats, features, and progression
+- **`GeneratedContent`** - Individual generated content items with metadata
+- **`CharacterConcept`** - Background-driven character concepts for generation
+- **`ContentCollection`** - Collections of related generated content
+
+#### 4. Comprehensive Value Objects (`/value_objects/`)
+
+Immutable data structures supporting the domain model:
+
+- **`BalanceMetrics`** - Power level, utility, and balance calculations
+- **`ValidationResult`** - Validation outcomes with issues and suggestions
+- **`ThematicElements`** - Theme, cultural, and power level data
+- **`GenerationConstraints`** - Content generation parameters and limits
+
+#### 5. Domain Services Integration
+
+Domain services coordinate complex operations:
+
 ```python
-# Creative process starts with rich background concepts
-concept = CharacterConcept(
-    background="A mystical scholar from floating cities who studies storm magic",
-    themes=["aerial", "scholarly", "storm-touched", "urban"],
-    culture="sky-dwelling academics",
-    goals="master weather magic while preserving ancient knowledge"
+# Example: CoreValidationCoordinator usage
+from core.services import CoreValidationCoordinator
+
+coordinator = CoreValidationCoordinator()
+coordinator.register_validator("spell", SpellValidator())
+coordinator.register_validator("feat", FeatValidator())
+
+validation_results = coordinator.validate_all_content(content_collection)
+summary = coordinator.get_validation_summary(validation_results)
+```
+
+## Application Layer
+
+The application layer orchestrates domain services to fulfill specific use cases.
+
+### Application Structure
+
+```
+/backend5/application/
+├── use_cases/                     # Application Use Cases
+│   ├── __init__.py
+│   ├── concept_processor.py       # Background concept analysis [NEW]
+│   ├── content_generator.py       # Content generation coordination
+│   ├── validation_orchestrator.py # Validation workflow management
+│   └── balance_analyzer.py        # Balance analysis workflows
+│
+├── dto/                          # Data Transfer Objects
+│   ├── __init__.py
+│   ├── requests.py               # Request DTOs
+│   └── responses.py              # Response DTOs
+│
+├── services/                     # Application Services
+│   ├── __init__.py
+│   ├── llm_integration.py        # LLM service integration
+│   ├── template_engine.py        # Template processing service
+│   └── content_persistence.py    # Content storage service
+│
+└── __init__.py                   # Application module exports
+```
+
+### Key Use Cases
+
+#### Background Concept Processing
+
+The new **`concept_processor.py`** use case handles the analysis and processing of character background concepts:
+
+```python
+from application.use_cases import ConceptProcessorUseCase
+from application.dto import ConceptAnalysisRequest
+
+processor = ConceptProcessorUseCase()
+request = ConceptAnalysisRequest(
+    raw_concept="A former noble who lost everything and now seeks redemption through divine magic",
+    character_name="Lysander",
+    target_level=5
 )
 
-# System generates appropriate content
-generated_species = species_generator.create_from_concept(concept)
-generated_class = class_generator.create_from_concept(concept) 
-custom_spells = spell_generator.create_thematic_suite(concept)
+response = await processor.execute(request)
+if response.success:
+    concept = response.processed_concept
+    themes = response.thematic_elements
+    recommendations = response.recommended_content_types
 ```
 
-### 2. Abstract Contract Compliance
+## Infrastructure Layer
+
+External concerns and technical implementations.
+
+```
+/backend5/infrastructure/
+├── llm/                          # LLM Provider Implementations
+├── persistence/                  # Data Storage Implementations  
+├── templates/                    # Content Generation Templates
+├── config/                       # Configuration Management
+└── external/                     # External Service Integrations
+```
+
+## Interface Layer
+
+API endpoints and user interface concerns.
+
+```
+/backend5/interfaces/
+├── api/                          # REST API Endpoints
+├── cli/                          # Command Line Interface
+└── web/                          # Web Interface (if applicable)
+```
+
+## Testing Strategy
+
+Comprehensive testing across all architectural layers.
+
+```
+/backend5/tests/
+├── unit/                         # Unit Tests (Domain Logic)
+├── integration/                  # Integration Tests (Cross-Layer)
+├── application/                  # Application Use Case Tests
+├── infrastructure/               # Infrastructure Component Tests
+└── end_to_end/                   # Full System Tests
+```
+
+## Key Design Principles
+
+### 1. Background-Driven Generation
+All content generation starts with character background concepts, ensuring thematic coherence and narrative consistency.
+
+### 2. Rule Compliance First
+D&D 2024 rules are enforced through abstract contracts, ensuring all generated content meets official game standards.
+
+### 3. Balance by Design
+Balance metrics are calculated and validated at every stage, preventing overpowered or underwhelming content.
+
+### 4. Thematic Coherence
+Content generation maintains thematic consistency through extracted themes and cultural elements.
+
+### 5. Clean Architecture
+Clear separation of concerns with dependency inversion, making the system maintainable and testable.
+
+## Getting Started
+
+### Prerequisites
+- Python 3.11+
+- FastAPI for API layer
+- Pydantic for data validation
+- SQLAlchemy for persistence (if database storage is needed)
+
+### Installation
+```bash
+cd backend5
+pip install -r requirements.txt
+```
+
+### Basic Usage
 ```python
-class StormCallerClass(AbstractCharacterClass):
-    """Generated class that follows D&D class contract."""
+from core import ConceptProcessorUseCase, ContentGeneratorUseCase
+from core.enums import ContentType
+
+# Process background concept
+concept_processor = ConceptProcessorUseCase()
+concept_request = ConceptAnalysisRequest(
+    raw_concept="A scholarly wizard seeking ancient knowledge",
+    target_level=3
+)
+
+concept_response = await concept_processor.execute(concept_request)
+
+# Generate content based on concept
+if concept_response.success:
+    content_generator = ContentGeneratorUseCase()
+    generation_request = ContentGenerationRequest(
+        concept=concept_response.processed_concept,
+        content_types=[ContentType.SPELL, ContentType.FEAT]
+    )
     
-    @property
-    def hit_die(self) -> int:
-        return 8  # Must be valid D&D hit die
-    
-    def get_class_features(self, level: int) -> List[ClassFeature]:
-        # Generated features follow D&D progression patterns
-        return self._generated_features_by_level[level]
-    
-    def validate_multiclass_prerequisites(self, character: Character) -> List[str]:
-        # Follows standard D&D multiclass rules
-        return self._validate_wisdom_requirement(character, 13)
+    content_response = await content_generator.execute(generation_request)
 ```
 
-### 3. LLM-Assisted Creation
-```python
-class ContentLLMService:
-    """LLM integration for creative content generation."""
-    
-    def generate_species_from_concept(self, concept: CharacterConcept) -> Dict[str, Any]:
-        """Generate species traits based on background concept."""
-        prompt = self._build_species_prompt(concept)
-        raw_response = self.llm.generate(prompt)
-        parsed_content = self._extract_species_data(raw_response)
-        return self._validate_against_species_contract(parsed_content)
-    
-    def generate_class_features(self, concept: CharacterConcept, level: int) -> List[ClassFeature]:
-        """Generate thematically appropriate class features."""
-        prompt = self._build_class_feature_prompt(concept, level)
-        features = self.llm.generate(prompt)
-        return self._validate_feature_balance(features)
-```
+## Architecture Benefits
 
-### 4. Modular Rule Integration
-```python
-class GeneratedContentValidator:
-    """Ensures generated content follows D&D rules."""
-    
-    def validate_species(self, species: AbstractSpecies) -> ValidationResult:
-        """Validate generated species against D&D guidelines."""
-        issues = []
-        
-        # Check ability score increases don't exceed +3 total
-        total_asi = sum(species.get_ability_score_increases().values())
-        if total_asi > 3:
-            issues.append("Total ability increases exceed D&D guidelines")
-        
-        # Validate traits have appropriate power level
-        traits = species.get_traits()
-        for trait in traits:
-            if not self._is_trait_balanced(trait):
-                issues.append(f"Trait '{trait.name}' may be overpowered")
-        
-        return ValidationResult(is_valid=len(issues) == 0, issues=issues)
-```
+### Domain-Driven Design
+- **Rich Domain Model** - Business logic encapsulated in domain entities and services
+- **Ubiquitous Language** - D&D terminology used consistently throughout
+- **Bounded Contexts** - Clear boundaries between content types and generation concerns
 
-## Benefits of Creative Framework
+### Clean Architecture
+- **Dependency Inversion** - Core domain independent of external concerns
+- **Testability** - Easy unit testing of business logic
+- **Flexibility** - Easy to swap infrastructure implementations
 
-### 1. **Unlimited Creative Potential**
-- Generate any character concept while respecting D&D mechanics
-- Create thematically cohesive content suites (species + class + equipment + spells)
-- Background-driven generation ensures narrative consistency
-- LLM assistance provides rich flavor text and creative inspiration
+### Background-Driven Approach
+- **Narrative Consistency** - All generated content fits the character's story
+- **Thematic Coherence** - Content maintains consistent themes and cultural elements
+- **Player Agency** - Players drive content through their background concepts
 
-### 2. **Mechanical Integrity**
-- All generated content validated against D&D 2024 rules
-- Abstract contracts ensure compatibility with existing content
-- Balance validation prevents overpowered or underpowered content
-- Multiclass integration testing ensures system compatibility
-
-### 3. **Modular Flexibility**
-- Mix generated content with official D&D content seamlessly  
-- Iterative refinement of generated content
-- Easy sharing and importing of custom content
-- Version control for generated content evolution
-
-### 4. **LLM-Enhanced Creativity**
-- AI helps overcome creative blocks
-- Ensures thematic consistency across all generated content
-- Provides multiple generation options for the same concept
-- Assists with mechanical balance considerations
-
-### 5. **Rule Compliance Assurance**
-- Automated validation against D&D 2024 rules
-- Integration testing with existing character options
-- Balance analysis using statistical models
-- Compatibility verification for multiclass combinations
-
-## Creative Generation Workflows
-
-### Complete Character from Concept
-```
-Background Concept → Theme Analysis → Content Suite Generation → Integration Testing → Character Assembly
-```
-
-### Individual Content Creation  
-```
-Specific Request → Template Selection → LLM Generation → Rule Validation → Content Registration
-```
-
-### Iterative Refinement
-```
-Initial Generation → User Feedback → Content Adjustment → Re-validation → Final Implementation
-```
-
-## LLM Integration Strategy
-
-### Content Generation Prompts
-- **Species**: Focus on cultural background, physical traits, and balanced mechanical benefits
-- **Classes**: Emphasize thematic progression, balanced feature distribution, and multiclass compatibility
-- **Equipment**: Consider crafting tradition, magical properties, and appropriate rarity levels
-- **Spells**: Ensure thematic consistency, appropriate power level, and school classification
-- **Feats**: Balance prerequisites, benefits, and build enablement
-
-### Validation Integration
-- LLM assists with initial mechanical balance assessment
-- AI helps identify potential rule conflicts or exploits
-- Automated cross-referencing with existing content for balance comparison
-- Generation of alternative options when initial attempts fail validation
-
-## Migration Strategy
-
-### Phase 1: Creative Foundation
-1. Implement abstract content contracts and validation framework
-2. Create core content generators with LLM integration
-3. Establish balance validation and rule compliance systems
-
-### Phase 2: Content Generation Pipeline
-1. Build species, class, and equipment generators
-2. Implement spell and feat creation systems
-3. Create thematic content suite generation workflows
-
-### Phase 3: Integration & Refinement
-1. Add multiclass compatibility testing
-2. Implement iterative content refinement
-3. Create content sharing and import/export systems
-
-### Phase 4: Advanced Features
-1. Add statistical balance analysis
-2. Implement content recommendation systems  
-3. Create collaborative content creation workflows
-
-### Phase 5: Optimization & Polish
-1. Performance optimization for generation workflows
-2. Enhanced LLM prompt engineering
-3. Comprehensive testing of generated content combinations
-
-This creative framework transforms D&D character creation from selecting pre-existing options to generating unlimited, thematically rich, mechanically sound content that perfectly matches any character concept while maintaining complete compatibility with D&D 2024 rules.
-
-Update application to: 
-
-# application/
-# ├── use_cases/
-# │   ├── generate_content.py          # CONSOLIDATED: All content generation
-# │   ├── validate_content.py          # CONSOLIDATED: All validation workflows  
-# │   ├── manage_character.py          # Character creation/modification
-# │   ├── concept_processor.py         # NEW: Background concept analysis
-# │   ├── content_optimizer.py         # NEW: Balance optimization
-# │   └── integration_manager.py       # NEW: D&D rule integration
-# ├── dtos/
-# │   ├── content_dto.py              # CONSOLIDATED: All content DTOs
-# │   └── character_dto.py            # CONSOLIDATED: All character DTOs
-# └── workflows/
-#     ├── creative_pipeline.py        # ENHANCED: Complete generation pipeline
-#     └── iterative_refinement.py     # Content improvement workflows
-
-update /backend5/core architecture to:
-core/
-├── abstractions/                    # D&D Rule Contracts [MISSING - CRITICAL]
-│   ├── __init__.py
-│   ├── character_class.py          # AbstractCharacterClass contract
-│   ├── species.py                  # AbstractSpecies contract  
-│   ├── equipment.py                # AbstractEquipment/AbstractWeapon contracts
-│   ├── spell.py                    # AbstractSpell contract
-│   ├── feat.py                     # AbstractFeat contract
-│   └── content_validator.py        # AbstractContentValidator contract
-│
-├── entities/                       # Core Domain Entities [MISSING - CRITICAL]
-│   ├── __init__.py
-│   ├── character.py                # Character entity with generated content support
-│   ├── generated_content.py        # GeneratedContent entity
-│   ├── character_concept.py        # CharacterConcept entity for background-driven generation
-│   └── content_collection.py       # NEW: ContentCollection entity for thematic suites
-│
-├── value_objects/                  # Supporting Data Structures [MISSING - CRITICAL]
-│   ├── __init__.py
-│   ├── content_metadata.py         # ContentMetadata value object
-│   ├── generation_constraints.py   # GenerationConstraints value object
-│   ├── thematic_elements.py        # ThematicElements value object
-│   ├── validation_result.py        # ValidationResult value object
-│   └── balance_metrics.py          # NEW: BalanceMetrics value object
-│
-├── utils/                          # Pure Content Functions [MISSING - CRITICAL]
-│   ├── __init__.py
-│   ├── content_utils.py            # Content manipulation utilities
-│   ├── balance_calculator.py       # Balance scoring functions
-│   ├── naming_validator.py         # D&D naming convention validation
-│   ├── mechanical_parser.py        # Extract mechanical keywords from descriptions
-│   └── rule_checker.py             # Core D&D rule validation functions
-│
-├── enums/                          # NEW: Content Type Enumerations [MISSING]
-│   ├── __init__.py
-│   ├── content_types.py            # ContentType, ContentRarity enums
-│   ├── generation_methods.py       # GenerationMethod enum
-│   ├── validation_types.py         # ValidationType enum
-│   ├── mechanical_category.py       
-│   └── dnd_constants.py            # D&D mechanical constants
-│
-├── exceptions/                     # NEW: Core Domain Exceptions [MISSING]
-│   ├── __init__.py
-│   ├── generation_errors.py        # Content generation exceptions
-│   ├── validation_errors.py        # Validation failure exceptions
-│   └── rule_violation_errors.py    # D&D rule violation exceptions
-│
-└── __init__.py                     # Core module exports
-
+This architecture provides a solid foundation for generating high-quality, balanced, and thematically consistent D&D content while maintaining clean separation of concerns and testability.

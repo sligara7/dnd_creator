@@ -406,3 +406,16 @@ def get_circular_import_analysis() -> dict:
             "Exceptions use enums/value objects for metadata only"
         ]
     }
+
+# Add to /backend5/core/__init__.py imports section:
+
+# 7. SERVICES (May depend on entities, value objects, abstractions)
+from . import services
+
+# Add to re-exports:
+from .services import (
+    CoreValidationCoordinator,
+)
+
+# Add to __all__:
+'CoreValidationCoordinator',

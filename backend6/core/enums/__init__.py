@@ -2,245 +2,219 @@
 Core enumerations for the D&D Creative Content Framework.
 
 This module provides all enumerated types used throughout the system,
-organized by their primary purpose and domain.
+organized by their primary purpose and domain according to Clean Architecture principles.
 """
 
-# Application enums
-from .environment import Environment
-from .application import (
-    LogLevel,
-    SecurityAlgorithm,
-    CacheBackend,
-    DatabaseType
-)
-
-# Content type enums
-from .content_types import (
-    ContentType,
-    GenerationMethod,
-    ValidationSeverity,
-    BalanceLevel,
-    ContentRarity,
-    ContentSource,
-    QualityLevel,
-    ComplexityLevel,
-    ThemeCategory,
-    PowerTier,
-    ContentStatus,
-    # Content type groupings
-    CHARACTER_OPTIONS,
-    ITEM_TYPES,
-    MECHANICAL_CONTENT,
-    NARRATIVE_CONTENT,
-    # Helper functions
-    get_content_types_by_category,
-    get_compatible_themes
-)
-
-# D&D mechanics enums
+# D&D Game Mechanics enums (Core business rules - immutable)
 from .game_mechanics import (
-    AbilityScore,
+    Ability,
     Skill,
+    ProficiencyLevel,
     DamageType,
-    CreatureSize,
-    SpellSchool,
-    ArmorType,
-    WeaponProperty,
-    WeaponType,
-    EquipmentCategory,
+    ActionType,
     Condition,
+    MagicSchool,
     SpellLevel,
     CastingTime,
     SpellRange,
     SpellDuration,
-    SpellComponent,
-    ProficiencyLevel,
+    AreaOfEffect,
     Currency,
-    LanguageType,
-    SenseType
+    PowerTier
 )
 
-# Generation-specific enums
-from .generation import (
-    LLMProvider,
-    TemplateType,
-    GenerationComplexity,
-    IterationMethod,
-    GenerationPriority,
-    OptimizationStrategy
+# Content Type enums (Creative content framework)
+from .content_types import (
+    ContentType,
+    GenerationType,
+    ContentRarity,
+    ThemeCategory,
+    CHARACTER_OPTIONS,
+    EQUIPMENT_TYPES,
+    SIGNATURE_CONTENT,
+    get_content_types_by_category
 )
 
-# Validation and analysis enums
-from .validation import (
-    ValidationType,
-    ValidationStatus,
+# Creativity Level enums (Generation parameters)
+from .creativity_levels import (
+    CreativityLevel,
+    GenerationMethod,
+    ContentComplexity,
+    ThematicConsistency
+)
+
+# Balance Level enums (Validation and power analysis)
+from .balance_levels import (
+    BalanceLevel,
+    ValidationLevel,
     BalanceCategory,
-    RuleCompliance,
-    ComplianceLevel,
-    AnalysisType
+    PowerBenchmark
 )
 
-# Character creation enums
-from .character import (
-    FeatCategory,
-    SpeciesSize,
-    BackgroundType,
-    ClassResource,
-    SubclassType,
-    SpellcastingType,
-    AlignmentAxis,
-    AlignmentTendency
+# Validation Type enums (Content validation framework)
+from .validation_types import (
+    ValidationType,
+    ValidationSeverity,
+    ValidationStatus,
+    ValidationScope,
+    RuleCompliance
 )
 
-# Export all public symbols
+# Progression Type enums (Character development)
+from .progression_types import (
+    ProgressionType,
+    MilestoneType,
+    FeatureCategory,
+    ScalingType,
+    ThematicTier
+)
+
+# Export Format enums (Output and VTT compatibility)
+from .export_formats import (
+    ExportFormat,
+    CharacterSheetType,
+    OutputLayout,
+    ContentInclusionLevel,
+    get_supported_formats_for_vtt
+)
+
+# Export all public symbols organized by architectural layer
 __all__ = [
-    # Application
-    'Environment',
-    'LogLevel',
-    'SecurityAlgorithm', 
-    'CacheBackend',
-    'DatabaseType',
-    
-    # Content Types
-    'ContentType',
-    'GenerationMethod',
-    'ValidationSeverity',
-    'BalanceLevel',
-    'ContentRarity',
-    'ContentSource',
-    'QualityLevel',
-    'ComplexityLevel',
-    'ThemeCategory',
-    'PowerTier',
-    'ContentStatus',
-    
-    # Content type collections
-    'CHARACTER_OPTIONS',
-    'ITEM_TYPES',
-    'MECHANICAL_CONTENT',
-    'NARRATIVE_CONTENT',
-    
-    # Helper functions
-    'get_content_types_by_category',
-    'get_compatible_themes',
-    
-    # Game Mechanics
-    'AbilityScore',
-    'Skill',
+    # ============ CORE LAYER ENUMS ============
+    # D&D Game Mechanics (Immutable business rules)
+    'Ability',
+    'Skill', 
+    'ProficiencyLevel',
     'DamageType',
-    'CreatureSize',
-    'SpellSchool',
-    'ArmorType',
-    'WeaponProperty',
-    'WeaponType',
-    'EquipmentCategory',
+    'ActionType',
     'Condition',
+    'MagicSchool',
     'SpellLevel',
     'CastingTime',
     'SpellRange',
     'SpellDuration',
-    'SpellComponent',
-    'ProficiencyLevel',
+    'AreaOfEffect',
     'Currency',
-    'LanguageType',
-    'SenseType',
+    'PowerTier',
     
-    # Generation
-    'LLMProvider',
-    'TemplateType',
-    'GenerationComplexity',
-    'IterationMethod',
-    'GenerationPriority',
-    'OptimizationStrategy',
+    # ============ DOMAIN LAYER ENUMS ============
+    # Content Types (Business entities)
+    'ContentType',
+    'GenerationType',
+    'ContentRarity',
+    'ThemeCategory',
     
-    # Validation
-    'ValidationType',
-    'ValidationStatus',
+    # Content Type Collections
+    'CHARACTER_OPTIONS',
+    'EQUIPMENT_TYPES', 
+    'SIGNATURE_CONTENT',
+    
+    # Creative Content Generation
+    'CreativityLevel',
+    'GenerationMethod',
+    'ContentComplexity',
+    'ThematicConsistency',
+    
+    # Balance Analysis
+    'BalanceLevel',
+    'ValidationLevel',
     'BalanceCategory',
-    'RuleCompliance',
-    'ComplianceLevel',
-    'AnalysisType',
+    'PowerBenchmark',
     
-    # Character Creation
-    'FeatCategory',
-    'SpeciesSize',
-    'BackgroundType',
-    'ClassResource',
-    'SubclassType',
-    'SpellcastingType',
-    'AlignmentAxis',
-    'AlignmentTendency'
+    # Character Progression
+    'ProgressionType',
+    'MilestoneType',
+    'FeatureCategory',
+    'ScalingType',
+    'ThematicTier',
+    
+    # ============ APPLICATION LAYER ENUMS ============
+    # Validation Framework
+    'ValidationType',
+    'ValidationSeverity',
+    'ValidationStatus',
+    'ValidationScope',
+    'RuleCompliance',
+    
+    # ============ INFRASTRUCTURE LAYER ENUMS ============
+    # Export and Output
+    'ExportFormat',
+    'CharacterSheetType',
+    'OutputLayout',
+    'ContentInclusionLevel',
+    
+    # Helper Functions
+    'get_content_types_by_category',
+    'get_supported_formats_for_vtt'
 ]
 
-# Comprehensive Enum Registry for dynamic loading and introspection
+# Comprehensive Enum Registry organized by Clean Architecture layers
 ENUM_REGISTRY = {
-    # Application
-    'environment': Environment,
-    'log_level': LogLevel,
-    'security_algorithm': SecurityAlgorithm,
-    'cache_backend': CacheBackend,
-    'database_type': DatabaseType,
+    # ============ CORE LAYER ============
+    'core': {
+        # D&D Game Mechanics (immutable business rules)
+        'ability': Ability,
+        'skill': Skill,
+        'proficiency_level': ProficiencyLevel,
+        'damage_type': DamageType,
+        'action_type': ActionType,
+        'condition': Condition,
+        'magic_school': MagicSchool,
+        'spell_level': SpellLevel,
+        'casting_time': CastingTime,
+        'spell_range': SpellRange,
+        'spell_duration': SpellDuration,
+        'area_of_effect': AreaOfEffect,
+        'currency': Currency,
+        'power_tier': PowerTier,
+    },
     
-    # Content Types
-    'content_type': ContentType,
-    'generation_method': GenerationMethod,
-    'validation_severity': ValidationSeverity,
-    'balance_level': BalanceLevel,
-    'content_rarity': ContentRarity,
-    'content_source': ContentSource,
-    'quality_level': QualityLevel,
-    'complexity_level': ComplexityLevel,
-    'theme_category': ThemeCategory,
-    'power_tier': PowerTier,
-    'content_status': ContentStatus,
+    # ============ DOMAIN LAYER ============
+    'domain': {
+        # Content Generation Business Logic
+        'content_type': ContentType,
+        'generation_type': GenerationType,
+        'content_rarity': ContentRarity,
+        'theme_category': ThemeCategory,
+        'creativity_level': CreativityLevel,
+        'generation_method': GenerationMethod,
+        'content_complexity': ContentComplexity,
+        'thematic_consistency': ThematicConsistency,
+        'balance_level': BalanceLevel,
+        'validation_level': ValidationLevel,
+        'balance_category': BalanceCategory,
+        'power_benchmark': PowerBenchmark,
+        'progression_type': ProgressionType,
+        'milestone_type': MilestoneType,
+        'feature_category': FeatureCategory,
+        'scaling_type': ScalingType,
+        'thematic_tier': ThematicTier,
+    },
     
-    # Game Mechanics
-    'ability_score': AbilityScore,
-    'skill': Skill,
-    'damage_type': DamageType,
-    'creature_size': CreatureSize,
-    'spell_school': SpellSchool,
-    'armor_type': ArmorType,
-    'weapon_property': WeaponProperty,
-    'weapon_type': WeaponType,
-    'equipment_category': EquipmentCategory,
-    'condition': Condition,
-    'spell_level': SpellLevel,
-    'casting_time': CastingTime,
-    'spell_range': SpellRange,
-    'spell_duration': SpellDuration,
-    'spell_component': SpellComponent,
-    'proficiency_level': ProficiencyLevel,
-    'currency': Currency,
-    'language_type': LanguageType,
-    'sense_type': SenseType,
+    # ============ APPLICATION LAYER ============
+    'application': {
+        # Use Case Orchestration
+        'validation_type': ValidationType,
+        'validation_severity': ValidationSeverity,
+        'validation_status': ValidationStatus,
+        'validation_scope': ValidationScope,
+        'rule_compliance': RuleCompliance,
+    },
     
-    # Generation
-    'llm_provider': LLMProvider,
-    'template_type': TemplateType,
-    'generation_complexity': GenerationComplexity,
-    'iteration_method': IterationMethod,
-    'generation_priority': GenerationPriority,
-    'optimization_strategy': OptimizationStrategy,
-    
-    # Validation
-    'validation_type': ValidationType,
-    'validation_status': ValidationStatus,
-    'balance_category': BalanceCategory,
-    'rule_compliance': RuleCompliance,
-    'compliance_level': ComplianceLevel,
-    'analysis_type': AnalysisType,
-    
-    # Character Creation
-    'feat_category': FeatCategory,
-    'species_size': SpeciesSize,
-    'background_type': BackgroundType,
-    'class_resource': ClassResource,
-    'subclass_type': SubclassType,
-    'spellcasting_type': SpellcastingType,
-    'alignment_axis': AlignmentAxis,
-    'alignment_tendency': AlignmentTendency
+    # ============ INFRASTRUCTURE LAYER ============
+    'infrastructure': {
+        # External Systems and Export
+        'export_format': ExportFormat,
+        'character_sheet_type': CharacterSheetType,
+        'output_layout': OutputLayout,
+        'content_inclusion_level': ContentInclusionLevel,
+    }
 }
+
+# Flattened registry for backward compatibility
+FLAT_ENUM_REGISTRY = {}
+for layer, enums in ENUM_REGISTRY.items():
+    FLAT_ENUM_REGISTRY.update(enums)
 
 
 def get_enum_class(enum_type: str):
@@ -257,7 +231,101 @@ def get_enum_class(enum_type: str):
         >>> content_enum = get_enum_class('content_type')
         >>> print(list(content_enum))
     """
-    return ENUM_REGISTRY.get(enum_type.lower())
+    return FLAT_ENUM_REGISTRY.get(enum_type.lower())
+
+
+def get_enums_by_layer(layer: str = None) -> dict:
+    """
+    Get enums organized by Clean Architecture layer.
+    
+    Args:
+        layer: Specific layer ('core', 'domain', 'application', 'infrastructure')
+               If None, returns all layers
+        
+    Returns:
+        Dictionary of enums for the specified layer or all layers
+        
+    Example:
+        >>> core_enums = get_enums_by_layer('core')
+        >>> domain_enums = get_enums_by_layer('domain')
+    """
+    if layer:
+        return ENUM_REGISTRY.get(layer.lower(), {})
+    return ENUM_REGISTRY
+
+
+def get_d3d_mechanics_enums() -> dict[str, type]:
+    """
+    Get all immutable D&D mechanics enums from core layer.
+    
+    Returns:
+        Dictionary of D&D mechanics enum names to enum classes
+        
+    Example:
+        >>> mechanics = get_d3d_mechanics_enums()
+        >>> abilities = mechanics['ability']
+    """
+    return ENUM_REGISTRY['core']
+
+
+def get_creative_content_enums() -> dict[str, type]:
+    """
+    Get all creative content generation enums from domain layer.
+    
+    Returns:
+        Dictionary of creative content enum names to enum classes
+        
+    Example:
+        >>> creative_enums = get_creative_content_enums()
+        >>> content_types = creative_enums['content_type']
+    """
+    return ENUM_REGISTRY['domain']
+
+
+def get_character_creation_enums() -> dict[str, type]:
+    """
+    Get enums specifically related to character creation workflow.
+    
+    Returns:
+        Dictionary of character creation enum names to enum classes
+        
+    Example:
+        >>> char_enums = get_character_creation_enums()
+        >>> progression = char_enums['progression_type']
+    """
+    character_creation_enums = {}
+    
+    # Core D&D mechanics for characters
+    core_char_enums = ['ability', 'skill', 'proficiency_level']
+    for enum_name in core_char_enums:
+        if enum_name in ENUM_REGISTRY['core']:
+            character_creation_enums[enum_name] = ENUM_REGISTRY['core'][enum_name]
+    
+    # Domain character generation enums
+    domain_char_enums = [
+        'content_type', 'creativity_level', 'balance_level', 
+        'progression_type', 'milestone_type', 'feature_category',
+        'scaling_type', 'thematic_tier'
+    ]
+    for enum_name in domain_char_enums:
+        if enum_name in ENUM_REGISTRY['domain']:
+            character_creation_enums[enum_name] = ENUM_REGISTRY['domain'][enum_name]
+    
+    return character_creation_enums
+
+
+def get_export_related_enums() -> dict[str, type]:
+    """
+    Get enums related to character sheet export and VTT compatibility.
+    
+    Returns:
+        Dictionary of export-related enum names to enum classes
+        
+    Example:
+        >>> export_enums = get_export_related_enums()
+        >>> formats = export_enums['export_format']
+    """
+    return ENUM_REGISTRY['infrastructure']
 
 
 def list_available_enums() -> list[str]:
@@ -271,47 +339,40 @@ def list_available_enums() -> list[str]:
         >>> enums = list_available_enums()
         >>> print(f"Available enums: {len(enums)}")
     """
-    return list(ENUM_REGISTRY.keys())
+    return list(FLAT_ENUM_REGISTRY.keys())
 
 
 def get_enums_by_category() -> dict[str, list[str]]:
     """
-    Get enums organized by their functional category.
+    Get enums organized by their functional category within Clean Architecture.
     
     Returns:
         Dictionary of categories with their enum types
         
     Example:
         >>> categories = get_enums_by_category()
-        >>> content_enums = categories['content_types']
+        >>> core_mechanics = categories['d3d_mechanics']
     """
     return {
-        "application": [
-            "environment", "log_level", "security_algorithm", 
-            "cache_backend", "database_type"
+        "d3d_mechanics": [
+            "ability", "skill", "proficiency_level", "damage_type", "action_type",
+            "condition", "magic_school", "spell_level", "casting_time", "spell_range", 
+            "spell_duration", "area_of_effect", "currency", "power_tier"
         ],
-        "content_types": [
-            "content_type", "generation_method", "validation_severity", "balance_level",
-            "content_rarity", "content_source", "quality_level", "complexity_level",
-            "theme_category", "power_tier", "content_status"
+        "content_generation": [
+            "content_type", "generation_type", "content_rarity", "theme_category",
+            "creativity_level", "generation_method", "content_complexity", "thematic_consistency"
         ],
-        "game_mechanics": [
-            "ability_score", "skill", "damage_type", "creature_size", "spell_school",
-            "armor_type", "weapon_property", "weapon_type", "equipment_category",
-            "condition", "spell_level", "casting_time", "spell_range", "spell_duration",
-            "spell_component", "proficiency_level", "currency", "language_type", "sense_type"
+        "balance_validation": [
+            "balance_level", "validation_level", "balance_category", "power_benchmark",
+            "validation_type", "validation_severity", "validation_status", "validation_scope",
+            "rule_compliance"
         ],
-        "generation": [
-            "llm_provider", "template_type", "generation_complexity", "iteration_method",
-            "generation_priority", "optimization_strategy"
+        "character_progression": [
+            "progression_type", "milestone_type", "feature_category", "scaling_type", "thematic_tier"
         ],
-        "validation": [
-            "validation_type", "validation_status", "balance_category", "rule_compliance",
-            "compliance_level", "analysis_type"
-        ],
-        "character_creation": [
-            "feat_category", "species_size", "background_type", "class_resource",
-            "subclass_type", "spellcasting_type", "alignment_axis", "alignment_tendency"
+        "export_formats": [
+            "export_format", "character_sheet_type", "output_layout", "content_inclusion_level"
         ]
     }
 
@@ -328,8 +389,8 @@ def get_enum_by_name(enum_name: str, value: str):
         Enum value or None if not found
         
     Example:
-        >>> species_size = get_enum_by_name('creature_size', 'medium')
-        >>> print(species_size.name)
+        >>> creativity = get_enum_by_name('creativity_level', 'high')
+        >>> print(creativity.name)
     """
     enum_class = get_enum_class(enum_name)
     if enum_class:
@@ -378,196 +439,206 @@ def get_enum_values(enum_name: str) -> list[str]:
     return []
 
 
-def search_enums(search_term: str) -> dict[str, list[str]]:
+def search_enums(search_term: str) -> dict[str, dict[str, list[str]]]:
     """
-    Search for enums containing a specific term.
+    Search for enums containing a specific term, organized by architecture layer.
     
     Args:
         search_term: Term to search for in enum names or values
         
     Returns:
-        Dictionary mapping enum names to matching values
+        Dictionary mapping layers to enum names to matching values
         
     Example:
         >>> results = search_enums('spell')
-        >>> print(f"Found enums with 'spell': {list(results.keys())}")
+        >>> core_spell_enums = results.get('core', {})
     """
     results = {}
     search_lower = search_term.lower()
     
-    for enum_name, enum_class in ENUM_REGISTRY.items():
-        # Check if enum name contains search term
-        if search_lower in enum_name:
-            results[enum_name] = [e.value for e in enum_class]
-            continue
-            
-        # Check if any enum values contain search term
-        matching_values = [
-            e.value for e in enum_class 
-            if search_lower in e.value.lower()
-        ]
+    for layer, layer_enums in ENUM_REGISTRY.items():
+        layer_results = {}
         
-        if matching_values:
-            results[enum_name] = matching_values
+        for enum_name, enum_class in layer_enums.items():
+            # Check if enum name contains search term
+            if search_lower in enum_name:
+                layer_results[enum_name] = [e.value for e in enum_class]
+                continue
+                
+            # Check if any enum values contain search term
+            matching_values = [
+                e.value for e in enum_class 
+                if search_lower in e.value.lower()
+            ]
+            
+            if matching_values:
+                layer_results[enum_name] = matching_values
+        
+        if layer_results:
+            results[layer] = layer_results
     
     return results
 
 
-def get_related_enums(content_type: str) -> dict[str, list]:
+def get_content_creation_workflow_enums() -> dict[str, type]:
     """
-    Get enums that are commonly used with a specific content type.
+    Get enums specifically for the interactive character creation workflow.
     
-    Args:
-        content_type: The content type to find related enums for
-        
     Returns:
-        Dictionary of related enum categories and their values
+        Dictionary of workflow-related enum names to enum classes
         
     Example:
-        >>> related = get_related_enums('spell')
-        >>> print(f"Spell-related enums: {list(related.keys())}")
+        >>> workflow_enums = get_content_creation_workflow_enums()
+        >>> creativity = workflow_enums['creativity_level']
     """
-    content_type_lower = content_type.lower()
-    
-    # Define relationships between content types and relevant enums
-    relationships = {
-        'spell': [
-            'spell_school', 'spell_level', 'casting_time', 'spell_range',
-            'spell_duration', 'spell_component', 'damage_type'
-        ],
-        'species': [
-            'creature_size', 'ability_score', 'skill', 'language_type',
-            'sense_type', 'damage_type'
-        ],
-        'character_class': [
-            'ability_score', 'skill', 'class_resource', 'spellcasting_type',
-            'proficiency_level'
-        ],
-        'equipment': [
-            'equipment_category', 'weapon_type', 'armor_type', 'weapon_property',
-            'damage_type', 'currency'
-        ],
-        'feat': [
-            'feat_category', 'ability_score', 'skill', 'proficiency_level'
-        ],
-        'background': [
-            'background_type', 'skill', 'language_type', 'equipment_category'
-        ]
+    workflow_enums = {
+        # User interaction and creativity
+        'creativity_level': CreativityLevel,
+        'generation_method': GenerationMethod,
+        'content_complexity': ContentComplexity,
+        'thematic_consistency': ThematicConsistency,
+        
+        # Content generation
+        'content_type': ContentType,
+        'generation_type': GenerationType,
+        'theme_category': ThemeCategory,
+        
+        # Validation and balance
+        'balance_level': BalanceLevel,
+        'validation_level': ValidationLevel,
+        'validation_type': ValidationType,
+        'validation_status': ValidationStatus,
+        
+        # Character progression
+        'progression_type': ProgressionType,
+        'milestone_type': MilestoneType,
+        'thematic_tier': ThematicTier,
+        
+        # Export
+        'export_format': ExportFormat,
+        'character_sheet_type': CharacterSheetType
     }
     
-    related_enum_names = relationships.get(content_type_lower, [])
-    
-    result = {}
-    for enum_name in related_enum_names:
-        enum_class = get_enum_class(enum_name)
-        if enum_class:
-            result[enum_name] = list(enum_class)
-    
-    return result
+    return workflow_enums
 
 
-def get_application_enums() -> dict[str, type]:
+def get_vtt_compatibility_enums() -> dict[str, type]:
     """
-    Get all application-level enums.
+    Get enums related to Virtual Tabletop compatibility and export.
     
     Returns:
-        Dictionary of application enum names to enum classes
+        Dictionary of VTT-related enum names to enum classes
+        
+    Example:
+        >>> vtt_enums = get_vtt_compatibility_enums()
+        >>> export_formats = vtt_enums['export_format']
     """
-    app_categories = get_enums_by_category()["application"]
-    return {name: ENUM_REGISTRY[name] for name in app_categories}
+    return {
+        'export_format': ExportFormat,
+        'character_sheet_type': CharacterSheetType,
+        'output_layout': OutputLayout,
+        'content_inclusion_level': ContentInclusionLevel
+    }
 
 
-def get_domain_enums() -> dict[str, type]:
+def validate_architecture_compliance() -> list[str]:
     """
-    Get all domain-specific enums (non-application).
+    Validate that enum organization follows Clean Architecture principles.
     
     Returns:
-        Dictionary of domain enum names to enum classes
+        List of compliance issues (empty if compliant)
+        
+    Example:
+        >>> issues = validate_architecture_compliance()
+        >>> if not issues:
+        ...     print("Architecture compliant!")
     """
-    categories = get_enums_by_category()
-    domain_enums = {}
+    issues = []
     
-    for category, enum_names in categories.items():
-        if category != "application":
-            for enum_name in enum_names:
-                domain_enums[enum_name] = ENUM_REGISTRY[enum_name]
+    # Check that each layer has appropriate enums
+    required_layers = ['core', 'domain', 'application', 'infrastructure']
+    for layer in required_layers:
+        if layer not in ENUM_REGISTRY:
+            issues.append(f"Missing required architecture layer: {layer}")
     
-    return domain_enums
-
-
-def validate_enum_relationships() -> list[str]:
-    """
-    Validate that all enum relationships are properly defined.
+    # Check that core layer only contains immutable D&D mechanics
+    core_enums = ENUM_REGISTRY.get('core', {})
+    if not core_enums:
+        issues.append("Core layer is empty - should contain D&D mechanics")
     
-    Returns:
-        List of validation errors (empty if valid)
-    """
-    errors = []
+    # Check that domain layer contains business logic enums
+    domain_enums = ENUM_REGISTRY.get('domain', {})
+    expected_domain_enums = ['content_type', 'creativity_level', 'balance_level']
+    for enum_name in expected_domain_enums:
+        if enum_name not in domain_enums:
+            issues.append(f"Domain layer missing critical enum: {enum_name}")
     
-    # Check that all enums in registry are properly imported
-    for enum_name, enum_class in ENUM_REGISTRY.items():
-        if enum_class is None:
-            errors.append(f"Enum '{enum_name}' is None in registry")
-            continue
-            
-        # Check that enum has expected properties
-        if not hasattr(enum_class, '__members__'):
-            errors.append(f"'{enum_name}' is not a valid enum class")
-            
-        # Check that enum has at least one member
-        if not list(enum_class):
-            errors.append(f"Enum '{enum_name}' has no members")
+    # Check that all enums are properly accessible
+    for layer, enums in ENUM_REGISTRY.items():
+        for enum_name, enum_class in enums.items():
+            if enum_class is None:
+                issues.append(f"Enum '{enum_name}' in layer '{layer}' is None")
+            elif not hasattr(enum_class, '__members__'):
+                issues.append(f"'{enum_name}' in layer '{layer}' is not a valid enum")
     
-    # Check categories contain valid enums
-    categories = get_enums_by_category()
-    for category, enum_names in categories.items():
-        for enum_name in enum_names:
-            if enum_name not in ENUM_REGISTRY:
-                errors.append(f"Category '{category}' references unknown enum '{enum_name}'")
-    
-    return errors
+    return issues
 
 
 # Module metadata
-__version__ = '1.1.0'
-__description__ = 'Core enumerations for D&D Creative Content Framework'
+__version__ = '2.0.0'
+__description__ = 'Clean Architecture-compliant enumerations for D&D Creative Content Framework'
 
 # Configuration
 ENABLE_ENUM_CACHING = True
 STRICT_VALIDATION = True
+ARCHITECTURE_COMPLIANCE_CHECK = True
 
-# Validation on import
-_validation_errors = validate_enum_relationships()
-if _validation_errors and STRICT_VALIDATION:
-    import warnings
-    warnings.warn(f"Enum validation errors: {_validation_errors}")
+# Architecture compliance validation on import
+if ARCHITECTURE_COMPLIANCE_CHECK:
+    _compliance_issues = validate_architecture_compliance()
+    if _compliance_issues and STRICT_VALIDATION:
+        import warnings
+        warnings.warn(f"Architecture compliance issues: {_compliance_issues}")
 
 # Usage examples in docstring
 """
-Usage Examples:
+Clean Architecture Usage Examples:
 
-1. Basic enum access:
-   >>> from core.enums import ContentType, ValidationSeverity
-   >>> print(ContentType.SPECIES.value)
+1. Core Layer (Immutable D&D mechanics):
+   >>> from core.enums import Ability, Skill, DamageType
+   >>> print(Ability.STRENGTH.value)
    
-2. Dynamic enum loading:
-   >>> content_enum = get_enum_class('content_type')
-   >>> all_types = list(content_enum)
+2. Domain Layer (Business logic):
+   >>> from core.enums import ContentType, CreativityLevel, BalanceLevel
+   >>> creativity = CreativityLevel.HIGH
+   >>> print(f"Allows custom classes: {creativity.allows_custom_classes}")
    
-3. Validation:
-   >>> is_valid = validate_enum_value('balance_level', 'balanced')
+3. Application Layer (Use case orchestration):
+   >>> from core.enums import ValidationType, ValidationStatus
+   >>> validation = ValidationType.BALANCE
+   >>> print(f"Is blocking: {validation.is_blocking}")
    
-4. Search functionality:
-   >>> spell_enums = search_enums('spell')
+4. Infrastructure Layer (External systems):
+   >>> from core.enums import ExportFormat
+   >>> formats = get_supported_formats_for_vtt('roll20')
    
-5. Related enums:
-   >>> spell_related = get_related_enums('spell')
+5. Architecture-aware access:
+   >>> core_enums = get_enums_by_layer('core')
+   >>> domain_enums = get_enums_by_layer('domain')
    
-6. Category browsing:
-   >>> categories = get_enums_by_category()
-   >>> game_mechanics = categories['game_mechanics']
+6. Character creation workflow:
+   >>> workflow_enums = get_content_creation_workflow_enums()
+   >>> creativity_enum = workflow_enums['creativity_level']
    
-7. Application vs Domain enums:
-   >>> app_enums = get_application_enums()
-   >>> domain_enums = get_domain_enums()
+7. VTT compatibility:
+   >>> vtt_enums = get_vtt_compatibility_enums()
+   >>> export_formats = vtt_enums['export_format']
+   
+8. Search by layer:
+   >>> spell_results = search_enums('spell')
+   >>> core_spell_enums = spell_results.get('core', {})
+   
+9. Architecture compliance:
+   >>> issues = validate_architecture_compliance()
+   >>> print(f"Compliance status: {'PASS' if not issues else 'FAIL'}")
 """

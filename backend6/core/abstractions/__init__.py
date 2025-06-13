@@ -3,76 +3,177 @@ Core abstractions for the D&D Creative Content Framework.
 
 This module defines the fundamental contracts that all content types must follow,
 ensuring D&D 2024 rule compliance while enabling creative freedom in content generation.
+
+These abstractions enforce Clean Architecture boundaries by defining interfaces
+that are infrastructure-independent and focused on business rules.
 """
 
-from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional, Type
-from .character_class import AbstractCharacterClass, ClassFeature
-from .species import AbstractSpecies
-from .equipment import AbstractEquipment, AbstractWeapon, AbstractArmor, AbstractMagicItem
-from .spell import AbstractSpell
-from .feat import AbstractFeat
-from .content_validator import AbstractContentValidator
+# ============ CORE LAYER ABSTRACTIONS ============
+# Foundation interfaces - infrastructure independent
 
+# LLM Provider Interface (Infrastructure boundary)
+from .llm_provider import ILLMProvider
+
+# Content Generation Interfaces (Business logic boundary)
+from .content_generator import IContentGenerator
+from .balance_analyzer import IBalanceAnalyzer
+
+# Repository Interfaces (Data access boundary)
+from .character_repository import ICharacterRepository
+from .conversation_repository import IConversationRepository
+from .content_repository import IContentRepository
+
+# Export Service Interface (External systems boundary)  
+from .export_service import IExportService
+
+# Validation Interface (Business rule enforcement)
+from .content_validator import IContentValidator
+
+# ============ DOMAIN ENTITY ABSTRACTIONS ============
+# Business entity contracts
+
+# Character Building Blocks
+from .species import ISpecies
+from .character_class import ICharacterClass, ISubclass
+from .background import IBackground
+
+# Content Types
+from .feat import IFeat
+from .spell import ISpell
+from .equipment import IEquipment, IWeapon, IArmor, IMagicItem
+
+# Character Progression
+from .character import ICharacter
+from .character_sheet import ICharacterSheet
+from .progression import IProgression
+
+# Export all public interfaces organized by architectural concern
 __all__ = [
-    # Character Classes
-    'AbstractCharacterClass',
-    'ClassFeature',
+    # ============ INFRASTRUCTURE BOUNDARIES ============
+    'ILLMProvider',           # LLM service abstraction
+    'IExportService',         # VTT export abstraction
     
-    # Species
-    'AbstractSpecies', 
+    # ============ DATA ACCESS BOUNDARIES ============
+    'ICharacterRepository',   # Character persistence
+    'IConversationRepository', # Conversation state
+    'IContentRepository',     # Custom content storage
     
-    # Equipment
-    'AbstractEquipment',
-    'AbstractWeapon',
-    'AbstractArmor', 
-    'AbstractMagicItem',
+    # ============ BUSINESS LOGIC BOUNDARIES ============
+    'IContentGenerator',      # Content creation logic
+    'IBalanceAnalyzer',       # Power level analysis
+    'IContentValidator',      # Rule compliance checking
     
-    # Spells
-    'AbstractSpell',
+    # ============ DOMAIN ENTITY CONTRACTS ============
+    # Character Building Blocks
+    'ISpecies',              # Species/race interface
+    'ICharacterClass',       # Class interface
+    'ISubclass',             # Subclass interface  
+    'IBackground',           # Background interface
     
-    # Feats
-    'AbstractFeat',
+    # Content Entities
+    'IFeat',                 # Feat interface
+    'ISpell',                # Spell interface
+    'IEquipment',            # Equipment interface
+    'IWeapon',               # Weapon interface
+    'IArmor',                # Armor interface
+    'IMagicItem',            # Magic item interface
     
-    # Validation
-    'AbstractContentValidator',
+    # Character System
+    'ICharacter',            # Character entity
+    'ICharacterSheet',       # Character sheet (JSON export)
+    'IProgression',          # Level progression
     
     # Utility Functions
     'get_available_abstractions',
     'validate_abstraction_implementation',
     'get_abstraction_registry',
-    'check_abstraction_completeness',
+    'check_clean_architecture_compliance',
 ]
 
-# Registry of all available abstractions
+# Registry organized by Clean Architecture layers
 ABSTRACTION_REGISTRY = {
-    'character_class': AbstractCharacterClass,
-    'species': AbstractSpecies,
-    'equipment': AbstractEquipment,
-    'weapon': AbstractWeapon,
-    'armor': AbstractArmor,
-    'magic_item': AbstractMagicItem,
-    'spell': AbstractSpell,
-    'feat': AbstractFeat,
-    'content_validator': AbstractContentValidator,
+    # ============ INFRASTRUCTURE LAYER ============
+    'infrastructure': {
+        'llm_provider': ILLMProvider,
+        'export_service': IExportService,
+    },
+    
+    # ============ APPLICATION LAYER ============  
+    'application': {
+        'character_repository': ICharacterRepository,
+        'conversation_repository': IConversationRepository,
+        'content_repository': IContentRepository,
+    },
+    
+    # ============ DOMAIN LAYER ============
+    'domain': {
+        # Business Services
+        'content_generator': IContentGenerator,
+        'balance_analyzer': IBalanceAnalyzer,
+        'content_validator': IContentValidator,
+        
+        # Domain Entities
+        'character': ICharacter,
+        'character_sheet': ICharacterSheet,
+        'progression': IProgression,
+        'species': ISpecies,
+        'character_class': ICharacterClass,
+        'subclass': ISubclass,
+        'background': IBackground,
+        'feat': IFeat,
+        'spell': ISpell,
+        'equipment': IEquipment,
+        'weapon': IWeapon,
+        'armor': IArmor,
+        'magic_item': IMagicItem,
+    }
 }
 
-
-def get_available_abstractions() -> List[str]:
+def get_available_abstractions() -> dict[str, list[str]]:
     """
-    Get list of all available abstract contracts.
+    Get all available abstractions organized by Clean Architecture layer.
     
     Returns:
-        List of abstraction class names
+        Dictionary mapping layers to their abstractions
     """
-    return [
-        "AbstractCharacterClass", "AbstractSpecies", "AbstractEquipment",
-        "AbstractWeapon", "AbstractArmor", "AbstractMagicItem", "AbstractSpell", 
-        "AbstractFeat", "AbstractContentValidator"
-    ]
+    return {
+        layer: list(abstractions.keys()) 
+        for layer, abstractions in ABSTRACTION_REGISTRY.items()
+    }
 
+def get_abstraction_registry() -> dict[str, dict[str, type]]:
+    """Get the complete abstraction registry organized by layer."""
+    return ABSTRACTION_REGISTRY.copy()
 
-def validate_abstraction_implementation(impl_class: Type, expected_abstract: Type) -> List[str]:
+def check_clean_architecture_compliance() -> dict[str, list[str]]:
+    """
+    Validate Clean Architecture compliance of all abstractions.
+    
+    Returns:
+        Dictionary of compliance issues by layer
+    """
+    issues = {}
+    
+    # Check infrastructure layer - should have minimal abstractions
+    infra_abstractions = ABSTRACTION_REGISTRY.get('infrastructure', {})
+    if len(infra_abstractions) > 5:  # Should be minimal
+        issues['infrastructure'] = ['Too many infrastructure abstractions - violates Clean Architecture']
+    
+    # Check domain layer - should contain business logic abstractions
+    domain_abstractions = ABSTRACTION_REGISTRY.get('domain', {})
+    required_domain = ['content_generator', 'balance_analyzer', 'character']
+    missing_domain = [abs_name for abs_name in required_domain if abs_name not in domain_abstractions]
+    if missing_domain:
+        issues['domain'] = [f'Missing critical domain abstraction: {abs_name}' for abs_name in missing_domain]
+    
+    # Check application layer - should have orchestration abstractions
+    app_abstractions = ABSTRACTION_REGISTRY.get('application', {})
+    if not app_abstractions:
+        issues['application'] = ['Application layer has no abstractions']
+    
+    return issues
+
+def validate_abstraction_implementation(impl_class: type, expected_abstract: type) -> list[str]:
     """
     Validate that a concrete class properly implements an abstraction.
     
@@ -88,7 +189,7 @@ def validate_abstraction_implementation(impl_class: Type, expected_abstract: Typ
     # Check inheritance
     if not issubclass(impl_class, expected_abstract):
         issues.append(f"{impl_class.__name__} does not inherit from {expected_abstract.__name__}")
-        return issues  # Can't continue validation without proper inheritance
+        return issues
     
     # Check for required abstract methods
     abstract_methods = getattr(expected_abstract, '__abstractmethods__', set())
@@ -96,148 +197,52 @@ def validate_abstraction_implementation(impl_class: Type, expected_abstract: Typ
         if not hasattr(impl_class, method_name):
             issues.append(f"Missing required method: {method_name}")
         else:
-            # Check if method is still abstract (not properly implemented)
             method = getattr(impl_class, method_name)
             if getattr(method, '__isabstractmethod__', False):
-                issues.append(f"Method {method_name} is not properly implemented (still abstract)")
-    
-    # Check for required properties
-    for attr_name in dir(expected_abstract):
-        if not attr_name.startswith('_'):
-            attr = getattr(expected_abstract, attr_name)
-            if isinstance(attr, property) and hasattr(attr, '__isabstractmethod__'):
-                if not hasattr(impl_class, attr_name):
-                    issues.append(f"Missing required property: {attr_name}")
+                issues.append(f"Method {method_name} is not properly implemented")
     
     return issues
 
+def get_abstractions_by_layer(layer: str) -> dict[str, type]:
+    """Get abstractions for a specific Clean Architecture layer."""
+    return ABSTRACTION_REGISTRY.get(layer.lower(), {})
 
-def get_abstraction_registry() -> Dict[str, Type]:
-    """
-    Get the registry of all available abstractions.
+def get_domain_entity_abstractions() -> dict[str, type]:
+    """Get domain entity abstractions specifically."""
+    domain_abstractions = ABSTRACTION_REGISTRY.get('domain', {})
+    entity_abstractions = {}
     
-    Returns:
-        Dictionary mapping abstraction names to their classes
-    """
-    return ABSTRACTION_REGISTRY.copy()
-
-
-def check_abstraction_completeness() -> Dict[str, Any]:
-    """
-    Check the completeness and integrity of all abstractions.
-    
-    Returns:
-        Dictionary with completeness analysis
-    """
-    results = {
-        "total_abstractions": len(ABSTRACTION_REGISTRY),
-        "abstract_methods_count": {},
-        "inheritance_tree": {},
-        "validation_status": "complete"
-    }
-    
-    for name, abstract_class in ABSTRACTION_REGISTRY.items():
-        # Count abstract methods
-        abstract_methods = getattr(abstract_class, '__abstractmethods__', set())
-        results["abstract_methods_count"][name] = len(abstract_methods)
-        
-        # Build inheritance tree
-        mro = abstract_class.__mro__
-        results["inheritance_tree"][name] = [cls.__name__ for cls in mro if cls != object]
-        
-        # Basic validation
-        if not abstract_methods and abstract_class != AbstractContentValidator:
-            # Most abstractions should have at least some abstract methods
-            results["validation_status"] = "warning"
-    
-    return results
-
-
-def get_abstraction_by_name(name: str) -> Optional[Type]:
-    """
-    Get an abstraction class by its name.
-    
-    Args:
-        name: Name of the abstraction (key from registry)
-        
-    Returns:
-        Abstraction class or None if not found
-    """
-    return ABSTRACTION_REGISTRY.get(name.lower())
-
-
-def list_abstract_methods(abstract_class: Type) -> List[str]:
-    """
-    List all abstract methods for a given abstraction.
-    
-    Args:
-        abstract_class: The abstract class to analyze
-        
-    Returns:
-        List of abstract method names
-    """
-    abstract_methods = getattr(abstract_class, '__abstractmethods__', set())
-    return list(abstract_methods)
-
-
-def get_implementation_template(abstract_class: Type) -> str:
-    """
-    Generate a basic implementation template for an abstraction.
-    
-    Args:
-        abstract_class: The abstract class to create template for
-        
-    Returns:
-        String containing implementation template
-    """
-    class_name = abstract_class.__name__.replace('Abstract', 'Concrete')
-    abstract_methods = getattr(abstract_class, '__abstractmethods__', set())
-    
-    template_lines = [
-        f"class {class_name}({abstract_class.__name__}):",
-        f'    """Concrete implementation of {abstract_class.__name__}."""',
-        ""
+    # Entity abstractions (not services)
+    entity_names = [
+        'character', 'character_sheet', 'progression', 'species', 
+        'character_class', 'subclass', 'background', 'feat', 'spell', 
+        'equipment', 'weapon', 'armor', 'magic_item'
     ]
     
-    for method_name in sorted(abstract_methods):
-        method = getattr(abstract_class, method_name)
-        if callable(method):
-            template_lines.extend([
-                f"    def {method_name}(self, *args, **kwargs):",
-                f'        """Implement {method_name} method."""',
-                f"        # TODO: Implement {method_name}",
-                f"        raise NotImplementedError('Method {method_name} must be implemented')",
-                ""
-            ])
+    for name in entity_names:
+        if name in domain_abstractions:
+            entity_abstractions[name] = domain_abstractions[name]
     
-    return "\n".join(template_lines)
+    return entity_abstractions
 
+def get_domain_service_abstractions() -> dict[str, type]:
+    """Get domain service abstractions specifically."""
+    domain_abstractions = ABSTRACTION_REGISTRY.get('domain', {})
+    service_abstractions = {}
+    
+    # Service abstractions
+    service_names = ['content_generator', 'balance_analyzer', 'content_validator']
+    
+    for name in service_names:
+        if name in domain_abstractions:
+            service_abstractions[name] = domain_abstractions[name]
+    
+    return service_abstractions
 
-def validate_all_abstractions() -> Dict[str, List[str]]:
-    """
-    Validate all abstractions for consistency and completeness.
-    
-    Returns:
-        Dictionary mapping abstraction names to any issues found
-    """
-    validation_results = {}
-    
-    for name, abstract_class in ABSTRACTION_REGISTRY.items():
-        issues = []
-        
-        # Check that it's actually abstract
-        if not getattr(abstract_class, '__abstractmethods__', None):
-            if abstract_class != AbstractContentValidator:  # Special case
-                issues.append("Class has no abstract methods - may not be properly abstract")
-        
-        # Check for proper ABC inheritance
-        if not issubclass(abstract_class, ABC):
-            issues.append("Abstract class should inherit from ABC")
-        
-        # Check for docstring
-        if not abstract_class.__doc__:
-            issues.append("Abstract class missing docstring")
-        
-        validation_results[name] = issues
-    
-    return validation_results
+def get_infrastructure_abstractions() -> dict[str, type]:
+    """Get infrastructure boundary abstractions."""
+    return ABSTRACTION_REGISTRY.get('infrastructure', {})
+
+def get_application_abstractions() -> dict[str, type]:
+    """Get application layer abstractions."""
+    return ABSTRACTION_REGISTRY.get('application', {})

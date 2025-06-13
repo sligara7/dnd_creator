@@ -1,3 +1,9 @@
+"""Centralized exception imports and utilities."""
+# - Import all exception types
+# - Exception factory functions
+# - Common error handling utilities
+# - Exception categorization helpers
+
 """
 Core domain exceptions for the D&D Creative Content Framework.
 
@@ -33,7 +39,7 @@ from .generation_errors import (
 )
 
 # Validation Errors
-from .validation_errors import (
+from .base import (
     ValidationError,
     SchemaValidationError,
     FieldValidationError,

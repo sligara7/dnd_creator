@@ -19,6 +19,9 @@ backend6/
 │   │   ├── dnd_mechanics.py       # Core D&D 5e/2024 rules
 │   │   ├── balance_thresholds.py  # Power level limits
 │   │   ├── progression.py         # Level progression constants
+│   │   ├── llm_prompts.py         # added
+│   │   ├── validation_rules.py    # added
+│   │   ├── progression.py         # added
 │   │   └── generation_limits.py   # Content creation boundaries
 │   ├── utils/                     # Pure utility functions
 │   │   ├── __init__.py

@@ -31,6 +31,7 @@ backend6/
 │   │   ├── llm_provider.py        # LLM interface
 │   │   ├── content_generator.py   # Content creation interface
 │   │   ├── balance_analyzer.py    # Balance checking interface
+│   │   ├── character.py           # Added/new
 │   │   ├── character_repository.py # Character storage interface
 │   │   └── export_service.py      # VTT export interface
 │   └── exceptions/                # Base exception types

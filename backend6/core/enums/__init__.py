@@ -78,6 +78,37 @@ from .export_formats import (
     get_supported_formats_for_vtt
 )
 
+# Conversation State enums (Interactive workflow management)
+from .conversation_states import (
+    ConversationState,
+    ConversationSubState,
+    ConversationPhase,
+    UserInteractionType,
+    ConversationTrigger,
+    ConversationContext,
+    ResponseTone,
+    ConversationPriority,
+    # Utility functions
+    is_valid_transition,
+    get_valid_transitions,
+    get_conversation_phase,
+    get_expected_interactions,
+    get_state_timeout,
+    is_terminal_state,
+    is_processing_state,
+    is_user_input_state,
+    get_states_in_phase,
+    calculate_progress_percentage,
+    get_next_recommended_state,
+    # State metadata
+    STATE_DESCRIPTIONS,
+    STATE_DISPLAY_NAMES,
+    VALID_TRANSITIONS,
+    STATE_PHASES,
+    STATE_INTERACTIONS,
+    STATE_TIMEOUTS
+)
+
 # Export all public symbols organized by architectural layer
 __all__ = [
     # ============ CORE LAYER ENUMS ============
@@ -128,6 +159,16 @@ __all__ = [
     'ScalingType',
     'ThematicTier',
     
+    # Conversation Workflow Management
+    'ConversationState',
+    'ConversationSubState',
+    'ConversationPhase',
+    'UserInteractionType',
+    'ConversationTrigger',
+    'ConversationContext',
+    'ResponseTone',
+    'ConversationPriority',
+    
     # ============ APPLICATION LAYER ENUMS ============
     # Validation Framework
     'ValidationType',
@@ -145,7 +186,28 @@ __all__ = [
     
     # Helper Functions
     'get_content_types_by_category',
-    'get_supported_formats_for_vtt'
+    'get_supported_formats_for_vtt',
+    
+    # Conversation State Utilities
+    'is_valid_transition',
+    'get_valid_transitions',
+    'get_conversation_phase',
+    'get_expected_interactions',
+    'get_state_timeout',
+    'is_terminal_state',
+    'is_processing_state',
+    'is_user_input_state',
+    'get_states_in_phase',
+    'calculate_progress_percentage',
+    'get_next_recommended_state',
+    
+    # State Metadata
+    'STATE_DESCRIPTIONS',
+    'STATE_DISPLAY_NAMES',
+    'VALID_TRANSITIONS',
+    'STATE_PHASES',
+    'STATE_INTERACTIONS',
+    'STATE_TIMEOUTS'
 ]
 
 # Comprehensive Enum Registry organized by Clean Architecture layers
@@ -189,6 +251,16 @@ ENUM_REGISTRY = {
         'feature_category': FeatureCategory,
         'scaling_type': ScalingType,
         'thematic_tier': ThematicTier,
+        
+        # Interactive Conversation Workflow
+        'conversation_state': ConversationState,
+        'conversation_substate': ConversationSubState,
+        'conversation_phase': ConversationPhase,
+        'user_interaction_type': UserInteractionType,
+        'conversation_trigger': ConversationTrigger,
+        'conversation_context': ConversationContext,
+        'response_tone': ResponseTone,
+        'conversation_priority': ConversationPriority,
     },
     
     # ============ APPLICATION LAYER ============
@@ -279,7 +351,18 @@ def get_creative_content_enums() -> dict[str, type]:
         >>> creative_enums = get_creative_content_enums()
         >>> content_types = creative_enums['content_type']
     """
-    return ENUM_REGISTRY['domain']
+    # Filter out conversation-specific enums for creative content focus
+    domain_enums = ENUM_REGISTRY['domain'].copy()
+    conversation_enum_names = [
+        'conversation_state', 'conversation_substate', 'conversation_phase',
+        'user_interaction_type', 'conversation_trigger', 'conversation_context',
+        'response_tone', 'conversation_priority'
+    ]
+    
+    for enum_name in conversation_enum_names:
+        domain_enums.pop(enum_name, None)
+    
+    return domain_enums
 
 
 def get_character_creation_enums() -> dict[str, type]:
@@ -312,6 +395,31 @@ def get_character_creation_enums() -> dict[str, type]:
             character_creation_enums[enum_name] = ENUM_REGISTRY['domain'][enum_name]
     
     return character_creation_enums
+
+
+def get_conversation_workflow_enums() -> dict[str, type]:
+    """
+    Get enums specifically related to interactive conversation workflow.
+    
+    Returns:
+        Dictionary of conversation workflow enum names to enum classes
+        
+    Example:
+        >>> workflow_enums = get_conversation_workflow_enums()
+        >>> states = workflow_enums['conversation_state']
+    """
+    conversation_enums = {}
+    conversation_enum_names = [
+        'conversation_state', 'conversation_substate', 'conversation_phase',
+        'user_interaction_type', 'conversation_trigger', 'conversation_context',
+        'response_tone', 'conversation_priority'
+    ]
+    
+    for enum_name in conversation_enum_names:
+        if enum_name in ENUM_REGISTRY['domain']:
+            conversation_enums[enum_name] = ENUM_REGISTRY['domain'][enum_name]
+    
+    return conversation_enums
 
 
 def get_export_related_enums() -> dict[str, type]:
@@ -370,6 +478,11 @@ def get_enums_by_category() -> dict[str, list[str]]:
         ],
         "character_progression": [
             "progression_type", "milestone_type", "feature_category", "scaling_type", "thematic_tier"
+        ],
+        "conversation_workflow": [
+            "conversation_state", "conversation_substate", "conversation_phase",
+            "user_interaction_type", "conversation_trigger", "conversation_context",
+            "response_tone", "conversation_priority"
         ],
         "export_formats": [
             "export_format", "character_sheet_type", "output_layout", "content_inclusion_level"
@@ -514,6 +627,13 @@ def get_content_creation_workflow_enums() -> dict[str, type]:
         'milestone_type': MilestoneType,
         'thematic_tier': ThematicTier,
         
+        # Conversation workflow
+        'conversation_state': ConversationState,
+        'conversation_phase': ConversationPhase,
+        'user_interaction_type': UserInteractionType,
+        'conversation_context': ConversationContext,
+        'response_tone': ResponseTone,
+        
         # Export
         'export_format': ExportFormat,
         'character_sheet_type': CharacterSheetType
@@ -539,6 +659,92 @@ def get_vtt_compatibility_enums() -> dict[str, type]:
         'output_layout': OutputLayout,
         'content_inclusion_level': ContentInclusionLevel
     }
+
+
+def get_conversation_state_utilities() -> dict[str, callable]:
+    """
+    Get all conversation state utility functions.
+    
+    Returns:
+        Dictionary of utility function names to function objects
+        
+    Example:
+        >>> utilities = get_conversation_state_utilities()
+        >>> is_valid = utilities['is_valid_transition']
+    """
+    return {
+        'is_valid_transition': is_valid_transition,
+        'get_valid_transitions': get_valid_transitions,
+        'get_conversation_phase': get_conversation_phase,
+        'get_expected_interactions': get_expected_interactions,
+        'get_state_timeout': get_state_timeout,
+        'is_terminal_state': is_terminal_state,
+        'is_processing_state': is_processing_state,
+        'is_user_input_state': is_user_input_state,
+        'get_states_in_phase': get_states_in_phase,
+        'calculate_progress_percentage': calculate_progress_percentage,
+        'get_next_recommended_state': get_next_recommended_state
+    }
+
+
+def validate_conversation_transition(from_state: str, to_state: str) -> bool:
+    """
+    Validate a conversation state transition using string values.
+    
+    Args:
+        from_state: Current state as string
+        to_state: Target state as string
+        
+    Returns:
+        True if transition is valid
+        
+    Example:
+        >>> valid = validate_conversation_transition('greeting', 'concept_gathering')
+        >>> print(f"Valid transition: {valid}")
+    """
+    try:
+        from_enum = ConversationState(from_state.lower())
+        to_enum = ConversationState(to_state.lower())
+        return is_valid_transition(from_enum, to_enum)
+    except ValueError:
+        return False
+
+
+def get_conversation_progress(current_state: str) -> dict:
+    """
+    Get conversation progress information for a state.
+    
+    Args:
+        current_state: Current conversation state as string
+        
+    Returns:
+        Dictionary with progress information
+        
+    Example:
+        >>> progress = get_conversation_progress('concept_gathering')
+        >>> print(f"Progress: {progress['percentage']}%")
+    """
+    try:
+        state_enum = ConversationState(current_state.lower())
+        return {
+            'percentage': calculate_progress_percentage(state_enum),
+            'phase': get_conversation_phase(state_enum).value,
+            'display_name': STATE_DISPLAY_NAMES.get(state_enum, current_state),
+            'description': STATE_DESCRIPTIONS.get(state_enum, ''),
+            'is_terminal': is_terminal_state(state_enum),
+            'is_processing': is_processing_state(state_enum),
+            'timeout_minutes': get_state_timeout(state_enum)
+        }
+    except ValueError:
+        return {
+            'percentage': 0.0,
+            'phase': 'unknown',
+            'display_name': current_state,
+            'description': 'Unknown state',
+            'is_terminal': False,
+            'is_processing': False,
+            'timeout_minutes': None
+        }
 
 
 def validate_architecture_compliance() -> list[str]:
@@ -568,10 +774,15 @@ def validate_architecture_compliance() -> list[str]:
     
     # Check that domain layer contains business logic enums
     domain_enums = ENUM_REGISTRY.get('domain', {})
-    expected_domain_enums = ['content_type', 'creativity_level', 'balance_level']
+    expected_domain_enums = ['content_type', 'creativity_level', 'balance_level', 'conversation_state']
     for enum_name in expected_domain_enums:
         if enum_name not in domain_enums:
             issues.append(f"Domain layer missing critical enum: {enum_name}")
+    
+    # Check that conversation workflow is properly integrated
+    conversation_enums = get_conversation_workflow_enums()
+    if not conversation_enums:
+        issues.append("Conversation workflow enums not properly integrated")
     
     # Check that all enums are properly accessible
     for layer, enums in ENUM_REGISTRY.items():
@@ -585,8 +796,8 @@ def validate_architecture_compliance() -> list[str]:
 
 
 # Module metadata
-__version__ = '2.0.0'
-__description__ = 'Clean Architecture-compliant enumerations for D&D Creative Content Framework'
+__version__ = '2.1.0'
+__description__ = 'Clean Architecture-compliant enumerations for D&D Creative Content Framework with conversation workflow'
 
 # Configuration
 ENABLE_ENUM_CACHING = True
@@ -630,15 +841,24 @@ Clean Architecture Usage Examples:
    >>> workflow_enums = get_content_creation_workflow_enums()
    >>> creativity_enum = workflow_enums['creativity_level']
    
-7. VTT compatibility:
+7. Conversation workflow:
+   >>> conversation_enums = get_conversation_workflow_enums()
+   >>> states = conversation_enums['conversation_state']
+   >>> print(f"Available states: {len(states)}")
+   
+8. VTT compatibility:
    >>> vtt_enums = get_vtt_compatibility_enums()
    >>> export_formats = vtt_enums['export_format']
    
-8. Search by layer:
+9. Conversation state validation:
+   >>> valid = validate_conversation_transition('greeting', 'concept_gathering')
+   >>> progress = get_conversation_progress('concept_gathering')
+   
+10. Search by layer:
    >>> spell_results = search_enums('spell')
    >>> core_spell_enums = spell_results.get('core', {})
    
-9. Architecture compliance:
+11. Architecture compliance:
    >>> issues = validate_architecture_compliance()
    >>> print(f"Compliance status: {'PASS' if not issues else 'FAIL'}")
 """

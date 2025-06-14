@@ -653,3 +653,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ---
 
 **Note**: This is a creative content generation framework that translates any character concept into D&D-compatible mechanics. All D&D content remains property of Wizards of the Coast. Generated content is for personal use only and should be approved by your DM before use in campaigns.
+
+**TODO**: If a new species or class is created; create a writeup on the history/lore/legacy/etc of that new class or species.

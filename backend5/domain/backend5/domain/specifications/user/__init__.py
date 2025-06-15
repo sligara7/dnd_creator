@@ -1,1 +1,0 @@
-# This file initializes the user specifications module.

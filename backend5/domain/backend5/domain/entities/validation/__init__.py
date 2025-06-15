@@ -1,1 +1,0 @@
-# This file initializes the validation entities module.

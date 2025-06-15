@@ -1,1 +1,0 @@
-# This file initializes the events module.

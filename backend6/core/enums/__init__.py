@@ -3,6 +3,7 @@ Core enumerations for the D&D Creative Content Framework.
 
 This module provides all enumerated types used throughout the system,
 organized by their primary purpose and domain according to Clean Architecture principles.
+Enhanced with AI-powered culture generation enums for authentic cultural naming systems.
 """
 
 # D&D Game Mechanics enums (Core business rules - immutable)
@@ -109,6 +110,28 @@ from .conversation_states import (
     STATE_TIMEOUTS
 )
 
+# 🆕 Culture Generation enums (AI-powered culture system)
+from .culture_types import (
+    CultureGenerationType,
+    CultureAuthenticityLevel,
+    CultureCreativityLevel,
+    CultureSourceType,
+    CultureComplexityLevel,
+    CultureValidationCategory,
+    CultureValidationSeverity,
+    CultureGenerationStatus,
+    CultureNamingStructure,
+    CultureGenderSystem,
+    CultureLinguisticFamily,
+    CultureTemporalPeriod,
+    # Utility functions
+    get_default_authenticity_for_source,
+    get_complexity_for_authenticity,
+    validate_culture_configuration,
+    # Configuration presets
+    CULTURE_GENERATION_PRESETS
+)
+
 # Export all public symbols organized by architectural layer
 __all__ = [
     # ============ CORE LAYER ENUMS ============
@@ -169,6 +192,20 @@ __all__ = [
     'ResponseTone',
     'ConversationPriority',
     
+    # 🆕 Culture Generation System
+    'CultureGenerationType',
+    'CultureAuthenticityLevel',
+    'CultureCreativityLevel',
+    'CultureSourceType',
+    'CultureComplexityLevel',
+    'CultureValidationCategory',
+    'CultureValidationSeverity',
+    'CultureGenerationStatus',
+    'CultureNamingStructure',
+    'CultureGenderSystem',
+    'CultureLinguisticFamily',
+    'CultureTemporalPeriod',
+    
     # ============ APPLICATION LAYER ENUMS ============
     # Validation Framework
     'ValidationType',
@@ -207,7 +244,13 @@ __all__ = [
     'VALID_TRANSITIONS',
     'STATE_PHASES',
     'STATE_INTERACTIONS',
-    'STATE_TIMEOUTS'
+    'STATE_TIMEOUTS',
+    
+    # 🆕 Culture Generation Utilities
+    'get_default_authenticity_for_source',
+    'get_complexity_for_authenticity',
+    'validate_culture_configuration',
+    'CULTURE_GENERATION_PRESETS'
 ]
 
 # Comprehensive Enum Registry organized by Clean Architecture layers
@@ -261,6 +304,20 @@ ENUM_REGISTRY = {
         'conversation_context': ConversationContext,
         'response_tone': ResponseTone,
         'conversation_priority': ConversationPriority,
+        
+        # 🆕 Culture Generation System
+        'culture_generation_type': CultureGenerationType,
+        'culture_authenticity_level': CultureAuthenticityLevel,
+        'culture_creativity_level': CultureCreativityLevel,
+        'culture_source_type': CultureSourceType,
+        'culture_complexity_level': CultureComplexityLevel,
+        'culture_validation_category': CultureValidationCategory,
+        'culture_validation_severity': CultureValidationSeverity,
+        'culture_generation_status': CultureGenerationStatus,
+        'culture_naming_structure': CultureNamingStructure,
+        'culture_gender_system': CultureGenderSystem,
+        'culture_linguistic_family': CultureLinguisticFamily,
+        'culture_temporal_period': CultureTemporalPeriod,
     },
     
     # ============ APPLICATION LAYER ============
@@ -301,7 +358,8 @@ def get_enum_class(enum_type: str):
         
     Example:
         >>> content_enum = get_enum_class('content_type')
-        >>> print(list(content_enum))
+        >>> culture_enum = get_enum_class('culture_generation_type')
+        >>> print(list(culture_enum))
     """
     return FLAT_ENUM_REGISTRY.get(enum_type.lower())
 
@@ -320,6 +378,7 @@ def get_enums_by_layer(layer: str = None) -> dict:
     Example:
         >>> core_enums = get_enums_by_layer('core')
         >>> domain_enums = get_enums_by_layer('domain')
+        >>> culture_enums = domain_enums  # Culture enums are in domain layer
     """
     if layer:
         return ENUM_REGISTRY.get(layer.lower(), {})
@@ -350,6 +409,7 @@ def get_creative_content_enums() -> dict[str, type]:
     Example:
         >>> creative_enums = get_creative_content_enums()
         >>> content_types = creative_enums['content_type']
+        >>> culture_types = creative_enums['culture_generation_type']
     """
     # Filter out conversation-specific enums for creative content focus
     domain_enums = ENUM_REGISTRY['domain'].copy()
@@ -375,6 +435,7 @@ def get_character_creation_enums() -> dict[str, type]:
     Example:
         >>> char_enums = get_character_creation_enums()
         >>> progression = char_enums['progression_type']
+        >>> culture_auth = char_enums['culture_authenticity_level']
     """
     character_creation_enums = {}
     
@@ -388,7 +449,11 @@ def get_character_creation_enums() -> dict[str, type]:
     domain_char_enums = [
         'content_type', 'creativity_level', 'balance_level', 
         'progression_type', 'milestone_type', 'feature_category',
-        'scaling_type', 'thematic_tier'
+        'scaling_type', 'thematic_tier',
+        # 🆕 Culture generation enums for character creation
+        'culture_generation_type', 'culture_authenticity_level', 
+        'culture_creativity_level', 'culture_source_type',
+        'culture_naming_structure', 'culture_gender_system'
     ]
     for enum_name in domain_char_enums:
         if enum_name in ENUM_REGISTRY['domain']:
@@ -422,6 +487,35 @@ def get_conversation_workflow_enums() -> dict[str, type]:
     return conversation_enums
 
 
+def get_culture_generation_enums() -> dict[str, type]:
+    """
+    Get enums specifically related to AI-powered culture generation.
+    
+    Returns:
+        Dictionary of culture generation enum names to enum classes
+        
+    Example:
+        >>> culture_enums = get_culture_generation_enums()
+        >>> auth_levels = culture_enums['culture_authenticity_level']
+        >>> generation_types = culture_enums['culture_generation_type']
+    """
+    culture_enums = {}
+    culture_enum_names = [
+        'culture_generation_type', 'culture_authenticity_level', 
+        'culture_creativity_level', 'culture_source_type',
+        'culture_complexity_level', 'culture_validation_category',
+        'culture_validation_severity', 'culture_generation_status',
+        'culture_naming_structure', 'culture_gender_system',
+        'culture_linguistic_family', 'culture_temporal_period'
+    ]
+    
+    for enum_name in culture_enum_names:
+        if enum_name in ENUM_REGISTRY['domain']:
+            culture_enums[enum_name] = ENUM_REGISTRY['domain'][enum_name]
+    
+    return culture_enums
+
+
 def get_export_related_enums() -> dict[str, type]:
     """
     Get enums related to character sheet export and VTT compatibility.
@@ -438,14 +532,15 @@ def get_export_related_enums() -> dict[str, type]:
 
 def list_available_enums() -> list[str]:
     """
-    Get list of all available enum types.
+    Get list of all available enum types including culture generation.
     
     Returns:
         List of enum type names
         
     Example:
         >>> enums = list_available_enums()
-        >>> print(f"Available enums: {len(enums)}")
+        >>> culture_enums = [e for e in enums if 'culture' in e]
+        >>> print(f"Culture enums: {culture_enums}")
     """
     return list(FLAT_ENUM_REGISTRY.keys())
 
@@ -460,6 +555,7 @@ def get_enums_by_category() -> dict[str, list[str]]:
     Example:
         >>> categories = get_enums_by_category()
         >>> core_mechanics = categories['d3d_mechanics']
+        >>> culture_system = categories['culture_generation']
     """
     return {
         "d3d_mechanics": [
@@ -484,6 +580,12 @@ def get_enums_by_category() -> dict[str, list[str]]:
             "user_interaction_type", "conversation_trigger", "conversation_context",
             "response_tone", "conversation_priority"
         ],
+        "culture_generation": [  # 🆕 New category for culture generation
+            "culture_generation_type", "culture_authenticity_level", "culture_creativity_level",
+            "culture_source_type", "culture_complexity_level", "culture_validation_category",
+            "culture_validation_severity", "culture_generation_status", "culture_naming_structure",
+            "culture_gender_system", "culture_linguistic_family", "culture_temporal_period"
+        ],
         "export_formats": [
             "export_format", "character_sheet_type", "output_layout", "content_inclusion_level"
         ]
@@ -503,7 +605,8 @@ def get_enum_by_name(enum_name: str, value: str):
         
     Example:
         >>> creativity = get_enum_by_name('creativity_level', 'high')
-        >>> print(creativity.name)
+        >>> culture_auth = get_enum_by_name('culture_authenticity_level', 'academic')
+        >>> print(culture_auth.description)
     """
     enum_class = get_enum_class(enum_name)
     if enum_class:
@@ -527,7 +630,8 @@ def validate_enum_value(enum_name: str, value: str) -> bool:
         
     Example:
         >>> is_valid = validate_enum_value('content_type', 'species')
-        >>> print(f"Valid: {is_valid}")
+        >>> is_culture_valid = validate_enum_value('culture_source_type', 'historical')
+        >>> print(f"Valid: {is_valid}, Culture valid: {is_culture_valid}")
     """
     return get_enum_by_name(enum_name, value) is not None
 
@@ -544,7 +648,8 @@ def get_enum_values(enum_name: str) -> list[str]:
         
     Example:
         >>> content_types = get_enum_values('content_type')
-        >>> print(f"Content types: {content_types}")
+        >>> culture_auth_levels = get_enum_values('culture_authenticity_level')
+        >>> print(f"Culture authenticity levels: {culture_auth_levels}")
     """
     enum_class = get_enum_class(enum_name)
     if enum_class:
@@ -563,8 +668,10 @@ def search_enums(search_term: str) -> dict[str, dict[str, list[str]]]:
         Dictionary mapping layers to enum names to matching values
         
     Example:
-        >>> results = search_enums('spell')
-        >>> core_spell_enums = results.get('core', {})
+        >>> results = search_enums('culture')
+        >>> domain_culture_enums = results.get('domain', {})
+        >>> spell_results = search_enums('spell')
+        >>> core_spell_enums = spell_results.get('core', {})
     """
     results = {}
     search_lower = search_term.lower()
@@ -603,6 +710,7 @@ def get_content_creation_workflow_enums() -> dict[str, type]:
     Example:
         >>> workflow_enums = get_content_creation_workflow_enums()
         >>> creativity = workflow_enums['creativity_level']
+        >>> culture_creativity = workflow_enums['culture_creativity_level']
     """
     workflow_enums = {
         # User interaction and creativity
@@ -633,6 +741,16 @@ def get_content_creation_workflow_enums() -> dict[str, type]:
         'user_interaction_type': UserInteractionType,
         'conversation_context': ConversationContext,
         'response_tone': ResponseTone,
+        
+        # 🆕 Culture generation workflow
+        'culture_generation_type': CultureGenerationType,
+        'culture_authenticity_level': CultureAuthenticityLevel,
+        'culture_creativity_level': CultureCreativityLevel,
+        'culture_source_type': CultureSourceType,
+        'culture_complexity_level': CultureComplexityLevel,
+        'culture_generation_status': CultureGenerationStatus,
+        'culture_naming_structure': CultureNamingStructure,
+        'culture_gender_system': CultureGenderSystem,
         
         # Export
         'export_format': ExportFormat,
@@ -687,6 +805,25 @@ def get_conversation_state_utilities() -> dict[str, callable]:
     }
 
 
+def get_culture_generation_utilities() -> dict[str, callable]:
+    """
+    Get all culture generation utility functions.
+    
+    Returns:
+        Dictionary of utility function names to function objects
+        
+    Example:
+        >>> utilities = get_culture_generation_utilities()
+        >>> get_default_auth = utilities['get_default_authenticity_for_source']
+        >>> validate_config = utilities['validate_culture_configuration']
+    """
+    return {
+        'get_default_authenticity_for_source': get_default_authenticity_for_source,
+        'get_complexity_for_authenticity': get_complexity_for_authenticity,
+        'validate_culture_configuration': validate_culture_configuration
+    }
+
+
 def validate_conversation_transition(from_state: str, to_state: str) -> bool:
     """
     Validate a conversation state transition using string values.
@@ -708,6 +845,59 @@ def validate_conversation_transition(from_state: str, to_state: str) -> bool:
         return is_valid_transition(from_enum, to_enum)
     except ValueError:
         return False
+
+
+def validate_culture_generation_config(
+    generation_type: str,
+    authenticity: str,
+    creativity: str,
+    complexity: str
+) -> dict:
+    """
+    Validate culture generation configuration using string values.
+    
+    Args:
+        generation_type: Culture generation type as string
+        authenticity: Authenticity level as string
+        creativity: Creativity level as string
+        complexity: Complexity level as string
+        
+    Returns:
+        Dictionary with validation results
+        
+    Example:
+        >>> result = validate_culture_generation_config(
+        ...     'custom', 'academic', 'unrestricted', 'simple'
+        ... )
+        >>> print(f"Valid: {result['valid']}, Issues: {result['issues']}")
+    """
+    try:
+        gen_type = CultureGenerationType(generation_type.lower())
+        auth_level = CultureAuthenticityLevel(authenticity.lower())
+        creativity_level = CultureCreativityLevel(creativity.lower())
+        complexity_level = CultureComplexityLevel(complexity.lower())
+        
+        issues = validate_culture_configuration(
+            gen_type, auth_level, creativity_level, complexity_level
+        )
+        
+        return {
+            'valid': len(issues) == 0,
+            'issues': issues,
+            'generation_type': gen_type.name,
+            'authenticity_level': auth_level.name,
+            'creativity_level': creativity_level.name,
+            'complexity_level': complexity_level.name
+        }
+    except ValueError as e:
+        return {
+            'valid': False,
+            'issues': [f"Invalid enum value: {str(e)}"],
+            'generation_type': generation_type,
+            'authenticity_level': authenticity,
+            'creativity_level': creativity,
+            'complexity_level': complexity
+        }
 
 
 def get_conversation_progress(current_state: str) -> dict:
@@ -747,6 +937,38 @@ def get_conversation_progress(current_state: str) -> dict:
         }
 
 
+def get_culture_generation_preset(preset_name: str) -> dict:
+    """
+    Get culture generation configuration preset.
+    
+    Args:
+        preset_name: Name of the preset configuration
+        
+    Returns:
+        Dictionary with preset configuration or empty dict if not found
+        
+    Example:
+        >>> preset = get_culture_generation_preset('academic_research')
+        >>> print(f"Authenticity: {preset['authenticity'].name}")
+        >>> educational_preset = get_culture_generation_preset('educational_gaming')
+    """
+    return CULTURE_GENERATION_PRESETS.get(preset_name.lower(), {})
+
+
+def list_culture_generation_presets() -> list[str]:
+    """
+    Get list of available culture generation presets.
+    
+    Returns:
+        List of preset names
+        
+    Example:
+        >>> presets = list_culture_generation_presets()
+        >>> print(f"Available presets: {presets}")
+    """
+    return list(CULTURE_GENERATION_PRESETS.keys())
+
+
 def validate_architecture_compliance() -> list[str]:
     """
     Validate that enum organization follows Clean Architecture principles.
@@ -774,7 +996,10 @@ def validate_architecture_compliance() -> list[str]:
     
     # Check that domain layer contains business logic enums
     domain_enums = ENUM_REGISTRY.get('domain', {})
-    expected_domain_enums = ['content_type', 'creativity_level', 'balance_level', 'conversation_state']
+    expected_domain_enums = [
+        'content_type', 'creativity_level', 'balance_level', 'conversation_state',
+        'culture_generation_type', 'culture_authenticity_level'  # Culture enums
+    ]
     for enum_name in expected_domain_enums:
         if enum_name not in domain_enums:
             issues.append(f"Domain layer missing critical enum: {enum_name}")
@@ -783,6 +1008,19 @@ def validate_architecture_compliance() -> list[str]:
     conversation_enums = get_conversation_workflow_enums()
     if not conversation_enums:
         issues.append("Conversation workflow enums not properly integrated")
+    
+    # 🆕 Check that culture generation system is properly integrated
+    culture_enums = get_culture_generation_enums()
+    if not culture_enums:
+        issues.append("Culture generation enums not properly integrated")
+    
+    expected_culture_enums = [
+        'culture_generation_type', 'culture_authenticity_level',
+        'culture_source_type', 'culture_generation_status'
+    ]
+    for enum_name in expected_culture_enums:
+        if enum_name not in culture_enums:
+            issues.append(f"Missing critical culture generation enum: {enum_name}")
     
     # Check that all enums are properly accessible
     for layer, enums in ENUM_REGISTRY.items():
@@ -796,8 +1034,8 @@ def validate_architecture_compliance() -> list[str]:
 
 
 # Module metadata
-__version__ = '2.1.0'
-__description__ = 'Clean Architecture-compliant enumerations for D&D Creative Content Framework with conversation workflow'
+__version__ = '2.2.0'
+__description__ = 'Clean Architecture-compliant enumerations for D&D Creative Content Framework with conversation workflow and AI-powered culture generation'
 
 # Configuration
 ENABLE_ENUM_CACHING = True
@@ -813,16 +1051,18 @@ if ARCHITECTURE_COMPLIANCE_CHECK:
 
 # Usage examples in docstring
 """
-Clean Architecture Usage Examples:
+Clean Architecture Usage Examples with Culture Generation:
 
 1. Core Layer (Immutable D&D mechanics):
    >>> from core.enums import Ability, Skill, DamageType
    >>> print(Ability.STRENGTH.value)
    
-2. Domain Layer (Business logic):
+2. Domain Layer (Business logic with culture generation):
    >>> from core.enums import ContentType, CreativityLevel, BalanceLevel
+   >>> from core.enums import CultureGenerationType, CultureAuthenticityLevel
    >>> creativity = CreativityLevel.HIGH
-   >>> print(f"Allows custom classes: {creativity.allows_custom_classes}")
+   >>> culture_auth = CultureAuthenticityLevel.ACADEMIC
+   >>> print(f"Culture description: {culture_auth.description}")
    
 3. Application Layer (Use case orchestration):
    >>> from core.enums import ValidationType, ValidationStatus
@@ -836,29 +1076,54 @@ Clean Architecture Usage Examples:
 5. Architecture-aware access:
    >>> core_enums = get_enums_by_layer('core')
    >>> domain_enums = get_enums_by_layer('domain')
+   >>> culture_enums = get_culture_generation_enums()
    
-6. Character creation workflow:
+6. Character creation workflow with culture:
    >>> workflow_enums = get_content_creation_workflow_enums()
    >>> creativity_enum = workflow_enums['creativity_level']
+   >>> culture_creativity = workflow_enums['culture_creativity_level']
    
 7. Conversation workflow:
    >>> conversation_enums = get_conversation_workflow_enums()
    >>> states = conversation_enums['conversation_state']
    >>> print(f"Available states: {len(states)}")
    
-8. VTT compatibility:
+8. Culture generation workflow:
+   >>> culture_enums = get_culture_generation_enums()
+   >>> generation_types = culture_enums['culture_generation_type']
+   >>> print(f"Generation types: {[t.name for t in generation_types]}")
+   
+9. VTT compatibility:
    >>> vtt_enums = get_vtt_compatibility_enums()
    >>> export_formats = vtt_enums['export_format']
    
-9. Conversation state validation:
-   >>> valid = validate_conversation_transition('greeting', 'concept_gathering')
-   >>> progress = get_conversation_progress('concept_gathering')
+10. Conversation state validation:
+    >>> valid = validate_conversation_transition('greeting', 'concept_gathering')
+    >>> progress = get_conversation_progress('concept_gathering')
+    
+11. Culture generation configuration:
+    >>> config_result = validate_culture_generation_config(
+    ...     'custom', 'academic', 'conservative', 'scholarly'
+    ... )
+    >>> print(f"Valid config: {config_result['valid']}")
+    
+12. Culture generation presets:
+    >>> preset = get_culture_generation_preset('academic_research')
+    >>> presets = list_culture_generation_presets()
+    >>> print(f"Available presets: {presets}")
    
-10. Search by layer:
-   >>> spell_results = search_enums('spell')
-   >>> core_spell_enums = spell_results.get('core', {})
+13. Search by layer including culture:
+    >>> culture_results = search_enums('culture')
+    >>> domain_culture_enums = culture_results.get('domain', {})
+    >>> spell_results = search_enums('spell')
+    >>> core_spell_enums = spell_results.get('core', {})
    
-11. Architecture compliance:
-   >>> issues = validate_architecture_compliance()
-   >>> print(f"Compliance status: {'PASS' if not issues else 'FAIL'}")
+14. Architecture compliance with culture system:
+    >>> issues = validate_architecture_compliance()
+    >>> print(f"Compliance status: {'PASS' if not issues else 'FAIL'}")
+    
+15. Culture-specific utilities:
+    >>> culture_utils = get_culture_generation_utilities()
+    >>> default_auth = culture_utils['get_default_authenticity_for_source']
+    >>> recommended_complexity = culture_utils['get_complexity_for_authenticity']
 """

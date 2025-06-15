@@ -655,3 +655,12 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 **Note**: This is a creative content generation framework that translates any character concept into D&D-compatible mechanics. All D&D content remains property of Wizards of the Coast. Generated content is for personal use only and should be approved by your DM before use in campaigns.
 
 **TODO**: If a new species or class is created; create a writeup on the history/lore/legacy/etc of that new class or species.
+
+# added to /backend6/core/ features:
+Key Features:
+- Creative AI-powered culture generation for character creation
+- Flexible LLM response parsing with creative fallbacks
+- Character-focused prompt engineering with gaming utility
+- Pure functional approach optimized for character generation
+- Always-usable culture output with enhancement suggestions
+- Complete enum-based scoring and recommendations

@@ -1,6 +1,3 @@
-Here's the updated README.md file based on the backend6 development and current project status:
-
-```markdown
 # D&D Character Creator - Backend Development
 
 ## Project Status: Core Layer Development (Work in Progress)
@@ -282,4 +279,3 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 **Note**: This is a work-in-progress creative content generation framework. The core layer is currently under development with plans to build up through domain, application, and infrastructure layers. All D&D content remains property of Wizards of the Coast. Generated content will be for personal use only and should be approved by your DM before use in campaigns.
 
 **Development Status**: Core layer foundation - lots of work to go, architecture will be refined as development progresses.
-```

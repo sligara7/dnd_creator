@@ -3,13 +3,13 @@ Core enumerations for the D&D Creative Content Framework.
 
 This module provides all enumerated types used throughout the system,
 organized by their primary purpose and domain according to Clean Architecture principles.
-Enhanced with AI-powered creative culture generation enums for character-focused cultural naming systems.
+SIMPLIFIED with minimal culture enums that support character creation without complexity.
 
 Follows CREATIVE_VALIDATION_APPROACH philosophy:
 - Enable creativity rather than restrict it
 - Character generation support and enhancement focus
-- Constructive suggestions over rigid requirements
-- Almost all cultures are usable for character generation
+- Simple, supportive culture features
+- Creative freedom is paramount
 """
 
 # D&D Game Mechanics enums (Core business rules - immutable)
@@ -40,6 +40,13 @@ from .content_types import (
     EQUIPMENT_TYPES,
     SIGNATURE_CONTENT,
     get_content_types_by_category
+)
+
+# Text processing enums
+from .text_types import (
+    EnhancedTextStyle,
+    EnhancedContentType,
+    TextAnalysisCategory,
 )
 
 # Creativity Level enums (Generation parameters)
@@ -116,35 +123,17 @@ from .conversation_states import (
     STATE_TIMEOUTS
 )
 
-# 🆕 CREATIVE Culture Generation enums (AI-powered creative culture system)
+# 🆕 SIMPLIFIED Culture Generation enums (Character creation focus)
 from .culture_types import (
-    # Core creative culture generation enums
-    CultureGenerationType,
+    # Simple core culture enums
     CultureAuthenticityLevel,
-    CultureCreativityLevel,
-    CultureSourceType,
-    CultureComplexityLevel,
-    CultureEnhancementCategory,
-    CultureEnhancementPriority,
-    CultureGenerationStatus,
-    CultureNamingStructure,
-    CultureGenderSystem,
-    CultureLinguisticFamily,
-    CultureTemporalPeriod,
+    CultureType,
     
-    # Creative utility functions (character-focused)
-    get_optimal_authenticity_for_characters,
-    get_gaming_complexity_for_authenticity,
-    suggest_creative_culture_enhancements,
-    calculate_character_generation_score,
-    get_character_generation_recommendations,
-    
-    # Creative culture presets (character generation focused)
-    CHARACTER_CULTURE_PRESETS,
-    
-    # Creative validation approach compliance
-    CREATIVE_VALIDATION_APPROACH_COMPLIANCE,
-    CHARACTER_GENERATION_TYPE_GUIDELINES
+    # Simple utility functions
+    get_default_authenticity_level,
+    is_gaming_optimized,
+    get_available_culture_types,
+    get_available_authenticity_levels
 )
 
 # Export all public symbols organized by architectural layer
@@ -207,19 +196,14 @@ __all__ = [
     'ResponseTone',
     'ConversationPriority',
     
-    # 🆕 CREATIVE Culture Generation System
-    'CultureGenerationType',
+    # 🆕 SIMPLIFIED Culture Generation System (Character creation focus)
     'CultureAuthenticityLevel',
-    'CultureCreativityLevel',
-    'CultureSourceType',
-    'CultureComplexityLevel',
-    'CultureEnhancementCategory',
-    'CultureEnhancementPriority',
-    'CultureGenerationStatus',
-    'CultureNamingStructure',
-    'CultureGenderSystem',
-    'CultureLinguisticFamily',
-    'CultureTemporalPeriod',
+    'CultureType',
+    
+    # Text Processing
+    'EnhancedTextStyle',
+    'EnhancedContentType', 
+    'TextAnalysisCategory',
     
     # ============ APPLICATION LAYER ENUMS ============
     # Validation Framework
@@ -261,18 +245,14 @@ __all__ = [
     'STATE_INTERACTIONS',
     'STATE_TIMEOUTS',
     
-    # 🆕 CREATIVE Culture Generation Utilities (character-focused)
-    'get_optimal_authenticity_for_characters',
-    'get_gaming_complexity_for_authenticity',
-    'suggest_creative_culture_enhancements',
-    'calculate_character_generation_score',
-    'get_character_generation_recommendations',
-    'CHARACTER_CULTURE_PRESETS',
-    'CREATIVE_VALIDATION_APPROACH_COMPLIANCE',
-    'CHARACTER_GENERATION_TYPE_GUIDELINES'
+    # 🆕 SIMPLIFIED Culture Generation Utilities (Character creation focus)
+    'get_default_authenticity_level',
+    'is_gaming_optimized',
+    'get_available_culture_types',
+    'get_available_authenticity_levels'
 ]
 
-# Comprehensive Enum Registry organized by Clean Architecture layers
+# SIMPLIFIED Enum Registry organized by Clean Architecture layers
 ENUM_REGISTRY = {
     # ============ CORE LAYER ============
     'core': {
@@ -295,6 +275,11 @@ ENUM_REGISTRY = {
     
     # ============ DOMAIN LAYER ============
     'domain': {
+        # Text processing enums
+        'enhanced_text_style': EnhancedTextStyle,
+        'enhanced_content_type': EnhancedContentType,
+        'text_analysis_category': TextAnalysisCategory,
+
         # Content Generation Business Logic
         'content_type': ContentType,
         'generation_type': GenerationType,
@@ -324,19 +309,9 @@ ENUM_REGISTRY = {
         'response_tone': ResponseTone,
         'conversation_priority': ConversationPriority,
         
-        # 🆕 CREATIVE Culture Generation System (character-focused)
-        'culture_generation_type': CultureGenerationType,
+        # 🆕 SIMPLIFIED Culture Generation System (Character creation focus)
         'culture_authenticity_level': CultureAuthenticityLevel,
-        'culture_creativity_level': CultureCreativityLevel,
-        'culture_source_type': CultureSourceType,
-        'culture_complexity_level': CultureComplexityLevel,
-        'culture_enhancement_category': CultureEnhancementCategory,
-        'culture_enhancement_priority': CultureEnhancementPriority,
-        'culture_generation_status': CultureGenerationStatus,
-        'culture_naming_structure': CultureNamingStructure,
-        'culture_gender_system': CultureGenderSystem,
-        'culture_linguistic_family': CultureLinguisticFamily,
-        'culture_temporal_period': CultureTemporalPeriod,
+        'culture_type': CultureType,
     },
     
     # ============ APPLICATION LAYER ============
@@ -377,8 +352,9 @@ def get_enum_class(enum_type: str):
         
     Example:
         >>> content_enum = get_enum_class('content_type')
-        >>> culture_enum = get_enum_class('culture_generation_type')
-        >>> print(list(culture_enum))
+        >>> culture_auth = get_enum_class('culture_authenticity_level')
+        >>> culture_type = get_enum_class('culture_type')
+        >>> print(list(culture_auth))
     """
     return FLAT_ENUM_REGISTRY.get(enum_type.lower())
 
@@ -397,7 +373,7 @@ def get_enums_by_layer(layer: str = None) -> dict:
     Example:
         >>> core_enums = get_enums_by_layer('core')
         >>> domain_enums = get_enums_by_layer('domain')
-        >>> culture_enums = domain_enums  # Culture enums are in domain layer
+        >>> culture_enums = domain_enums  # Simple culture enums are in domain layer
     """
     if layer:
         return ENUM_REGISTRY.get(layer.lower(), {})
@@ -428,7 +404,8 @@ def get_creative_content_enums() -> dict[str, type]:
     Example:
         >>> creative_enums = get_creative_content_enums()
         >>> content_types = creative_enums['content_type']
-        >>> culture_types = creative_enums['culture_generation_type']
+        >>> culture_auth = creative_enums['culture_authenticity_level']
+        >>> culture_type = creative_enums['culture_type']
     """
     # Filter out conversation-specific enums for creative content focus
     domain_enums = ENUM_REGISTRY['domain'].copy()
@@ -455,6 +432,7 @@ def get_character_creation_enums() -> dict[str, type]:
         >>> char_enums = get_character_creation_enums()
         >>> progression = char_enums['progression_type']
         >>> culture_auth = char_enums['culture_authenticity_level']
+        >>> culture_type = char_enums['culture_type']
     """
     character_creation_enums = {}
     
@@ -469,12 +447,8 @@ def get_character_creation_enums() -> dict[str, type]:
         'content_type', 'creativity_level', 'balance_level', 
         'progression_type', 'milestone_type', 'feature_category',
         'scaling_type', 'thematic_tier',
-        # 🆕 CREATIVE Culture generation enums for character creation
-        'culture_generation_type', 'culture_authenticity_level', 
-        'culture_creativity_level', 'culture_source_type',
-        'culture_naming_structure', 'culture_gender_system',
-        'culture_enhancement_category', 'culture_enhancement_priority',  # NEW
-        'culture_generation_status'  # NEW
+        # 🆕 SIMPLIFIED Culture generation enums for character creation
+        'culture_authenticity_level', 'culture_type'
     ]
     for enum_name in domain_char_enums:
         if enum_name in ENUM_REGISTRY['domain']:
@@ -508,28 +482,20 @@ def get_conversation_workflow_enums() -> dict[str, type]:
     return conversation_enums
 
 
-def get_creative_culture_generation_enums() -> dict[str, type]:
+def get_simple_culture_generation_enums() -> dict[str, type]:
     """
-    Get enums specifically related to AI-powered creative culture generation.
+    Get simple culture enums for character creation.
     
     Returns:
-        Dictionary of creative culture generation enum names to enum classes
+        Dictionary of simple culture enum names to enum classes
         
     Example:
-        >>> culture_enums = get_creative_culture_generation_enums()
+        >>> culture_enums = get_simple_culture_generation_enums()
         >>> auth_levels = culture_enums['culture_authenticity_level']
-        >>> generation_types = culture_enums['culture_generation_type']
-        >>> enhancement_cats = culture_enums['culture_enhancement_category']
+        >>> culture_types = culture_enums['culture_type']
     """
     culture_enums = {}
-    culture_enum_names = [
-        'culture_generation_type', 'culture_authenticity_level', 
-        'culture_creativity_level', 'culture_source_type',
-        'culture_complexity_level', 'culture_enhancement_category',  # NEW
-        'culture_enhancement_priority', 'culture_generation_status',  # NEW
-        'culture_naming_structure', 'culture_gender_system',
-        'culture_linguistic_family', 'culture_temporal_period'
-    ]
+    culture_enum_names = ['culture_authenticity_level', 'culture_type']
     
     for enum_name in culture_enum_names:
         if enum_name in ENUM_REGISTRY['domain']:
@@ -554,7 +520,7 @@ def get_export_related_enums() -> dict[str, type]:
 
 def list_available_enums() -> list[str]:
     """
-    Get list of all available enum types including creative culture generation.
+    Get list of all available enum types.
     
     Returns:
         List of enum type names
@@ -577,7 +543,7 @@ def get_enums_by_category() -> dict[str, list[str]]:
     Example:
         >>> categories = get_enums_by_category()
         >>> core_mechanics = categories['d3d_mechanics']
-        >>> creative_culture_system = categories['creative_culture_generation']
+        >>> simple_culture = categories['simple_culture_generation']
     """
     return {
         "d3d_mechanics": [
@@ -602,16 +568,52 @@ def get_enums_by_category() -> dict[str, list[str]]:
             "user_interaction_type", "conversation_trigger", "conversation_context",
             "response_tone", "conversation_priority"
         ],
-        "creative_culture_generation": [  # 🆕 UPDATED: Creative culture generation category
-            "culture_generation_type", "culture_authenticity_level", "culture_creativity_level",
-            "culture_source_type", "culture_complexity_level", "culture_enhancement_category",
-            "culture_enhancement_priority", "culture_generation_status", "culture_naming_structure",
-            "culture_gender_system", "culture_linguistic_family", "culture_temporal_period"
+        "simple_culture_generation": [
+            "culture_authenticity_level", "culture_type"
+        ],
+        "text_processing": [
+            "enhanced_text_style", "enhanced_content_type", "text_analysis_category"
         ],
         "export_formats": [
             "export_format", "character_sheet_type", "output_layout", "content_inclusion_level"
         ]
     }
+
+
+def get_text_processing_enums() -> dict[str, type]:
+    """
+    Get enums specifically for text processing and formatting.
+    
+    Returns:
+        Dictionary of text processing enum names to enum classes
+        
+    Example:
+        >>> text_enums = get_text_processing_enums()
+        >>> text_styles = text_enums['enhanced_text_style']
+        >>> content_types = text_enums['enhanced_content_type']
+    """
+    return {
+        'enhanced_text_style': EnhancedTextStyle,
+        'enhanced_content_type': EnhancedContentType,
+        'text_analysis_category': TextAnalysisCategory
+    }
+
+
+def get_gaming_friendly_text_styles() -> list[str]:
+    """
+    Get text styles optimized for gaming utility.
+    
+    Returns:
+        List of gaming-friendly text style names
+        
+    Example:
+        >>> gaming_styles = get_gaming_friendly_text_styles()
+        >>> print(f"Gaming text styles: {gaming_styles}")
+    """
+    try:
+        return [style.value for style in EnhancedTextStyle if hasattr(style, 'gaming_friendliness') and style.gaming_friendliness >= 0.8]
+    except (NameError, AttributeError):
+        return ['title_case', 'plain', 'gaming_friendly']
 
 
 def get_enum_by_name(enum_name: str, value: str):
@@ -628,6 +630,7 @@ def get_enum_by_name(enum_name: str, value: str):
     Example:
         >>> creativity = get_enum_by_name('creativity_level', 'high')
         >>> culture_auth = get_enum_by_name('culture_authenticity_level', 'gaming')
+        >>> culture_type = get_enum_by_name('culture_type', 'fantasy')
         >>> print(culture_auth.description if culture_auth else "Not found")
     """
     enum_class = get_enum_class(enum_name)
@@ -652,8 +655,9 @@ def validate_enum_value(enum_name: str, value: str) -> bool:
         
     Example:
         >>> is_valid = validate_enum_value('content_type', 'species')
-        >>> is_culture_valid = validate_enum_value('culture_source_type', 'character_archetypal')
-        >>> print(f"Valid: {is_valid}, Culture valid: {is_culture_valid}")
+        >>> is_culture_auth_valid = validate_enum_value('culture_authenticity_level', 'gaming')
+        >>> is_culture_type_valid = validate_enum_value('culture_type', 'fantasy')
+        >>> print(f"Valid: {is_valid}, Culture auth valid: {is_culture_auth_valid}")
     """
     return get_enum_by_name(enum_name, value) is not None
 
@@ -671,7 +675,8 @@ def get_enum_values(enum_name: str) -> list[str]:
     Example:
         >>> content_types = get_enum_values('content_type')
         >>> culture_auth_levels = get_enum_values('culture_authenticity_level')
-        >>> print(f"Culture authenticity levels: {culture_auth_levels}")
+        >>> culture_types = get_enum_values('culture_type')
+        >>> print(f"Available culture types: {culture_types}")
     """
     enum_class = get_enum_class(enum_name)
     if enum_class:
@@ -692,8 +697,8 @@ def search_enums(search_term: str) -> dict[str, dict[str, list[str]]]:
     Example:
         >>> results = search_enums('culture')
         >>> domain_culture_enums = results.get('domain', {})
-        >>> spell_results = search_enums('spell')
-        >>> core_spell_enums = spell_results.get('core', {})
+        >>> text_results = search_enums('enhanced')
+        >>> enhanced_enums = text_results.get('domain', {})
     """
     results = {}
     search_lower = search_term.lower()
@@ -732,7 +737,8 @@ def get_content_creation_workflow_enums() -> dict[str, type]:
     Example:
         >>> workflow_enums = get_content_creation_workflow_enums()
         >>> creativity = workflow_enums['creativity_level']
-        >>> culture_creativity = workflow_enums['culture_creativity_level']
+        >>> culture_auth = workflow_enums['culture_authenticity_level']
+        >>> culture_type = workflow_enums['culture_type']
     """
     workflow_enums = {
         # User interaction and creativity
@@ -764,17 +770,9 @@ def get_content_creation_workflow_enums() -> dict[str, type]:
         'conversation_context': ConversationContext,
         'response_tone': ResponseTone,
         
-        # 🆕 CREATIVE Culture generation workflow (character-focused)
-        'culture_generation_type': CultureGenerationType,
+        # 🆕 SIMPLIFIED Culture generation workflow (Character creation focus)
         'culture_authenticity_level': CultureAuthenticityLevel,
-        'culture_creativity_level': CultureCreativityLevel,
-        'culture_source_type': CultureSourceType,
-        'culture_complexity_level': CultureComplexityLevel,
-        'culture_enhancement_category': CultureEnhancementCategory,  # NEW
-        'culture_enhancement_priority': CultureEnhancementPriority,  # NEW
-        'culture_generation_status': CultureGenerationStatus,
-        'culture_naming_structure': CultureNamingStructure,
-        'culture_gender_system': CultureGenderSystem,
+        'culture_type': CultureType,
         
         # Export
         'export_format': ExportFormat,
@@ -829,25 +827,23 @@ def get_conversation_state_utilities() -> dict[str, callable]:
     }
 
 
-def get_creative_culture_generation_utilities() -> dict[str, callable]:
+def get_simple_culture_generation_utilities() -> dict[str, callable]:
     """
-    Get all creative culture generation utility functions.
+    Get simple culture generation utility functions.
     
     Returns:
         Dictionary of utility function names to function objects
         
     Example:
-        >>> utilities = get_creative_culture_generation_utilities()
-        >>> get_optimal_auth = utilities['get_optimal_authenticity_for_characters']
-        >>> suggest_enhancements = utilities['suggest_creative_culture_enhancements']
-        >>> calc_score = utilities['calculate_character_generation_score']
+        >>> utilities = get_simple_culture_generation_utilities()
+        >>> get_default_auth = utilities['get_default_authenticity_level']
+        >>> is_gaming = utilities['is_gaming_optimized']
     """
     return {
-        'get_optimal_authenticity_for_characters': get_optimal_authenticity_for_characters,
-        'get_gaming_complexity_for_authenticity': get_gaming_complexity_for_authenticity,
-        'suggest_creative_culture_enhancements': suggest_creative_culture_enhancements,
-        'calculate_character_generation_score': calculate_character_generation_score,
-        'get_character_generation_recommendations': get_character_generation_recommendations
+        'get_default_authenticity_level': get_default_authenticity_level,
+        'is_gaming_optimized': is_gaming_optimized,
+        'get_available_culture_types': get_available_culture_types,
+        'get_available_authenticity_levels': get_available_authenticity_levels
     }
 
 
@@ -874,80 +870,54 @@ def validate_conversation_transition(from_state: str, to_state: str) -> bool:
         return False
 
 
-def suggest_creative_culture_configuration_enhancements(
-    generation_type: str,
-    authenticity: str,
-    creativity: str,
-    complexity: str
-) -> dict:
+def get_simple_culture_configuration(authenticity: str = "gaming", 
+                                   culture_type: str = "fantasy") -> dict:
     """
-    Get creative enhancement suggestions for culture generation configuration.
-    
-    UPDATED: Uses new creative approach with constructive suggestions instead of blocking validation.
+    Get simple culture configuration for character creation.
     
     Args:
-        generation_type: Culture generation type as string
         authenticity: Authenticity level as string
-        creativity: Creativity level as string
-        complexity: Complexity level as string
+        culture_type: Culture type as string
         
     Returns:
-        Dictionary with enhancement suggestions and character support score
+        Dictionary with culture configuration
         
     Example:
-        >>> result = suggest_creative_culture_configuration_enhancements(
-        ...     'character_focused', 'gaming', 'creative_freedom', 'gaming_ready'
-        ... )
-        >>> print(f"Character support score: {result['character_support_score']:.2f}")
-        >>> print(f"Enhancement suggestions: {result['enhancement_suggestions']}")
+        >>> config = get_simple_culture_configuration('gaming', 'fantasy')
+        >>> print(f"Gaming optimized: {config['gaming_optimized']}")
+        >>> print(f"Description: {config['description']}")
     """
     try:
-        gen_type = CultureGenerationType(generation_type.lower())
         auth_level = CultureAuthenticityLevel(authenticity.lower())
-        creativity_level = CultureCreativityLevel(creativity.lower())
-        complexity_level = CultureComplexityLevel(complexity.lower())
-        
-        # Get creative enhancement suggestions (never blocking)
-        enhancement_suggestions = suggest_creative_culture_enhancements(
-            gen_type, auth_level, creativity_level, complexity_level
-        )
-        
-        # Calculate character generation support score
-        character_support_score = calculate_character_generation_score(
-            auth_level, creativity_level, complexity_level
-        )
+        culture_type_enum = CultureType(culture_type.lower())
         
         return {
-            'character_support_score': character_support_score,
-            'enhancement_suggestions': [suggestion for suggestion, priority in enhancement_suggestions],
-            'enhancement_priorities': [priority.name for suggestion, priority in enhancement_suggestions],
-            'is_character_ready': character_support_score >= 0.3,  # Very permissive threshold
-            'gaming_utility_score': auth_level.character_support_score if hasattr(auth_level, 'character_support_score') else 0.5,
-            'creative_freedom_percentage': creativity_level.creative_freedom_percentage if hasattr(creativity_level, 'creative_freedom_percentage') else 75,
-            'generation_type': gen_type.name,
-            'authenticity_level': auth_level.name,
-            'creativity_level': creativity_level.name,
-            'complexity_level': complexity_level.name,
-            'configuration_status': 'READY_FOR_CHARACTERS'  # Always ready!
+            'authenticity_level': auth_level.value,
+            'culture_type': culture_type_enum.value,
+            'gaming_optimized': auth_level.is_gaming_friendly,
+            'description': auth_level.description,
+            'culture_description': culture_type_enum.description,
+            'character_ready': True,
+            'suggestions': [
+                f"Configuration ready for character creation",
+                f"Using {auth_level.description.lower()}",
+                f"Culture type: {culture_type_enum.description.lower()}"
+            ]
         }
     except ValueError as e:
-        # Even invalid configurations get constructive suggestions
+        # Fallback configuration
         return {
-            'character_support_score': 0.3,  # Still above threshold
-            'enhancement_suggestions': [
-                f"Configuration needs attention ({str(e)}) but is still usable for character generation",
-                "Consider using valid enum values for optimal character support",
-                "Try 'character_focused', 'gaming', 'creative_freedom', 'gaming_ready' for excellent results"
-            ],
-            'enhancement_priorities': ['CHARACTER_IMPORTANT', 'GAMING_CRITICAL', 'CREATIVE_NICE'],
-            'is_character_ready': True,  # Still ready!
-            'gaming_utility_score': 0.5,
-            'creative_freedom_percentage': 75,
-            'generation_type': generation_type,
             'authenticity_level': authenticity,
-            'creativity_level': creativity,
-            'complexity_level': complexity,
-            'configuration_status': 'ENHANCEMENT_SUGGESTED'
+            'culture_type': culture_type,
+            'gaming_optimized': True,
+            'description': "Gaming table optimized - easy to pronounce and use during play",
+            'culture_description': "Generic fantasy culture suitable for any campaign",
+            'character_ready': True,
+            'suggestions': [
+                f"Configuration needs attention ({str(e)}) but is still usable",
+                "Try 'gaming' authenticity with 'fantasy' type for optimal results",
+                "Culture features are optional - continue with character creation"
+            ]
         }
 
 
@@ -988,134 +958,31 @@ def get_conversation_progress(current_state: str) -> dict:
         }
 
 
-def get_character_culture_preset(preset_name: str) -> dict:
+def validate_simple_culture_architecture_compliance() -> dict[str, any]:
     """
-    Get character-focused culture generation configuration preset.
-    
-    UPDATED: Uses new CHARACTER_CULTURE_PRESETS with character generation focus.
-    
-    Args:
-        preset_name: Name of the preset configuration
-        
-    Returns:
-        Dictionary with preset configuration or empty dict if not found
-        
-    Example:
-        >>> preset = get_character_culture_preset('quick_character_creation')
-        >>> print(f"Character support score: {preset.get('expected_score', 0.0)}")
-        >>> creative_preset = get_character_culture_preset('creative_character_backgrounds')
-    """
-    return CHARACTER_CULTURE_PRESETS.get(preset_name.lower(), {})
-
-
-def list_character_culture_presets() -> list[str]:
-    """
-    Get list of available character-focused culture generation presets.
-    
-    UPDATED: Uses new CHARACTER_CULTURE_PRESETS.
+    Validate that simple culture enum organization supports character creation.
     
     Returns:
-        List of preset names
+        Dictionary with simple culture compliance assessment
         
     Example:
-        >>> presets = list_character_culture_presets()
-        >>> print(f"Available character culture presets: {presets}")
-    """
-    return list(CHARACTER_CULTURE_PRESETS.keys())
-
-
-def get_character_culture_preset_recommendations(
-    target_score: float = 0.8,
-    gaming_focus: bool = True,
-    creative_priority: bool = False
-) -> dict[str, dict]:
-    """
-    Get recommended character culture presets based on criteria.
-    
-    NEW: Smart preset recommendations for character generation.
-    
-    Args:
-        target_score: Desired character generation support score
-        gaming_focus: Whether to prioritize gaming utility
-        creative_priority: Whether to prioritize creative freedom
-        
-    Returns:
-        Dictionary of recommended presets with scores
-        
-    Example:
-        >>> recommendations = get_character_culture_preset_recommendations(
-        ...     target_score=0.9, gaming_focus=True
-        ... )
-        >>> for preset_name, preset_info in recommendations.items():
-        ...     print(f"{preset_name}: {preset_info['expected_score']}")
-    """
-    recommendations = {}
-    
-    for preset_name, preset_config in CHARACTER_CULTURE_PRESETS.items():
-        preset_score = preset_config.get('expected_score', 0.0)
-        
-        # Check if preset meets criteria
-        meets_score = preset_score >= target_score
-        
-        # Check gaming focus
-        if gaming_focus:
-            auth_level = preset_config.get('authenticity', CultureAuthenticityLevel.GAMING)
-            gaming_optimized = auth_level == CultureAuthenticityLevel.GAMING
-        else:
-            gaming_optimized = True
-        
-        # Check creative priority
-        if creative_priority:
-            creativity_level = preset_config.get('creativity', CultureCreativityLevel.BALANCED_CREATIVE)
-            creative_optimized = creativity_level in [
-                CultureCreativityLevel.CREATIVE_FREEDOM,
-                CultureCreativityLevel.EXPERIMENTAL_GAMING,
-                CultureCreativityLevel.UNLIMITED_CREATIVE
-            ]
-        else:
-            creative_optimized = True
-        
-        if meets_score and gaming_optimized and creative_optimized:
-            recommendations[preset_name] = {
-                'expected_score': preset_score,
-                'gaming_optimized': gaming_optimized,
-                'creative_optimized': creative_optimized,
-                'preset_config': preset_config
-            }
-    
-    return recommendations
-
-
-def validate_creative_culture_architecture_compliance() -> dict[str, any]:
-    """
-    Validate that creative culture enum organization follows CREATIVE_VALIDATION_APPROACH.
-    
-    UPDATED: Validates creative culture system compliance instead of blocking architecture.
-    
-    Returns:
-        Dictionary with creative compliance assessment (constructive, not blocking)
-        
-    Example:
-        >>> compliance = validate_creative_culture_architecture_compliance()
-        >>> print(f"Creative culture system ready: {compliance['character_generation_ready']}")
+        >>> compliance = validate_simple_culture_architecture_compliance()
+        >>> print(f"Character creation ready: {compliance['character_generation_ready']}")
+        >>> print(f"Simple culture available: {compliance['simple_culture_available']}")
     """
     compliance_assessment = {
         'character_generation_ready': True,  # Always ready approach
-        'creative_support_score': 0.0,
+        'simple_culture_available': False,
+        'culture_support_score': 0.0,
         'enhancement_opportunities': [],
-        'creative_features_available': {},
-        'architecture_alignment': True,
-        'creative_validation_compliance': CREATIVE_VALIDATION_APPROACH_COMPLIANCE
+        'culture_features_available': {},
+        'architecture_alignment': True
     }
     
     try:
-        # Check creative culture enum availability
-        culture_enums = get_creative_culture_generation_enums()
-        expected_culture_enums = [
-            'culture_generation_type', 'culture_authenticity_level',
-            'culture_creativity_level', 'culture_source_type',
-            'culture_enhancement_category', 'culture_enhancement_priority'  # NEW
-        ]
+        # Check simple culture enum availability
+        culture_enums = get_simple_culture_generation_enums()
+        expected_culture_enums = ['culture_authenticity_level', 'culture_type']
         
         available_enums = 0
         for enum_name in expected_culture_enums:
@@ -1123,202 +990,133 @@ def validate_creative_culture_architecture_compliance() -> dict[str, any]:
                 available_enums += 1
             else:
                 compliance_assessment['enhancement_opportunities'].append(
-                    f"Consider adding {enum_name} for enhanced character generation support"
+                    f"Consider adding {enum_name} for character creation support"
                 )
         
-        # Calculate creative support score
-        compliance_assessment['creative_support_score'] = available_enums / len(expected_culture_enums)
+        # Check if both essential enums are available
+        simple_culture_available = (
+            'culture_authenticity_level' in culture_enums and
+            'culture_type' in culture_enums
+        )
+        compliance_assessment['simple_culture_available'] = simple_culture_available
         
-        # Check creative utility functions
-        culture_utilities = get_creative_culture_generation_utilities()
+        # Calculate culture support score
+        compliance_assessment['culture_support_score'] = available_enums / len(expected_culture_enums)
+        
+        # Check simple utility functions
+        culture_utilities = get_simple_culture_generation_utilities()
         expected_utilities = [
-            'get_optimal_authenticity_for_characters',
-            'suggest_creative_culture_enhancements',
-            'calculate_character_generation_score'
+            'get_default_authenticity_level',
+            'is_gaming_optimized',
+            'get_available_culture_types',
+            'get_available_authenticity_levels'
         ]
         
         for utility_name in expected_utilities:
             if utility_name in culture_utilities:
-                compliance_assessment['creative_features_available'][utility_name] = True
+                compliance_assessment['culture_features_available'][utility_name] = True
             else:
-                compliance_assessment['creative_features_available'][utility_name] = False
+                compliance_assessment['culture_features_available'][utility_name] = False
                 compliance_assessment['enhancement_opportunities'].append(
                     f"Consider implementing {utility_name} for better character support"
                 )
         
-        # Check character culture presets
-        presets = list_character_culture_presets()
-        if presets:
-            compliance_assessment['creative_features_available']['character_culture_presets'] = True
-        else:
-            compliance_assessment['enhancement_opportunities'].append(
-                "Consider adding CHARACTER_CULTURE_PRESETS for quick character culture setup"
-            )
-        
         # Always provide encouragement
-        if compliance_assessment['creative_support_score'] >= 0.8:
+        if compliance_assessment['culture_support_score'] >= 0.8 and simple_culture_available:
             compliance_assessment['enhancement_opportunities'].append(
-                "Excellent creative culture system - ready for character generation!"
+                "Excellent simple culture system - ready for character creation!"
             )
-        elif compliance_assessment['creative_support_score'] >= 0.5:
+        elif compliance_assessment['culture_support_score'] >= 0.5:
             compliance_assessment['enhancement_opportunities'].append(
-                "Good creative culture foundation - consider expanding for enhanced character support"
+                "Good simple culture foundation - supports character creation"
             )
         else:
             compliance_assessment['enhancement_opportunities'].append(
-                "Creative culture system has potential - adding more features will enhance character generation"
+                "Simple culture system has potential - basic features will help character creation"
             )
             
     except Exception as e:
         # Even errors are constructive
         compliance_assessment['enhancement_opportunities'].append(
-            f"Creative culture system assessment encountered minor issues ({str(e)}) but system is still usable"
+            f"Simple culture system assessment encountered minor issues ({str(e)}) but system is still usable"
         )
     
     return compliance_assessment
 
 
-# Module metadata - UPDATED for creative culture approach
-__version__ = '2.3.0'
-__description__ = 'Clean Architecture-compliant enumerations for D&D Creative Content Framework with conversation workflow and AI-powered creative culture generation focused on character creation'
+# Module metadata - SIMPLIFIED for simple culture approach
+__version__ = '1.0.0'  # SIMPLIFIED: Version reset for simple culture approach
+__description__ = 'Clean Architecture-compliant enumerations for D&D Creative Content Framework with simple culture support focused on character creation'
 
-# Configuration
+# SIMPLIFIED Configuration
 ENABLE_ENUM_CACHING = True
-STRICT_VALIDATION = False  # CHANGED: Creative approach is permissive
-CREATIVE_CULTURE_COMPLIANCE_CHECK = True  # NEW: Creative culture compliance
+STRICT_VALIDATION = False  # Creative approach is permissive
+SIMPLE_CULTURE_COMPLIANCE_CHECK = True  # Simple culture compliance
 
-# Creative culture compliance validation on import
-if CREATIVE_CULTURE_COMPLIANCE_CHECK:
-    _creative_compliance = validate_creative_culture_architecture_compliance()
-    if _creative_compliance['creative_support_score'] < 0.5:
+# Simple culture compliance validation on import
+if SIMPLE_CULTURE_COMPLIANCE_CHECK:
+    _culture_compliance = validate_simple_culture_architecture_compliance()
+    if _culture_compliance['culture_support_score'] < 0.5:
         import warnings
         warnings.warn(
-            f"Creative culture system enhancement opportunities: {_creative_compliance['enhancement_opportunities'][:2]}", 
+            f"Simple culture system enhancement opportunities: {_culture_compliance['enhancement_opportunities'][:2]}", 
             ImportWarning
         )
 
-# Usage examples in docstring - UPDATED with creative culture features
+# SIMPLIFIED Usage examples in docstring
 """
-Clean Architecture Usage Examples with Creative Culture Generation:
+Clean Architecture Usage Examples with Simple Culture Generation:
 
 1. Core Layer (Immutable D&D mechanics):
    >>> from core.enums import Ability, Skill, DamageType
    >>> print(Ability.STRENGTH.value)
    
-2. Domain Layer (Business logic with creative culture generation):
+2. Domain Layer (Business logic with simple culture generation):
    >>> from core.enums import ContentType, CreativityLevel, BalanceLevel
-   >>> from core.enums import CultureGenerationType, CultureAuthenticityLevel
+   >>> from core.enums import CultureAuthenticityLevel, CultureType
    >>> creativity = CreativityLevel.HIGH
-   >>> culture_auth = CultureAuthenticityLevel.GAMING  # Gaming-focused!
-   >>> print(f"Character support score: {culture_auth.character_support_score:.2f}")
+   >>> culture_auth = CultureAuthenticityLevel.GAMING
+   >>> culture_type = CultureType.FANTASY
+   >>> print(f"Gaming friendly: {culture_auth.is_gaming_friendly}")
+   >>> print(f"Description: {culture_type.description}")
    
-3. Application Layer (Use case orchestration):
-   >>> from core.enums import ValidationType, ValidationStatus
-   >>> validation = ValidationType.BALANCE
-   >>> print(f"Is blocking: {validation.is_blocking}")
+3. Simple culture configuration:
+   >>> config = get_simple_culture_configuration('gaming', 'fantasy')
+   >>> print(f"Gaming optimized: {config['gaming_optimized']}")
+   >>> print(f"Character ready: {config['character_ready']}")
    
-4. Infrastructure Layer (External systems):
-   >>> from core.enums import ExportFormat
-   >>> formats = get_supported_formats_for_vtt('roll20')
-   
-5. Architecture-aware access:
-   >>> core_enums = get_enums_by_layer('core')
-   >>> domain_enums = get_enums_by_layer('domain')
-   >>> creative_culture_enums = get_creative_culture_generation_enums()
-   
-6. Character creation workflow with creative culture:
+4. Character creation workflow:
    >>> workflow_enums = get_content_creation_workflow_enums()
-   >>> creativity_enum = workflow_enums['creativity_level']
-   >>> culture_creativity = workflow_enums['culture_creativity_level']
-   >>> culture_enhancements = workflow_enums['culture_enhancement_category']
+   >>> culture_auth = workflow_enums['culture_authenticity_level']
+   >>> culture_type = workflow_enums['culture_type']
    
-7. Conversation workflow:
-   >>> conversation_enums = get_conversation_workflow_enums()
-   >>> states = conversation_enums['conversation_state']
-   >>> print(f"Available states: {len(states)}")
+5. Simple culture utilities:
+   >>> utilities = get_simple_culture_generation_utilities()
+   >>> default_auth = utilities['get_default_authenticity_level']()
+   >>> print(f"Default authenticity: {default_auth.value}")
    
-8. Creative culture generation workflow:
-   >>> culture_enums = get_creative_culture_generation_enums()
-   >>> generation_types = culture_enums['culture_generation_type']
-   >>> enhancement_categories = culture_enums['culture_enhancement_category']
-   >>> print(f"Generation types: {[t.name for t in generation_types]}")
+6. Available culture options:
+   >>> auth_levels = get_available_authenticity_levels()
+   >>> culture_types = get_available_culture_types()
+   >>> print(f"Available auth levels: {[a.value for a in auth_levels]}")
+   >>> print(f"Available culture types: {[c.value for c in culture_types]}")
    
-9. VTT compatibility:
-   >>> vtt_enums = get_vtt_compatibility_enums()
-   >>> export_formats = vtt_enums['export_format']
+7. Gaming optimization check:
+   >>> auth_level = CultureAuthenticityLevel.GAMING
+   >>> is_optimized = is_gaming_optimized(auth_level)
+   >>> print(f"Gaming optimized: {is_optimized}")
    
-10. Conversation state validation:
-    >>> valid = validate_conversation_transition('greeting', 'concept_gathering')
-    >>> progress = get_conversation_progress('concept_gathering')
-    
-11. Creative culture generation configuration with enhancement suggestions:
-    >>> config_result = suggest_creative_culture_configuration_enhancements(
-    ...     'character_focused', 'gaming', 'creative_freedom', 'gaming_ready'
-    ... )
-    >>> print(f"Character support score: {config_result['character_support_score']:.2f}")
-    >>> print(f"Character ready: {config_result['is_character_ready']}")
-    
-12. Character-focused culture generation presets:
-    >>> preset = get_character_culture_preset('quick_character_creation')
-    >>> presets = list_character_culture_presets()
-    >>> recommendations = get_character_culture_preset_recommendations(target_score=0.9)
-    >>> print(f"Available presets: {presets}")
+8. Simple culture enum validation:
+   >>> is_valid_auth = validate_enum_value('culture_authenticity_level', 'gaming')
+   >>> is_valid_type = validate_enum_value('culture_type', 'fantasy')
+   >>> print(f"Valid auth: {is_valid_auth}, Valid type: {is_valid_type}")
    
-13. Search by layer including creative culture:
-    >>> culture_results = search_enums('culture')
-    >>> domain_culture_enums = culture_results.get('domain', {})
-    >>> enhancement_results = search_enums('enhancement')
-    >>> culture_enhancement_enums = enhancement_results.get('domain', {})
+9. Culture enum discovery:
+   >>> culture_enums = get_simple_culture_generation_enums()
+   >>> print(f"Available culture enums: {list(culture_enums.keys())}")
    
-14. Creative culture architecture compliance (constructive assessment):
-    >>> compliance = validate_creative_culture_architecture_compliance()
-    >>> print(f"Character generation ready: {compliance['character_generation_ready']}")
-    >>> print(f"Creative support score: {compliance['creative_support_score']:.2f}")
-    
-15. Creative culture-specific utilities:
-    >>> culture_utils = get_creative_culture_generation_utilities()
-    >>> optimal_auth = culture_utils['get_optimal_authenticity_for_characters']
-    >>> suggest_enhancements = culture_utils['suggest_creative_culture_enhancements']
-    >>> character_score = culture_utils['calculate_character_generation_score']
-    
-16. Character generation score calculation:
-    >>> from core.enums import CultureAuthenticityLevel, CultureCreativityLevel, CultureComplexityLevel
-    >>> score = calculate_character_generation_score(
-    ...     CultureAuthenticityLevel.GAMING,
-    ...     CultureCreativityLevel.CREATIVE_FREEDOM,
-    ...     CultureComplexityLevel.GAMING_READY
-    ... )
-    >>> print(f"Character generation score: {score:.2f}")
+10. System compliance check:
+    >>> compliance = validate_simple_culture_architecture_compliance()
+    >>> print(f"System ready: {compliance['character_generation_ready']}")
+    >>> print(f"Culture support: {compliance['culture_support_score']:.2f}")
 """
-
-# Development banner for creative culture system
-if __name__ == "__main__":
-    print("=" * 80)
-    print("D&D Character Creator - Creative Culture Generation Enums")
-    print("Character Generation Focused Implementation")
-    print("=" * 80)
-    print(f"Version: {__version__}")
-    print(f"Philosophy: {CREATIVE_VALIDATION_APPROACH_COMPLIANCE['philosophy']}")
-    print(f"Focus: {CREATIVE_VALIDATION_APPROACH_COMPLIANCE['focus']}")
-    
-    # Show creative culture system status
-    compliance = validate_creative_culture_architecture_compliance()
-    print(f"\nCreative Culture System Ready: {compliance['character_generation_ready']}")
-    print(f"Creative Support Score: {compliance['creative_support_score']:.2f}")
-    
-    # Show available presets
-    presets = list_character_culture_presets()
-    print(f"Character Culture Presets: {len(presets)}")
-    for preset in presets:
-        preset_config = get_character_culture_preset(preset)
-        print(f"  • {preset}: {preset_config.get('expected_score', 0.0):.2f} character support")
-    
-    print("\nCreative Culture Generation Categories:")
-    categories = get_enums_by_category()
-    culture_category = categories.get('creative_culture_generation', [])
-    for enum_name in culture_category:
-        print(f"  • {enum_name}")
-    
-    print("\n🎨 CREATIVE_VALIDATION_APPROACH: Enable creativity rather than restrict it!")
-    print("🎲 Character generation focused enums with constructive enhancement suggestions!")
-    print("=" * 80)

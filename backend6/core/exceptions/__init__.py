@@ -1,15 +1,11 @@
-"""Centralized exception imports and utilities."""
-# - Import all exception types
-# - Exception factory functions
-# - Common error handling utilities
-# - Exception categorization helpers
-
 """
-Core domain exceptions for the D&D Creative Content Framework.
+Centralized exception imports and utilities for D&D Character Creation.
 
-This module provides a comprehensive set of exceptions for content generation,
-validation failures, and D&D rule violations, supporting robust error handling
-and debugging throughout the framework.
+This module provides essential exceptions for content generation and validation,
+supporting robust error handling throughout the framework while maintaining
+simplicity and focus on character creation.
+
+SIMPLIFIED with minimal culture exceptions that support character creation without complexity.
 """
 
 # Base Exceptions
@@ -36,6 +32,18 @@ from .base import (
     group_validation_errors_by_field,
     group_validation_errors_by_type,
     create_validation_summary,
+)
+
+# 🆕 SIMPLIFIED Culture-specific Exceptions (Character creation focus)
+from .culture import (
+    CultureError,
+    CultureGenerationError,
+    CultureParsingError,
+    CultureNotFoundError,
+    # Simple utility functions
+    handle_culture_error_gracefully,
+    get_culture_error_fallback,
+    should_continue_character_creation,
 )
 
 # Generation Errors
@@ -292,6 +300,15 @@ __all__ = [
     'group_validation_errors_by_type',
     'create_validation_summary',
     
+    # 🆕 SIMPLIFIED Culture Exceptions (Character creation focus)
+    'CultureError',
+    'CultureGenerationError',
+    'CultureParsingError',
+    'CultureNotFoundError',
+    'handle_culture_error_gracefully',
+    'get_culture_error_fallback',
+    'should_continue_character_creation',
+    
     # Generation Errors
     'GenerationError',
     'GenerationWorkflowError',
@@ -510,7 +527,7 @@ __all__ = [
     'validate_integration_requirements',
 ]
 
-# Exception registry for dynamic access
+# SIMPLIFIED Exception registry for dynamic access
 EXCEPTION_REGISTRY = {
     # Base exceptions
     'base_framework_error': BaseFrameworkError,
@@ -528,6 +545,12 @@ EXCEPTION_REGISTRY = {
     'validation_config': ValidationConfigError,
     'validation_dependency': ValidationDependencyError,
     'validation_batch': ValidationBatchError,
+    
+    # 🆕 SIMPLIFIED Culture exceptions (Character creation focus)
+    'culture_error': CultureError,
+    'culture_generation': CultureGenerationError,
+    'culture_parsing': CultureParsingError,
+    'culture_not_found': CultureNotFoundError,
     
     # Generation errors
     'generation_error': GenerationError,
@@ -739,6 +762,9 @@ def get_exceptions_by_category() -> dict[str, list[str]]:
             "format_validation", "validation_pipeline", "validation_timeout",
             "validation_config", "validation_dependency", "validation_batch"
         ],
+        "simple_culture": [
+            "culture_error", "culture_generation", "culture_parsing", "culture_not_found"
+        ],
         "generation": [
             "generation_error", "generation_workflow", "llm_provider",
             "llm_connection", "llm_timeout", "llm_rate_limit", "llm_quota_exceeded",
@@ -870,6 +896,16 @@ def exception_to_dict(exception: Exception) -> dict:
     if hasattr(exception, 'recovery_suggestions') and exception.recovery_suggestions:
         result['suggestions'] = exception.recovery_suggestions
     
+    # Simple culture-specific attributes
+    if hasattr(exception, 'fallback_suggestion') and exception.fallback_suggestion:
+        result['fallback_suggestion'] = exception.fallback_suggestion
+    
+    if hasattr(exception, 'attempted_culture') and exception.attempted_culture:
+        result['attempted_culture'] = exception.attempted_culture
+    
+    if hasattr(exception, 'culture_name') and exception.culture_name:
+        result['culture_name'] = exception.culture_name
+    
     return result
 
 
@@ -886,7 +922,7 @@ def is_framework_exception(exception: Exception) -> bool:
     framework_bases = (
         BaseFrameworkError, DnDFrameworkError, GenerationError, 
         ValidationError, BalanceError, WorkflowError, ExportError,
-        PersistenceError, IntegrationError
+        PersistenceError, IntegrationError, CultureError
     )
     return isinstance(exception, framework_bases)
 
@@ -901,7 +937,9 @@ def get_exception_category(exception: Exception) -> str:
     Returns:
         Category string
     """
-    if isinstance(exception, GenerationError):
+    if isinstance(exception, CultureError):
+        return "simple_culture"
+    elif isinstance(exception, GenerationError):
         return "generation"
     elif isinstance(exception, ValidationError):
         return "validation"
@@ -938,6 +976,7 @@ def summarize_exception_collection(exceptions: list[Exception]) -> dict:
     severity_counts = {}
     most_severe = None
     highest_severity = 0
+    simple_culture_error_summary = None
     
     for exc in exceptions:
         # Categorize
@@ -956,11 +995,166 @@ def summarize_exception_collection(exceptions: list[Exception]) -> dict:
                 highest_severity = level
                 most_severe = exc
     
+    # Create simple culture-specific summary if there are culture errors
+    simple_culture_errors = [exc for exc in exceptions if isinstance(exc, CultureError)]
+    if simple_culture_errors:
+        simple_culture_error_summary = create_simple_culture_error_summary(simple_culture_errors)
+    
     return {
         "total": len(exceptions),
         "categories": categories,
         "severity_counts": severity_counts,
         "most_severe": exception_to_dict(most_severe) if most_severe else None,
         "framework_exceptions": sum(1 for exc in exceptions if is_framework_exception(exc)),
-        "external_exceptions": sum(1 for exc in exceptions if not is_framework_exception(exc))
+        "external_exceptions": sum(1 for exc in exceptions if not is_framework_exception(exc)),
+        "simple_culture_error_summary": simple_culture_error_summary
     }
+
+
+# 🆕 SIMPLIFIED Culture-specific helper functions (Character creation focus)
+def create_simple_culture_error_summary(culture_errors: list[CultureError]) -> dict:
+    """
+    Create a simple summary of culture errors for character creation.
+    
+    Args:
+        culture_errors: List of culture errors
+        
+    Returns:
+        Simple summary dictionary
+    """
+    if not culture_errors:
+        return {"total": 0, "can_continue": True, "suggestions": []}
+    
+    generation_errors = sum(1 for exc in culture_errors if isinstance(exc, CultureGenerationError))
+    parsing_errors = sum(1 for exc in culture_errors if isinstance(exc, CultureParsingError))
+    not_found_errors = sum(1 for exc in culture_errors if isinstance(exc, CultureNotFoundError))
+    
+    # Collect all fallback suggestions
+    suggestions = []
+    for exc in culture_errors:
+        if hasattr(exc, 'fallback_suggestion') and exc.fallback_suggestion:
+            suggestions.append(exc.fallback_suggestion)
+    
+    # Remove duplicates
+    suggestions = list(set(suggestions))
+    
+    # Add general character creation suggestions
+    if not suggestions:
+        suggestions.append("Culture features are optional - continue with character creation")
+    
+    return {
+        "total": len(culture_errors),
+        "can_continue": True,  # Always can continue - culture is optional
+        "error_breakdown": {
+            "generation": generation_errors,
+            "parsing": parsing_errors,
+            "not_found": not_found_errors,
+            "other": len(culture_errors) - generation_errors - parsing_errors - not_found_errors
+        },
+        "suggestions": suggestions[:5],  # Keep it simple
+        "character_creation_impact": "Culture features are optional - character creation can continue"
+    }
+
+
+def handle_simple_culture_error_chain(exceptions: list[Exception]) -> dict:
+    """
+    Handle a chain of simple culture-related errors and provide recovery suggestions.
+    
+    Args:
+        exceptions: List of exceptions in the error chain
+        
+    Returns:
+        Error handling result with recovery suggestions
+    """
+    if not exceptions:
+        return {"status": "no_errors", "suggestions": []}
+    
+    culture_errors = [exc for exc in exceptions if isinstance(exc, CultureError)]
+    other_errors = [exc for exc in exceptions if not isinstance(exc, CultureError)]
+    
+    # Analyze simple culture error patterns
+    generation_errors = [exc for exc in culture_errors if isinstance(exc, CultureGenerationError)]
+    parsing_errors = [exc for exc in culture_errors if isinstance(exc, CultureParsingError)]
+    not_found_errors = [exc for exc in culture_errors if isinstance(exc, CultureNotFoundError)]
+    
+    suggestions = []
+    
+    if generation_errors:
+        suggestions.append("Try a different cultural inspiration or use generic fantasy names")
+        suggestions.append("Culture generation is optional - continue with manual character creation")
+    
+    if parsing_errors:
+        suggestions.append("Use manual name entry or generic fantasy names for character creation")
+    
+    if not_found_errors:
+        suggestions.append("Try a different culture name or use generic fantasy for character creation")
+    
+    if other_errors:
+        suggestions.append("Address non-culture related errors first")
+    
+    # Always emphasize that character creation can continue
+    suggestions.append("Culture features are supportive - character creation can always continue")
+    
+    return {
+        "status": "simple_culture_errors_analyzed",
+        "total_errors": len(exceptions),
+        "culture_errors": len(culture_errors),
+        "other_errors": len(other_errors),
+        "can_continue_character_creation": True,  # Always True
+        "error_breakdown": {
+            "generation": len(generation_errors),
+            "parsing": len(parsing_errors),
+            "not_found": len(not_found_errors)
+        },
+        "suggestions": suggestions[:6],  # Keep it simple
+        "simple_culture_error_summary": create_simple_culture_error_summary(culture_errors) if culture_errors else None
+    }
+
+
+# Compatibility functions for existing code
+def create_culture_error_summary(culture_errors: list[CultureError]) -> dict:
+    """Compatibility function - wraps simple culture error summary."""
+    return create_simple_culture_error_summary(culture_errors)
+
+
+def handle_culture_error_chain(exceptions: list[Exception]) -> dict:
+    """Compatibility function - wraps simple culture error chain handler."""
+    return handle_simple_culture_error_chain(exceptions)
+
+
+def create_culture_exception_context(
+    culture_type: str = None,
+    generation_stage: str = None,
+    **additional_context
+) -> dict:
+    """
+    Create simplified context for culture exceptions.
+    
+    Args:
+        culture_type: Type of culture being processed
+        generation_stage: Stage of generation where error occurred
+        **additional_context: Additional context data
+        
+    Returns:
+        Context dictionary for culture exceptions
+    """
+    context = {}
+    
+    if culture_type:
+        context['culture_type'] = culture_type
+    if generation_stage:
+        context['generation_stage'] = generation_stage
+    
+    context.update(additional_context)
+    
+    return context
+
+
+# Module metadata - SIMPLIFIED for simple culture approach
+__version__ = '1.0.0'  # Version reset for simple culture approach
+__description__ = 'Centralized exception handling for D&D Creative Content Framework with simple culture support focused on character creation'
+
+# SIMPLIFIED Configuration
+ENABLE_EXCEPTION_CACHING = True
+STRICT_VALIDATION = False  # Creative approach is permissive
+SIMPLE_CULTURE_COMPLIANCE_CHECK = True  # Simple culture compliance

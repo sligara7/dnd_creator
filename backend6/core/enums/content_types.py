@@ -146,3 +146,63 @@ def get_content_types_by_category(category: str) -> Set[ContentType]:
         'signature': SIGNATURE_CONTENT
     }
     return categories.get(category, set())
+
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Dict, List, Set, Optional, Union, Tuple, Any
+
+class ProficiencyLevel(Enum):
+    NONE = 0
+    PROFICIENT = 1
+    EXPERT = 2
+
+class AbilityScore:
+    """
+    Class representing a D&D ability score with its component values.
+    
+    This breakdown allows for precise tracking of different bonuses and their sources,
+    which is essential for proper stacking rules and temporary effects.
+    """
+    
+    def __init__(self, base_score: int = 10):
+        # Core Independent Variable
+        self.base_score: int = base_score  # Starting value from character creation
+        
+        # In-Game Independent Variables
+        self.bonus: int = 0  # Temporary or permanent flat bonuses
+        self.set_score: Optional[int] = None  # Direct override (e.g., from Belt of Giant Strength)
+        self.stacking_bonuses: Dict[str, int] = {}  # Named bonuses that can stack (source -> value)
+    
+    @property
+    def total_score(self) -> int:
+        """Calculate the final ability score value applying all bonuses and overrides."""
+        # Dependent Variable (calculated)
+        if self.set_score is not None:
+            return self.set_score
+        
+        return self.base_score + self.bonus + sum(self.stacking_bonuses.values())
+    
+    @property
+    def modifier(self) -> int:
+        """Calculate the ability modifier using D&D 5e formula."""
+        # Dependent Variable (calculated)
+        return (self.total_score - 10) // 2
+    
+    def add_stacking_bonus(self, source: str, value: int) -> None:
+        """Add a stacking bonus from a specific source."""
+        self.stacking_bonuses[source] = value
+    
+    def remove_stacking_bonus(self, source: str) -> None:
+        """Remove a stacking bonus from a specific source."""
+        if source in self.stacking_bonuses:
+            del self.stacking_bonuses[source]
+            
+    def reset_bonuses(self) -> None:
+        """Reset all bonuses to default values."""
+        self.bonus = 0
+        self.set_score = None
+        self.stacking_bonuses.clear()
+        
+    def __int__(self) -> int:
+        """Allow casting the ability score to an integer."""
+        return self.total_score

@@ -777,3 +777,176 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 **TODO**: If a new species or class is created; create a writeup on the history/lore/legacy/etc of that new class or species.
 
 Similar code found with 4 license types
+
+Update based on:
+
+Looking at your comprehensive content contract validator, I can see it contains multiple distinct responsibilities that should be separated according to clean architecture principles. Here's the specific refactoring structure:
+
+## 1. Character Sheet Core Components
+
+### `/core/entities/character_sheet/`
+**Purpose**: Break down the monolithic CharacterSheet into focused components
+
+#### `character_core.py`
+- Class: `CharacterCore`
+- Class: `AbilityScore` 
+- Enum: `ProficiencyLevel`
+- **Content**: Core independent variables set during character creation/leveling (species, classes, ability scores, proficiencies)
+
+#### `character_state.py`
+- Class: `CharacterState`
+- **Content**: In-game independent variables that change during gameplay (current HP, spell slots, equipment, conditions)
+
+#### `character_stats.py`
+- Class: `CharacterStats`
+- **Content**: Dependent variables calculated from core and state (AC, initiative, spell save DC, passive scores)
+
+#### `character_sheet.py`
+- Class: `CharacterSheet`
+- **Content**: Main orchestrator that combines core, state, and stats with validation integration
+
+## 2. D&D Rules Engine
+
+### `/core/rules/`
+**Purpose**: Centralize D&D 5e/2024 rule enforcement
+
+#### `dnd_2024_rules.py`
+- Class: `DnD2024Rules` (renamed from `CreativeRules2024`)
+- **Content**: Core D&D constants, validation rules, official content registries
+
+#### `custom_content_registry.py`
+- Class: `CustomContentRegistry`
+- **Content**: Registration and management of homebrew content with validation
+
+#### `multiclass_levelup_rules.py`
+- Class: `MulticlassLevelUpManager`
+- Abstract Class: `AbstractMulticlassAndLevelUp`
+- **Content**: Leveling and multiclassing logic separated from validation
+
+## 3. Validation Framework Restructure
+
+### `/core/validation/validators/`
+**Purpose**: Split validation into focused validators
+
+#### `ability_score_validator.py`
+- Class: `AbilityScoreValidator`
+- **Content**: Validates ability scores, modifiers, ASI rules
+
+#### `class_level_validator.py`
+- Class: `ClassLevelValidator`
+- **Content**: Validates class levels, multiclassing prerequisites, subclass requirements
+
+#### `equipment_validator.py`
+- Class: `EquipmentValidator`
+- **Content**: Validates weapons, armor, proficiencies, attunement
+
+#### `spellcasting_validator.py`
+- Class: `SpellcastingValidator`
+- **Content**: Validates spell slots, known spells, casting abilities
+
+#### `character_identity_validator.py`
+- Class: `CharacterIdentityValidator`
+- **Content**: Validates species, background, alignment, personality
+
+### validation
+**Purpose**: Validation orchestration and results
+
+#### `validation_result.py`
+- Class: `ValidationResult`
+- Class: `ValidationSummary`
+- **Content**: Structured validation result containers
+
+#### `character_validator.py`
+- Class: `CharacterValidator`
+- **Content**: Orchestrates all validators, provides unified validation interface
+
+#### `validation_decorators.py`
+- **Content**: All validation decorators (@validate_name, @validate_spell, etc.)
+
+## 4. Content Contract Enforcement
+
+### `/core/validation/contracts/`
+**Purpose**: Abstract contract validation
+
+#### content_contract_validator.py (refactored)
+- Class: `ContentContractValidator`
+- **Content**: ONLY the abstract contract validation logic, flexibility matrix
+
+#### `spell_contract_validator.py`
+- Class: `SpellContractValidator`
+- **Content**: Spell-specific contract validation
+
+#### `class_contract_validator.py`
+- Class: `ClassContractValidator`
+- **Content**: Class-specific contract validation
+
+#### `species_contract_validator.py`
+- Class: `SpeciesContractValidator`
+- **Content**: Species-specific contract validation
+
+## 5. Integration Layer
+
+### `/core/validation/unified/`
+**Purpose**: Unified validation system
+
+#### `unified_character_validator.py` (refactored)
+- Class: `UnifiedCharacterValidator`
+- Class: `SimplifiedCharacterValidator`
+- **Content**: ONLY the unified validation orchestration
+
+#### `validation_factory.py`
+- Function: `create_unified_validator()`
+- Function: `create_step_validator()`
+- **Content**: Factory functions for validator creation
+
+## 6. Updated Integration Points
+
+### content_utils.py (additions)
+Add these new functions:
+- `validate_content_against_dnd_rules()`
+- `ensure_dnd_compliance()`
+- `get_creative_flexibility_guidelines()`
+- `validate_content_modularity()`
+
+### __init__.py (additions)
+Update `CoreLayerInterface` to include:
+- `get_character_validation_capabilities()`
+- `get_content_validation_capabilities()`
+
+## 7. New Architecture Benefits
+
+This structure provides:
+
+1. **Single Responsibility**: Each validator handles one aspect
+2. **Dependency Injection**: Validators can be composed as needed
+3. **Testability**: Each component can be tested independently
+4. **Extensibility**: New validators can be added without modifying existing code
+5. **Performance**: Validation can be run selectively (e.g., only ability scores during character creation)
+
+## 8. File Dependencies
+
+```
+character_sheet.py
+├── character_core.py
+├── character_state.py 
+└── character_stats.py
+
+unified_character_validator.py
+├── character_validator.py
+├── content_contract_validator.py
+└── validation_result.py
+
+character_validator.py
+├── ability_score_validator.py
+├── class_level_validator.py
+├── equipment_validator.py
+├── spellcasting_validator.py
+└── character_identity_validator.py
+
+All validators depend on:
+├── dnd_2024_rules.py
+├── custom_content_registry.py
+└── validation_decorators.py
+```
+
+This structure maintains clean architecture principles while providing the comprehensive D&D character validation framework you need. Each file has a clear, focused responsibility and the dependencies flow in the correct direction (core ← validation ← integration).

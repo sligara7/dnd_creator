@@ -1,0 +1,67 @@
+{
+  "name": "Unnamed Character",
+  "species": "Human",
+  "variants": [],
+  "level": 7,
+  "classes": {
+    "Ranger": 5,
+    "Barbarian": 2
+  },
+  "background": "Commoner",
+  "alignment": "Neutral Neutral",
+  "ability_scores": {
+    "strength": 10,
+    "dexterity": 10,
+    "constitution": 10,
+    "intelligence": 10,
+    "wisdom": 10,
+    "charisma": 10
+  },
+  "ability_modifiers": {
+    "strength": 0,
+    "dexterity": 0,
+    "constitution": 0,
+    "intelligence": 0,
+    "wisdom": 0,
+    "charisma": 0
+  },
+  "ac": 10,
+  "hp": {
+    "current": 22,
+    "max": 48,
+    "temp": 0
+  },
+  "initiative": 0,
+  "proficiency_bonus": 3,
+  "proficient_skills": [
+    "Survival",
+    "Nature",
+    "Perception",
+    "Stealth"
+  ],
+  "expert_skills": [],
+  "saving_throws": [
+    "Constitution",
+    "Wisdom"
+  ],
+  "features": [],
+  "feats": [],
+  "species_traits": [],
+  "weapon_count": 2,
+  "armor": null,
+  "shield": false,
+  "personality_traits": [
+    "Love of knowledge",
+    "Independent thinker"
+  ],
+  "ideals": [
+    "Knowledge is power"
+  ],
+  "bonds": [
+    "Unravel the truth no matter the cost"
+  ],
+  "flaws": [
+    "Cannot resist a good mystery"
+  ],
+  "backstory_summary": ""
+}

@@ -32,11 +32,11 @@ services:
       # Database Configuration
       DATABASE_URL: postgresql://dnd_user:${DB_PASSWORD:-change_this_password}@database:5432/dnd_characters
       
-      # LLM Configuration
+      # LLM Configuration - Using GitHub Secrets
       LLM_PROVIDER: ${LLM_PROVIDER:-openai}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      LLM_MODEL: ${LLM_MODEL:-gpt-3.5-turbo}
+      OPENAI_API_KEY_FILE: /run/secrets/openai_api_key
+      ANTHROPIC_API_KEY_FILE: /run/secrets/anthropic_api_key
+      LLM_MODEL: ${LLM_MODEL:-gpt-4.1-nano-2025-04-14}
       
       # API Configuration
       SECRET_KEY: ${SECRET_KEY:-your-secret-key-change-this-in-production}
@@ -55,6 +55,9 @@ services:
       - dnd_network
     volumes:
       - ./logs:/app/logs
+    secrets:
+      - openai_api_key
+      - anthropic_api_key
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -97,3 +100,10 @@ volumes:
 networks:
   dnd_network:
     driver: bridge
+
+# Secrets management for secure API key handling
+secrets:
+  openai_api_key:
+    environment: "OPENAI_API_KEY"
+  anthropic_api_key:
+    environment: "ANTHROPIC_API_KEY"

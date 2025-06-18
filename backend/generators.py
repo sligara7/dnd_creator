@@ -7,7 +7,7 @@
 from typing import Dict, Any, List, Optional
 import json
 import logging
-from llm_services import LLMService
+from llm_service_new import LLMService
 from custom_content_models import (
     ContentRegistry, CustomSpecies, CustomClass, CustomSpell, 
     CustomWeapon, CustomArmor, CustomFeat, CustomItem

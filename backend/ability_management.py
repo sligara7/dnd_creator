@@ -104,6 +104,78 @@ class AdvancedAbilityManager:
             total = min(total, max_value)
         
         return total
+    
+    def get_ability_summary(self) -> Dict[str, Any]:
+        """Get a comprehensive summary of all ability scores and their sources."""
+        standard_abilities = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]
+        
+        ability_summary = {}
+        
+        for ability in standard_abilities:
+            if hasattr(self.character_core, ability):
+                ability_score = getattr(self.character_core, ability)
+                
+                # Get base total and calculate with temporary modifiers
+                base_total = ability_score.total_score
+                temp_bonus = 0
+                if ability in self.temporary_modifiers:
+                    temp_bonus = sum(
+                        mod["modifier"] for mod in self.temporary_modifiers[ability]
+                        if mod["active"]
+                    )
+                
+                current_total = base_total + temp_bonus
+                
+                # Apply custom maximum if set
+                if ability in self.ability_score_maximums:
+                    max_value = self.ability_score_maximums[ability]["value"]
+                    current_total = min(current_total, max_value)
+                
+                ability_summary[ability] = {
+                    "base_score": ability_score.base_score,
+                    "total_score": current_total,
+                    "modifier": (current_total - 10) // 2,
+                    "modifier_string": f"{(current_total - 10) // 2:+d}",
+                    "bonuses": ability_score.bonuses.copy(),
+                    "temporary_modifiers": self.temporary_modifiers.get(ability, []),
+                    "custom_maximum": self.ability_score_maximums.get(ability, None)
+                }
+            else:
+                # Default values for missing abilities
+                ability_summary[ability] = {
+                    "base_score": 10,
+                    "total_score": 10,
+                    "modifier": 0,
+                    "modifier_string": "+0",
+                    "bonuses": {},
+                    "temporary_modifiers": [],
+                    "custom_maximum": None
+                }
+        
+        # Calculate summary statistics
+        totals = [score["total_score"] for score in ability_summary.values()]
+        modifiers = [score["modifier"] for score in ability_summary.values()]
+        
+        summary_stats = {
+            "total_ability_points": sum(totals),
+            "average_ability_score": sum(totals) / len(totals),
+            "highest_ability_score": max(totals),
+            "lowest_ability_score": min(totals),
+            "highest_modifier": max(modifiers),
+            "lowest_modifier": min(modifiers),
+            "background_bonuses_applied": len(self.background_bonuses) > 0,
+            "custom_maximums_set": len(self.ability_score_maximums) > 0,
+            "temporary_modifiers_active": any(
+                any(mod["active"] for mod in mods) 
+                for mods in self.temporary_modifiers.values()
+            )
+        }
+        
+        return {
+            "abilities": ability_summary,
+            "summary_stats": summary_stats,
+            "background_bonuses": self.background_bonuses.copy()
+        }
 
 # ============================================================================
 # CUSTOM CONTENT ABILITY MANAGEMENT

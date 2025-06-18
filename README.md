@@ -261,21 +261,214 @@ python -m pytest backend6/core/tests/ -v
 python backend6/core/validation/validate_core_interfaces.py
 ```
 
-## License
+# D&D Character Creator
+
+A comprehensive web application for creating, managing, and customizing D&D 5e characters with AI assistance.
+
+## 🎲 Features
+
+- **AI-Powered Character Creation**: Uses LLM to help create balanced and interesting characters
+- **D&D 5e 2024 Compliant**: Follows the latest D&D rules and guidelines
+- **Custom Content Support**: Create custom species, classes, items, spells, and more
+- **DM Tools**: Character approval, NPC creation, and campaign management
+- **Character Progression**: Level up characters and track their growth
+- **Image Generation**: AI-generated character portraits using Stable Diffusion
+
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        Full Stack                           │
+├─────────────────┬─────────────────┬─────────────────────────┤
+│   Frontend      │    Backend      │      AI Services        │
+│   (React)       │   (FastAPI)     │                         │
+│   Port 3000     │   Port 8000     │   ├─ Ollama (11434)    │
+│                 │                 │   └─ Stable Diff (7860) │
+└─────────────────┴─────────────────┴─────────────────────────┘
+                           │
+                  ┌────────┴─────────┐
+                  │    Database      │
+                  │  (PostgreSQL)    │
+                  │   Port 5432      │
+                  └──────────────────┘
+```
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- **Podman** and **podman-compose** installed
+- **NVIDIA GPU** (optional, for AI image generation)
+- **8GB+ RAM** recommended
+
+### Full Application Setup
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd dnd_char_creator
+
+# Run the full application stack
+./deployment/scripts/setup-full.sh
+
+# Access the application
+# - Frontend:  http://localhost:3000
+# - Backend:   http://localhost:8000
+# - API Docs:  http://localhost:8000/docs
+```
+
+### Backend Development Only
+
+```bash
+# Run only backend services (for development)
+./deployment/scripts/setup-backend-dev.sh
+
+# Access backend services
+# - Backend:   http://localhost:8000
+# - API Docs:  http://localhost:8000/docs
+# - Database:  localhost:5432
+```
+
+## 📁 Project Structure
+
+```
+dnd_char_creator/
+├── backend/                 # FastAPI backend application
+│   ├── core_models.py      # Core character system models
+│   ├── custom_content_models.py  # Custom content management
+│   ├── character_creation.py     # Character creation logic
+│   ├── fastapi_main_new.py       # FastAPI application
+│   └── requirements-new.txt      # Python dependencies
+├── frontend/               # React frontend application
+│   ├── src/                # React components and pages
+│   ├── public/             # Static assets
+│   └── package.json        # Node.js dependencies
+├── ai_services/            # AI service containers
+│   ├── ollama/             # Local LLM service
+│   └── stable_diffusion/   # Image generation service
+├── deployment/             # All deployment configurations
+│   ├── scripts/            # Setup and management scripts
+│   └── compose/            # Environment-specific compose files
+└── podman-compose.yml      # Main orchestration file
+```
+
+## 🔧 Configuration
+
+### Environment Variables
+
+Create a `.env` file in the project root:
+
+```bash
+# Database Configuration
+DB_PASSWORD=your_secure_password
+
+# API Configuration
+SECRET_KEY=your_secret_key
+
+# LLM Configuration
+LLM_PROVIDER=ollama
+LLM_MODEL=llama3:8b
+
+# External API Keys (optional)
+OPENAI_API_KEY=your_openai_key
+ANTHROPIC_API_KEY=your_anthropic_key
+```
+
+### LLM Providers
+
+1. **Ollama (Default)** - Local, private, free
+2. **OpenAI** - Cloud service, requires API key
+3. **Anthropic** - Claude AI, requires API key
+
+## 🛠️ Development
+
+### Backend Development
+
+```bash
+# Start backend services
+./deployment/scripts/setup-backend-dev.sh
+
+# Run tests
+podman exec dnd_character_api_dev python -m pytest
+
+# Access container shell
+podman exec -it dnd_character_api_dev /bin/bash
+```
+
+### Frontend Development
+
+```bash
+# Install dependencies
+cd frontend
+npm install
+
+# Start development server
+npm start
+```
+
+## 🧪 Testing
+
+```bash
+# Backend tests
+podman exec dnd_character_api_dev python -m pytest -v
+
+# API health check
+curl http://localhost:8000/health
+
+# Test character creation
+curl -X POST http://localhost:8000/api/v1/characters \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Test Character", "species": "human", "class": "fighter"}'
+```
+
+## 📖 Documentation
+
+- **[Deployment Guide](deployment/README.md)** - Detailed deployment and management
+- **[API Documentation](http://localhost:8000/docs)** - Interactive API docs (when running)
+- **[Architecture Guide](architecture.txt)** - System design and architecture
+
+## 🔒 Security
+
+- Environment variables for sensitive data
+- Podman secrets for API keys
+- CORS configuration for web security
+- Database password protection
+
+## 🆘 Troubleshooting
+
+### Common Issues
+
+1. **Port conflicts**: Check if ports 3000, 8000, 5432, 11434 are available
+2. **GPU not available**: AI image generation requires NVIDIA GPU
+3. **Memory issues**: Ensure sufficient RAM for LLM services
+
+### Getting Help
+
+1. Check service logs: `podman-compose logs -f`
+2. Verify service status: `podman-compose ps`
+3. Review the [Deployment Guide](deployment/README.md)
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
+
+## 📄 License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Acknowledgments
+## 🎯 Roadmap
 
-- Built for D&D 2024 rules compatibility
-- Inspired by unlimited creative character concepts
-- Designed for seamless campaign integration
-- Powered by clean architecture principles and test-driven development
-- Compatible with major virtual tabletop platforms (planned)
-- Features comprehensive character generation workflow (in development)
+- [ ] Enhanced AI character generation
+- [ ] Campaign management tools
+- [ ] Character sharing and collaboration
+- [ ] Mobile-responsive design
+- [ ] Advanced custom content editor
+- [ ] Integration with virtual tabletop platforms
 
 ---
 
-**Note**: This is a work-in-progress creative content generation framework. The core layer is currently under development with plans to build up through domain, application, and infrastructure layers. All D&D content remains property of Wizards of the Coast. Generated content will be for personal use only and should be approved by your DM before use in campaigns.
-
-**Development Status**: Core layer foundation - lots of work to go, architecture will be refined as development progresses.
+**Note**: This application uses Podman instead of Docker for container orchestration. Make sure you have Podman and podman-compose installed before running the setup scripts.

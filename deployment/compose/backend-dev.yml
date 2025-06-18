@@ -1,43 +1,70 @@
-# DEPRECATED: Use ../deployment/compose/backend-dev.yml instead
-# This file is kept for backward compatibility
-
 version: '3.8'
 
 services:
   # PostgreSQL Database
   database:
     image: postgres:15-alpine
-    container_name: dnd_character_db_legacy
+    container_name: dnd_character_db_dev
     environment:
       POSTGRES_DB: dnd_characters
       POSTGRES_USER: dnd_user
       POSTGRES_PASSWORD: ${DB_PASSWORD:-change_this_password}
     volumes:
-      - postgres_data_legacy:/var/lib/postgresql/data
+      - postgres_data_dev:/var/lib/postgresql/data
       - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
       - "5432:5432"
     networks:
-      - dnd_network_legacy
+      - dnd_network_dev
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U dnd_user -d dnd_characters"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Character Creator API
-  api:
+  # Ollama LLM Service
+  ollama:
+    build: 
+      context: ../ai_services/ollama
+      dockerfile: Dockerfile
+    container_name: dnd_character_llm_dev
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data_dev:/root/.ollama
+      - ../ai_services/ollama/prompt_templates:/app/prompt_templates
+      - ../ai_services/ollama/rules_data:/app/rules_data
+    networks:
+      - dnd_network_dev
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: >
+      sh -c "ollama serve & sleep 5 && ollama pull llama3:8b && tail -f /dev/null"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Backend FastAPI Service
+  backend:
     build: 
       context: .
       dockerfile: Dockerfile.new
-    container_name: dnd_character_api_legacy
+    container_name: dnd_character_api_dev
     environment:
       # Database Configuration
       DATABASE_URL: postgresql://dnd_user:${DB_PASSWORD:-change_this_password}@database:5432/dnd_characters
       
-      # LLM Configuration - Using local Ollama service
+      # LLM Configuration
       LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
-      OLLAMA_API_URL: ${OLLAMA_API_URL:-http://host.containers.internal:11434/api}
+      OLLAMA_API_URL: http://ollama:11434/api
       LLM_MODEL: ${LLM_MODEL:-llama3:8b}
       
       # External LLM APIs (if needed)
@@ -45,22 +72,25 @@ services:
       ANTHROPIC_API_KEY_FILE: /run/secrets/anthropic_api_key
       
       # API Configuration
-      SECRET_KEY: ${SECRET_KEY:-your-secret-key-change-this-in-production}
-      DEBUG: ${DEBUG:-false}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key}
+      DEBUG: ${DEBUG:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
       
-      # CORS Configuration
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:8080}
+      # CORS Configuration (allow all for development)
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
       
     ports:
       - "8000:8000"
     depends_on:
       database:
         condition: service_healthy
+      ollama:
+        condition: service_healthy
     networks:
-      - dnd_network_legacy
+      - dnd_network_dev
     volumes:
       - ./logs:/app/logs
+      - .:/app  # Mount source code for development
     secrets:
       - openai_api_key
       - anthropic_api_key
@@ -72,10 +102,11 @@ services:
       start_period: 40s
 
 volumes:
-  postgres_data_legacy:
+  postgres_data_dev:
+  ollama_data_dev:
 
 networks:
-  dnd_network_legacy:
+  dnd_network_dev:
     driver: bridge
 
 # Secrets management for secure API key handling
@@ -84,8 +115,3 @@ secrets:
     environment: "OPENAI_API_KEY"
   anthropic_api_key:
     environment: "ANTHROPIC_API_KEY"
-
-# DEPRECATION NOTICE:
-# This compose file is deprecated. Please use:
-# - For full stack: ../podman-compose.yml
-# - For backend development: ../deployment/compose/backend-dev.yml

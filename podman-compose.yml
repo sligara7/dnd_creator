@@ -1,0 +1,174 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  database:
+    image: postgres:15-alpine
+    container_name: dnd_character_db
+    environment:
+      POSTGRES_DB: dnd_characters
+      POSTGRES_USER: dnd_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-change_this_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - dnd_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dnd_user -d dnd_characters"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Ollama LLM Service
+  ollama:
+    build: 
+      context: ./ai_services/ollama
+      dockerfile: Dockerfile
+    container_name: dnd_character_llm
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./ai_services/ollama/prompt_templates:/app/prompt_templates
+      - ./ai_services/ollama/rules_data:/app/rules_data
+    networks:
+      - dnd_network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: >
+      sh -c "ollama serve & sleep 5 && ollama pull llama3:8b && tail -f /dev/null"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Stable Diffusion Service (Optional)
+  stable_diffusion:
+    build: 
+      context: ./ai_services/stable_diffusion
+      dockerfile: Dockerfile
+    container_name: dnd_character_ai_art
+    ports:
+      - "7860:7860"
+    volumes:
+      - sd_data:/root/.cache
+      - ./ai_services/stable_diffusion/config:/app/config
+      - ./ai_services/stable_diffusion/loras:/app/loras
+    networks:
+      - dnd_network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860/api/v1/options"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 120s
+
+  # Backend FastAPI Service
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile.new
+    container_name: dnd_character_api
+    environment:
+      # Database Configuration
+      DATABASE_URL: postgresql://dnd_user:${DB_PASSWORD:-change_this_password}@database:5432/dnd_characters
+      
+      # LLM Configuration
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      OLLAMA_API_URL: http://ollama:11434/api
+      LLM_MODEL: ${LLM_MODEL:-llama3:8b}
+      
+      # External LLM APIs (if needed)
+      OPENAI_API_KEY_FILE: /run/secrets/openai_api_key
+      ANTHROPIC_API_KEY_FILE: /run/secrets/anthropic_api_key
+      
+      # Stable Diffusion Configuration
+      SD_API_URL: http://stable_diffusion:7860/api
+      
+      # API Configuration
+      SECRET_KEY: ${SECRET_KEY:-your-secret-key-change-this-in-production}
+      DEBUG: ${DEBUG:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      
+      # CORS Configuration
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://frontend:3000}
+      
+    ports:
+      - "8000:8000"
+    depends_on:
+      database:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    networks:
+      - dnd_network
+    volumes:
+      - ./backend/logs:/app/logs
+    secrets:
+      - openai_api_key
+      - anthropic_api_key
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend React Application
+  frontend:
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: dnd_character_ui
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+      - REACT_APP_API_URL_INTERNAL=http://backend:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - dnd_network
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  postgres_data:
+  ollama_data:
+  sd_data:
+
+networks:
+  dnd_network:
+    driver: bridge
+
+# Secrets management for secure API key handling
+secrets:
+  openai_api_key:
+    environment: "OPENAI_API_KEY"
+  anthropic_api_key:
+    environment: "ANTHROPIC_API_KEY"

@@ -46,12 +46,16 @@ class CharacterCore:
         self.charisma = AbilityScore(10)
         
         # Managers
-        self.level_manager = CharacterLevelManager(self)
-        self.magic_item_manager = MagicItemManager(self)
+        self.level_manager = CharacterLevelManager()
+        self.magic_item_manager = MagicItemManager()
         
         # Proficiencies
         self.skill_proficiencies: Dict[str, ProficiencyLevel] = {}
         self.saving_throw_proficiencies: Dict[str, ProficiencyLevel] = {}
+        self.armor_proficiency: List[str] = []
+        self.weapon_proficiency: List[str] = []
+        self.tool_proficiency: List[str] = []
+        self.languages: List[str] = []
         
         # Personality
         self.personality_traits: List[str] = []
@@ -66,6 +70,11 @@ class CharacterCore:
     
     @property
     def total_level(self) -> int:
+        return sum(self.character_classes.values()) if self.character_classes else 1
+    
+    @property
+    def level(self) -> int:
+        """Calculate total character level from all classes."""
         return sum(self.character_classes.values()) if self.character_classes else 1
     
     def get_ability_score(self, ability: str) -> AbilityScore:
@@ -120,6 +129,39 @@ class CharacterCore:
             issues.append("At least one class is required")
         
         return {"valid": len(issues) == 0, "issues": issues, "warnings": warnings}
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert CharacterCore to dictionary representation."""
+        return {
+            "name": self.name,
+            "species": self.species,
+            "level": self.level,
+            "classes": self.character_classes,
+            "background": self.background,
+            "alignment": self.alignment,
+            "ability_scores": {
+                "strength": self.strength.total_score,
+                "dexterity": self.dexterity.total_score,
+                "constitution": self.constitution.total_score,
+                "intelligence": self.intelligence.total_score,
+                "wisdom": self.wisdom.total_score,
+                "charisma": self.charisma.total_score
+            },
+            "backstory": self.backstory,
+            "detailed_backstory": self.detailed_backstory,
+            "personality_traits": self.personality_traits,
+            "ideals": self.ideals,
+            "bonds": self.bonds,
+            "flaws": self.flaws,
+            "proficiencies": {
+                "skills": dict(self.skill_proficiencies),
+                "saving_throws": dict(self.saving_throw_proficiencies),
+                "armor": self.armor_proficiency,
+                "weapons": self.weapon_proficiency,
+                "tools": self.tool_proficiency,
+                "languages": self.languages
+            }
+        }
 
 class CharacterState:
     """Current character state - changes during gameplay."""

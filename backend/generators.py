@@ -40,6 +40,11 @@ class BackstoryGenerator:
             logger.warning(f"Backstory generation failed: {e}")
             return self._get_fallback_backstory(character_data, user_description)
     
+    def generate_backstory(self, character_data: Dict[str, Any], 
+                          user_description: str) -> Dict[str, str]:
+        """Generate backstory - alias for generate_compelling_backstory."""
+        return self.generate_compelling_backstory(character_data, user_description)
+    
     def _generate_simple_backstory(self, character_data: Dict[str, Any], 
                                  user_description: str) -> Dict[str, str]:
         """Generate a simplified backstory with short timeout."""
@@ -418,3 +423,8 @@ Return ONLY this JSON:
         json_str = ' '.join(json_str.split())
         
         return json_str
+    
+    def generate_custom_species(self, character_data: Dict[str, Any], 
+                               user_description: str) -> Optional[Any]:
+        """Generate custom species - public interface."""
+        return self._generate_custom_species(character_data, user_description)

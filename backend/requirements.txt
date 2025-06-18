@@ -1,2 +1,0 @@
-# create the requirements.txt file for the backend
-

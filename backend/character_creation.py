@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import Dict, Any, List, Optional, Callable
 
 # Import from cleaned modules
-from character_models import CharacterCore, CharacterState, CharacterSheet
+from character_models import CharacterCore, CharacterState, CharacterSheet, CharacterStats
 from core_models import AbilityScore, ASIManager, MagicItemManager, CharacterLevelManager, ProficiencyLevel, AbilityScoreSource
 from custom_content_models import ContentRegistry, FeatManager
 from ability_management import AdvancedAbilityManager, CustomContentAbilityManager
@@ -352,7 +352,7 @@ class CharacterCreator:
         self.content_registry = ContentRegistry()
         self.data_generator = CharacterDataGenerator(self.llm_service, self.config)
         self.backstory_generator = BackstoryGenerator(self.llm_service)
-        self.custom_content_generator = CustomContentGenerator(self.llm_service)
+        self.custom_content_generator = CustomContentGenerator(self.llm_service, self.content_registry)
         
         # Initialize managers
         self.feat_manager = FeatManager()
@@ -397,7 +397,12 @@ class CharacterCreator:
             
             # Create character sheet
             character_state = CharacterState()
-            character_sheet = CharacterSheet(character_core, character_state)
+            character_sheet = CharacterSheet(character_core.name)
+            
+            # Set the character sheet components manually
+            character_sheet.core = character_core
+            character_sheet.state = character_state
+            character_sheet.stats = CharacterStats(character_core, character_state)
             
             # Build final result
             result_data = {

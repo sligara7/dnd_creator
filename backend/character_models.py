@@ -293,338 +293,1182 @@ class CharacterCore:
                 "languages": self.languages
             }
         }
-
-class CharacterState:
-    """Current character state - changes during gameplay."""
-    
-    def __init__(self):
-        # Hit points
-        self.current_hit_points = 0
-        self.temporary_hit_points = 0
-        
-        # Equipment
-        self.armor = ""
-        self.weapons: List[Dict[str, Any]] = []
-        self.equipment: List[Dict[str, Any]] = []
-        
-        # Enhanced Conditions (D&D 5e 2024)
-        self.active_conditions: Dict[str, Dict[str, Any]] = {}
-        self.exhaustion_level = 0
-        
-        # Journal tracking
-        self.journal_entries: List[Dict[str, Any]] = []
-        
-        # Currency
-        self.currency = {"copper": 0, "silver": 0, "gold": 0, "platinum": 0}
     
     # ============================================================================
-    # HIT POINT MANAGEMENT
+    # SETTER METHODS FOR API ACCESS
     # ============================================================================
     
-    def take_damage(self, damage: int) -> Dict[str, int]:
-        result = {"temp_hp_damage": 0, "hp_damage": 0}
+    def set_name(self, name: str) -> Dict[str, Any]:
+        """
+        Set character name with validation.
         
-        if self.temporary_hit_points > 0:
-            temp_damage = min(damage, self.temporary_hit_points)
-            self.temporary_hit_points -= temp_damage
-            damage -= temp_damage
-            result["temp_hp_damage"] = temp_damage
-        
-        if damage > 0:
-            self.current_hit_points -= damage
-            result["hp_damage"] = damage
-            if self.current_hit_points < 0:
-                self.current_hit_points = 0
-        
-        return result
-    
-    def heal(self, healing: int) -> Dict[str, int]:
-        """Apply healing to the character."""
-        if healing <= 0:
-            return {"healing_applied": 0, "hp_remaining": self.current_hit_points}
-        
-        old_hp = self.current_hit_points
-        self.current_hit_points += healing
-        
-        result = {
-            "healing_applied": healing,
-            "old_hp": old_hp,
-            "new_hp": self.current_hit_points
-        }
-        
-        logger.info(f"Character healed for {healing}. HP: {self.current_hit_points}")
-        return result
-    
-    # ============================================================================
-    # ENHANCED CONDITION MANAGEMENT (D&D 5e 2024)
-    # ============================================================================
-    
-    def add_condition(self, condition: DnDCondition, duration: str = "indefinite", 
-                     save_dc: int = 0, save_ability: str = "", source: str = ""):
-        """Add a D&D 5e 2024 condition to the character."""
-        self.active_conditions[condition.value] = {
-            "condition": condition,
-            "duration": duration,
-            "save_dc": save_dc,
-            "save_ability": save_ability,
-            "source": source,
-            "applied_at": datetime.now().isoformat()
-        }
-        logger.info(f"Applied condition: {condition.value}")
-    
-    def remove_condition(self, condition: DnDCondition):
-        """Remove a condition from the character."""
-        condition_key = condition.value
-        if condition_key in self.active_conditions:
-            del self.active_conditions[condition_key]
-            logger.info(f"Removed condition: {condition_key}")
-    
-    def has_condition(self, condition: DnDCondition) -> bool:
-        """Check if character has a specific condition."""
-        return condition.value in self.active_conditions
-    
-    def get_condition_effects(self) -> Dict[str, Any]:
-        """Get the mechanical effects of all active conditions."""
-        effects = {
-            "disadvantage_on": [],
-            "advantage_on": [],
-            "auto_fail": [],
-            "speed_modifications": 0,
-            "d20_penalty": 0,
-            "special_effects": []
-        }
-        
-        for condition_name, condition_data in self.active_conditions.items():
-            condition = condition_data["condition"]
+        Args:
+            name: Character name (must be non-empty string)
             
-            if condition == DnDCondition.BLINDED:
-                effects["disadvantage_on"].extend(["attack_rolls"])
-                effects["auto_fail"].extend(["sight_based_checks"])
-                effects["special_effects"].append("Attacks against you have advantage")
-                
-            elif condition == DnDCondition.CHARMED:
-                effects["special_effects"].append("Cannot attack charmer or target with harmful effects")
-                
-            elif condition == DnDCondition.DEAFENED:
-                effects["auto_fail"].extend(["hearing_based_checks"])
-                
-            elif condition == DnDCondition.FRIGHTENED:
-                effects["disadvantage_on"].extend(["attack_rolls", "ability_checks"])
-                effects["special_effects"].append("Cannot move closer to fear source")
-                
-            elif condition == DnDCondition.GRAPPLED:
-                effects["disadvantage_on"].extend(["attacks_vs_non_grappler"])
-                
-            elif condition == DnDCondition.INCAPACITATED:
-                effects["special_effects"].append("Cannot take actions or reactions")
-                
-            elif condition == DnDCondition.INVISIBLE:
-                effects["advantage_on"].extend(["attack_rolls"])
-                effects["special_effects"].append("Attacks against you have disadvantage")
-                
-            elif condition == DnDCondition.PARALYZED:
-                effects["special_effects"].extend([
-                    "Incapacitated", "Cannot move or speak",
-                    "Auto-fail Strength and Dexterity saves",
-                    "Attacks against you have advantage",
-                    "Hits within 5 feet are critical hits"
-                ])
-                
-            elif condition == DnDCondition.PETRIFIED:
-                effects["special_effects"].extend([
-                    "Transformed to solid inanimate substance",
-                    "Incapacitated", "Cannot move or speak",
-                    "Resistance to all damage",
-                    "Immune to poison and disease"
-                ])
-                
-            elif condition == DnDCondition.POISONED:
-                effects["disadvantage_on"].extend(["attack_rolls", "ability_checks"])
-                
-            elif condition == DnDCondition.PRONE:
-                effects["speed_modifications"] = 0  # Speed becomes 0
-                effects["special_effects"].extend([
-                    "Attacks within 5 feet have advantage",
-                    "Ranged attacks have disadvantage",
-                    "Disadvantage on ranged attacks"
-                ])
-                
-            elif condition == DnDCondition.RESTRAINED:
-                effects["speed_modifications"] = 0  # Speed becomes 0
-                effects["disadvantage_on"].extend(["attack_rolls", "dexterity_saves"])
-                effects["special_effects"].append("Attacks against you have advantage")
-                
-            elif condition == DnDCondition.STUNNED:
-                effects["special_effects"].extend([
-                    "Incapacitated", "Cannot move or speak",
-                    "Auto-fail Strength and Dexterity saves"
-                ])
-                
-            elif condition == DnDCondition.UNCONSCIOUS:
-                effects["special_effects"].extend([
-                    "Incapacitated", "Cannot move or speak", "Unaware of surroundings",
-                    "Drops held items", "Falls prone",
-                    "Auto-fail Strength and Dexterity saves",
-                    "Attacks against you have advantage",
-                    "Hits within 5 feet are critical hits"
-                ])
+        Returns:
+            Dict with success status and any validation messages
+        """
+        if not isinstance(name, str):
+            return {"success": False, "error": "Name must be a string"}
         
-        # Add exhaustion effects
-        if self.exhaustion_level > 0:
-            exhaustion_effects = ExhaustionLevel.get_effects(self.exhaustion_level)
-            effects["d20_penalty"] = exhaustion_effects["d20_penalty"]
-            effects["speed_modifications"] += exhaustion_effects["speed_penalty"]
+        name = name.strip()
+        if not name:
+            return {"success": False, "error": "Name cannot be empty"}
+        
+        if len(name) > 100:
+            return {"success": False, "error": "Name cannot exceed 100 characters"}
+        
+        old_name = self.name
+        self.name = name
+        
+        logger.info(f"Character name changed from '{old_name}' to '{name}'")
+        return {"success": True, "old_value": old_name, "new_value": name}
+    
+    def set_species(self, species: str) -> Dict[str, Any]:
+        """
+        Set character species with validation.
+        
+        Args:
+            species: Species name (e.g., "Human", "Elf", "Dwarf")
             
-            if ExhaustionLevel.is_dead(self.exhaustion_level):
-                effects["special_effects"].append("CHARACTER IS DEAD")
+        Returns:
+            Dict with success status and any validation messages
+        """
+        if not isinstance(species, str):
+            return {"success": False, "error": "Species must be a string"}
         
-        return effects
+        species = species.strip()
+        if not species:
+            return {"success": False, "error": "Species cannot be empty"}
+        
+        old_species = self.species
+        self.species = species
+        
+        logger.info(f"Character species changed from '{old_species}' to '{species}'")
+        return {"success": True, "old_value": old_species, "new_value": species}
     
-    # ============================================================================
-    # EXHAUSTION MANAGEMENT (D&D 5e 2024)
-    # ============================================================================
+    def set_character_classes(self, character_classes: Dict[str, int]) -> Dict[str, Any]:
+        """
+        Set character classes with validation.
+        
+        Args:
+            character_classes: Dict mapping class names to levels
+            
+        Returns:
+            Dict with success status and any validation messages
+        """
+        if not isinstance(character_classes, dict):
+            return {"success": False, "error": "Character classes must be a dictionary"}
+        
+        if not character_classes:
+            return {"success": False, "error": "At least one class is required"}
+        
+        # Validate class levels
+        for class_name, level in character_classes.items():
+            if not isinstance(class_name, str) or not class_name.strip():
+                return {"success": False, "error": f"Invalid class name: {class_name}"}
+            
+            if not isinstance(level, int) or level < 1 or level > 20:
+                return {"success": False, "error": f"Invalid level for {class_name}: {level} (must be 1-20)"}
+        
+        # Validate total level
+        total_level = sum(character_classes.values())
+        if total_level > 20:
+            return {"success": False, "error": f"Total character level cannot exceed 20 (got {total_level})"}
+        
+        old_classes = self.character_classes.copy()
+        self.character_classes = character_classes.copy()
+        
+        logger.info(f"Character classes changed from {old_classes} to {character_classes}")
+        return {"success": True, "old_value": old_classes, "new_value": character_classes}
     
-    def add_exhaustion(self, levels: int = 1) -> Dict[str, Any]:
-        """Add exhaustion levels."""
-        old_level = self.exhaustion_level
-        self.exhaustion_level = min(self.exhaustion_level + levels, 6)
+    def set_background(self, background: str) -> Dict[str, Any]:
+        """
+        Set character background with validation.
         
-        result = {
-            "old_level": old_level,
-            "new_level": self.exhaustion_level,
-            "is_dead": ExhaustionLevel.is_dead(self.exhaustion_level),
-            "effects": ExhaustionLevel.get_effects(self.exhaustion_level)
-        }
+        Args:
+            background: Background name (e.g., "Acolyte", "Criminal", "Folk Hero")
+            
+        Returns:
+            Dict with success status and any validation messages
+        """
+        if not isinstance(background, str):
+            return {"success": False, "error": "Background must be a string"}
         
-        logger.info(f"Added {levels} exhaustion level(s). New level: {self.exhaustion_level}")
-        return result
+        background = background.strip()
+        # Background can be empty (not required), but if provided should be valid
+        
+        old_background = self.background
+        self.background = background
+        
+        logger.info(f"Character background changed from '{old_background}' to '{background}'")
+        return {"success": True, "old_value": old_background, "new_value": background}
     
-    def remove_exhaustion(self, levels: int = 1, method: str = "long_rest") -> Dict[str, Any]:
-        """Remove exhaustion levels."""
-        old_level = self.exhaustion_level
+    def set_alignment(self, alignment: List[str]) -> Dict[str, Any]:
+        """
+        Set character alignment with validation.
         
-        if method == "potion_of_vitality":
-            # Potion of Vitality removes all exhaustion
-            self.exhaustion_level = 0
-        else:
-            # Long rest or Greater Restoration removes 1 level
-            self.exhaustion_level = max(self.exhaustion_level - levels, 0)
+        Args:
+            alignment: Two-element list [lawful/neutral/chaotic, good/neutral/evil]
+            
+        Returns:
+            Dict with success status and any validation messages
+        """
+        if not isinstance(alignment, list) or len(alignment) != 2:
+            return {"success": False, "error": "Alignment must be a list of exactly 2 elements"}
         
-        result = {
-            "old_level": old_level,
-            "new_level": self.exhaustion_level,
-            "method": method,
-            "effects": ExhaustionLevel.get_effects(self.exhaustion_level)
-        }
+        valid_ethics = ["Lawful", "Neutral", "Chaotic"]
+        valid_morals = ["Good", "Neutral", "Evil"]
         
-        logger.info(f"Removed exhaustion via {method}. New level: {self.exhaustion_level}")
-        return result
+        ethics, morals = alignment[0], alignment[1]
+        
+        if ethics not in valid_ethics:
+            return {"success": False, "error": f"Invalid ethics value: {ethics}. Must be one of {valid_ethics}"}
+        
+        if morals not in valid_morals:
+            return {"success": False, "error": f"Invalid morals value: {morals}. Must be one of {valid_morals}"}
+        
+        old_alignment = self.alignment.copy()
+        self.alignment = [ethics, morals]
+        
+        logger.info(f"Character alignment changed from {old_alignment} to {alignment}")
+        return {"success": True, "old_value": old_alignment, "new_value": alignment}
     
-    # ============================================================================
-    # JOURNAL MANAGEMENT
-    # ============================================================================
-    
-    def add_journal_entry(self, entry: str, session_date: Optional[str] = None, 
-                         tags: Optional[List[str]] = None) -> None:
-        """Add a journal entry."""
-        journal_entry = {
-            "entry": entry,
-            "timestamp": datetime.now().isoformat(),
-            "session_date": session_date or datetime.now().strftime("%Y-%m-%d"),
-            "tags": tags or []
-        }
-        self.journal_entries.append(journal_entry)
-        logger.info("Added journal entry")
-    
-    def get_journal_entries(self) -> List[Dict[str, Any]]:
-        """Get all journal entries."""
-        return self.journal_entries.copy()
-    
-    def clear_journal(self) -> None:
-        """Clear all journal entries."""
-        self.journal_entries.clear()
-        logger.info("Cleared all journal entries")
-    
-    def get_journal_summary(self) -> Dict[str, Any]:
-        """Get journal summary for character evolution analysis."""
-        if not self.journal_entries:
-            return {"total_entries": 0, "themes": [], "character_evolution": ""}
+    def set_personality_traits(self, traits: List[str]) -> Dict[str, Any]:
+        """
+        Set personality traits with validation.
         
-        # Simple analysis - could be enhanced with AI
-        all_text = " ".join([entry["entry"] for entry in self.journal_entries])
+        Args:
+            traits: List of personality trait strings
+            
+        Returns:
+            Dict with success status and any validation messages
+        """
+        if not isinstance(traits, list):
+            return {"success": False, "error": "Personality traits must be a list"}
         
-        # Basic keyword analysis for character themes
-        combat_words = ["fight", "battle", "attack", "combat", "weapon", "armor"]
-        stealth_words = ["sneak", "hide", "assassin", "shadow", "quiet", "stealth"]
-        social_words = ["persuade", "negotiate", "charm", "diplomat", "talk", "convince"]
-        magic_words = ["spell", "magic", "cast", "ritual", "arcane", "divine"]
+        # Validate each trait
+        validated_traits = []
+        for i, trait in enumerate(traits):
+            if not isinstance(trait, str):
+                return {"success": False, "error": f"Trait {i+1} must be a string"}
+            
+            trait = trait.strip()
+            if trait:  # Only add non-empty traits
+                validated_traits.append(trait)
         
-        themes = []
-        text_lower = all_text.lower()
+        if len(validated_traits) > 10:
+            return {"success": False, "error": "Cannot have more than 10 personality traits"}
         
-        if any(word in text_lower for word in combat_words):
-            themes.append("Combat-focused")
-        if any(word in text_lower for word in stealth_words):
-            themes.append("Stealth-oriented")
-        if any(word in text_lower for word in social_words):
-            themes.append("Social interactions")
-        if any(word in text_lower for word in magic_words):
-            themes.append("Magic user")
+        old_traits = self.personality_traits.copy()
+        self.personality_traits = validated_traits
+        
+        logger.info(f"Personality traits updated: {len(old_traits)} -> {len(validated_traits)} traits")
+        return {"success": True, "old_value": old_traits, "new_value": validated_traits}
+    
+    def set_ideals(self, ideals: List[str]) -> Dict[str, Any]:
+        """
+        Set ideals with validation.
+        
+        Args:
+            ideals: List of ideal strings
+            
+        Returns:
+            Dict with success status and any validation messages
+        """
+        if not isinstance(ideals, list):
+            return {"success": False, "error": "Ideals must be a list"}
+        
+        validated_ideals = []
+        for i, ideal in enumerate(ideals):
+            if not isinstance(ideal, str):
+                return {"success": False, "error": f"Ideal {i+1} must be a string"}
+            
+            ideal = ideal.strip()
+            if ideal:
+                validated_ideals.append(ideal)
+        
+        if len(validated_ideals) > 5:
+            return {"success": False, "error": "Cannot have more than 5 ideals"}
+        
+        old_ideals = self.ideals.copy()
+        self.ideals = validated_ideals
+        
+        logger.info(f"Ideals updated: {len(old_ideals)} -> {len(validated_ideals)} ideals")
+        return {"success": True, "old_value": old_ideals, "new_value": validated_ideals}
+    
+    def set_bonds(self, bonds: List[str]) -> Dict[str, Any]:
+        """
+        Set bonds with validation.
+        
+        Args:
+            bonds: List of bond strings
+            
+        Returns:
+            Dict with success status and any validation messages
+        """
+        if not isinstance(bonds, list):
+            return {"success": False, "error": "Bonds must be a list"}
+        
+        validated_bonds = []
+        for i, bond in enumerate(bonds):
+            if not isinstance(bond, str):
+                return {"success": False, "error": f"Bond {i+1} must be a string"}
+            
+            bond = bond.strip()
+            if bond:
+                validated_bonds.append(bond)
+        
+        if len(validated_bonds) > 5:
+            return {"success": False, "error": "Cannot have more than 5 bonds"}
+        
+        old_bonds = self.bonds.copy()
+        self.bonds = validated_bonds
+        
+        logger.info(f"Bonds updated: {len(old_bonds)} -> {len(validated_bonds)} bonds")
+        return {"success": True, "old_value": old_bonds, "new_value": validated_bonds}
+    
+    def set_flaws(self, flaws: List[str]) -> Dict[str, Any]:
+        """
+        Set flaws with validation.
+        
+        Args:
+            flaws: List of flaw strings
+            
+        Returns:
+            Dict with success status and any validation messages
+        """
+        if not isinstance(flaws, list):
+            return {"success": False, "error": "Flaws must be a list"}
+        
+        validated_flaws = []
+        for i, flaw in enumerate(flaws):
+            if not isinstance(flaw, str):
+                return {"success": False, "error": f"Flaw {i+1} must be a string"}
+            
+            flaw = flaw.strip()
+            if flaw:
+                validated_flaws.append(flaw)
+        
+        if len(validated_flaws) > 5:
+            return {"success": False, "error": "Cannot have more than 5 flaws"}
+        
+        old_flaws = self.flaws.copy()
+        self.flaws = validated_flaws
+        
+        logger.info(f"Flaws updated: {len(old_flaws)} -> {len(validated_flaws)} flaws")
+        return {"success": True, "old_value": old_flaws, "new_value": validated_flaws}
+    
+    def set_backstory(self, backstory: str) -> Dict[str, Any]:
+        """
+        Set main backstory with validation.
+        
+        Args:
+            backstory: Main backstory text
+            
+        Returns:
+            Dict with success status and any validation messages
+        """
+        if not isinstance(backstory, str):
+            return {"success": False, "error": "Backstory must be a string"}
+        
+        backstory = backstory.strip()
+        
+        if len(backstory) > 5000:
+            return {"success": False, "error": "Backstory cannot exceed 5000 characters"}
+        
+        old_backstory = self.backstory
+        self.backstory = backstory
+        
+        # Update detailed backstory if it exists
+        if self.detailed_backstory:
+            self.detailed_backstory["main_backstory"] = backstory
+        
+        logger.info(f"Backstory updated: {len(old_backstory)} -> {len(backstory)} characters")
+        return {"success": True, "old_length": len(old_backstory), "new_length": len(backstory)}
+    
+    def set_detailed_backstory_new(self, detailed_backstory: Dict[str, str]) -> Dict[str, Any]:
+        """
+        Set detailed backstory elements with validation.
+        
+        Args:
+            detailed_backstory: Dict of backstory elements
+            
+        Returns:
+            Dict with success status and any validation messages
+        """
+        if not isinstance(detailed_backstory, dict):
+            return {"success": False, "error": "Detailed backstory must be a dictionary"}
+        
+        # Validate each backstory element
+        validated_backstory = {}
+        for key, value in detailed_backstory.items():
+            if not isinstance(key, str) or not isinstance(value, str):
+                return {"success": False, "error": f"Backstory key and value must be strings: {key}"}
+            
+            key = key.strip()
+            value = value.strip()
+            
+            if key and value:  # Only add non-empty elements
+                if len(value) > 2000:
+                    return {"success": False, "error": f"Backstory element '{key}' cannot exceed 2000 characters"}
+                validated_backstory[key] = value
+        
+        old_backstory = self.detailed_backstory.copy()
+        self.detailed_backstory = validated_backstory
+        
+        # Update main backstory if provided
+        if "main_backstory" in validated_backstory:
+            self.backstory = validated_backstory["main_backstory"]
+        
+        logger.info(f"Detailed backstory updated: {len(old_backstory)} -> {len(validated_backstory)} elements")
+        return {"success": True, "old_count": len(old_backstory), "new_count": len(validated_backstory)}
+    
+    def set_ability_score(self, ability: str, base_score: int) -> Dict[str, Any]:
+        """
+        Set base ability score with validation.
+        
+        Args:
+            ability: Ability name (strength, dexterity, etc.)
+            base_score: New base score (1-20 typically)
+            
+        Returns:
+            Dict with success status and any validation messages
+        """
+        if not isinstance(ability, str):
+            return {"success": False, "error": "Ability must be a string"}
+        
+        ability = ability.lower().strip()
+        ability_obj = self.get_ability_score(ability)
+        
+        if not ability_obj:
+            return {"success": False, "error": f"Invalid ability: {ability}"}
+        
+        if not isinstance(base_score, int) or base_score < 1 or base_score > 20:
+            return {"success": False, "error": f"Base score must be between 1 and 20 (got {base_score})"}
+        
+        old_score = ability_obj.base_score
+        old_total = ability_obj.total_score
+        
+        ability_obj.base_score = base_score
+        
+        new_total = ability_obj.total_score
+        
+        logger.info(f"Ability {ability} base score changed: {old_score} -> {base_score} (total: {old_total} -> {new_total})")
         
         return {
-            "total_entries": len(self.journal_entries),
-            "themes": themes,
-            "character_evolution": f"Based on {len(self.journal_entries)} journal entries, character shows tendencies toward: {', '.join(themes) if themes else 'general adventuring'}"
+            "success": True,
+            "ability": ability,
+            "old_base_score": old_score,
+            "new_base_score": base_score,
+            "old_total_score": old_total,
+            "new_total_score": new_total,
+            "modifier": ability_obj.modifier
+        }
+    
+    def set_ability_scores(self, ability_scores: Dict[str, int]) -> Dict[str, Any]:
+        """
+        Set multiple ability scores at once.
+        
+        Args:
+            ability_scores: Dict mapping ability names to base scores
+            
+        Returns:
+            Dict with success status and results for each ability
+        """
+        if not isinstance(ability_scores, dict):
+            return {"success": False, "error": "Ability scores must be a dictionary"}
+        
+        results = {}
+        errors = []
+        
+        for ability, score in ability_scores.items():
+            result = self.set_ability_score(ability, score)
+            results[ability] = result
+            
+            if not result["success"]:
+                errors.append(f"{ability}: {result['error']}")
+        
+        success = len(errors) == 0
+        
+        if success:
+            logger.info(f"Successfully updated {len(ability_scores)} ability scores")
+        else:
+            logger.error(f"Failed to update some ability scores: {errors}")
+        
+        return {
+            "success": success,
+            "results": results,
+            "errors": errors,
+            "updated_count": len([r for r in results.values() if r["success"]])
         }
     
     # ============================================================================
-    # EQUIPMENT MANAGEMENT
+    # BULK UPDATE AND UTILITY METHODS
     # ============================================================================
     
-    def add_equipment(self, item: Dict[str, Any]):
-        """Add an item to the character's equipment."""
-        self.equipment.append(item)
-        logger.info(f"Added equipment: {item.get('name', 'Unknown Item')}")
+    def update_character_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Bulk update character data with validation.
+        
+        Args:
+            data: Dictionary containing character data to update
+            
+        Returns:
+            Dict with success status and detailed results for each field
+        """
+        if not isinstance(data, dict):
+            return {"success": False, "error": "Data must be a dictionary"}
+        
+        results = {}
+        errors = []
+        updated_fields = []
+        
+        # Define field mappings to setter methods
+        field_setters = {
+            "name": self.set_name,
+            "species": self.set_species,
+            "character_classes": self.set_character_classes,
+            "background": self.set_background,
+            "alignment": self.set_alignment,
+            "personality_traits": self.set_personality_traits,
+            "ideals": self.set_ideals,
+            "bonds": self.set_bonds,
+            "flaws": self.set_flaws,
+            "backstory": self.set_backstory,
+            "detailed_backstory": self.set_detailed_backstory_new,
+            "ability_scores": self.set_ability_scores
+        }
+        
+        # Process each field in the data
+        for field, value in data.items():
+            if field in field_setters:
+                try:
+                    result = field_setters[field](value)
+                    results[field] = result
+                    
+                    if result["success"]:
+                        updated_fields.append(field)
+                    else:
+                        errors.append(f"{field}: {result['error']}")
+                        
+                except Exception as e:
+                    error_msg = f"Unexpected error updating {field}: {str(e)}"
+                    results[field] = {"success": False, "error": error_msg}
+                    errors.append(error_msg)
+                    logger.error(error_msg)
+            else:
+                warning_msg = f"Unknown field '{field}' ignored"
+                results[field] = {"success": False, "error": warning_msg}
+                errors.append(warning_msg)
+        
+        success = len(errors) == 0
+        
+        if success:
+            logger.info(f"Successfully updated character data for fields: {updated_fields}")
+        else:
+            logger.warning(f"Character update completed with errors: {errors}")
+        
+        return {
+            "success": success,
+            "updated_fields": updated_fields,
+            "field_results": results,
+            "errors": errors,
+            "total_fields_processed": len(data),
+            "successful_updates": len(updated_fields)
+        }
     
-    def add_weapon(self, weapon: Dict[str, Any]):
-        """Add a weapon to the character's arsenal."""
-        self.weapons.append(weapon)
-        logger.info(f"Added weapon: {weapon.get('name', 'Unknown Weapon')}")
+    def validate_character_data(self) -> Dict[str, Any]:
+        """
+        Comprehensive validation of all character data.
+        
+        Returns:
+            Dict with validation results, issues, and warnings
+        """
+        issues = []
+        warnings = []
+        field_validations = {}
+        
+        # Validate core identity
+        if not self.name.strip():
+            warnings.append("Character name is empty")
+            field_validations["name"] = {"valid": False, "message": "Name is empty"}
+        else:
+            field_validations["name"] = {"valid": True}
+        
+        if not self.species:
+            issues.append("Species is required")
+            field_validations["species"] = {"valid": False, "message": "Species is required"}
+        else:
+            field_validations["species"] = {"valid": True}
+        
+        if not self.character_classes:
+            issues.append("At least one class is required")
+            field_validations["character_classes"] = {"valid": False, "message": "At least one class required"}
+        else:
+            total_level = sum(self.character_classes.values())
+            if total_level > 20:
+                issues.append(f"Total character level exceeds 20 (current: {total_level})")
+                field_validations["character_classes"] = {"valid": False, "message": f"Total level {total_level} > 20"}
+            else:
+                field_validations["character_classes"] = {"valid": True, "total_level": total_level}
+        
+        # Validate alignment
+        valid_ethics = ["Lawful", "Neutral", "Chaotic"]
+        valid_morals = ["Good", "Neutral", "Evil"]
+        
+        if len(self.alignment) != 2:
+            issues.append("Alignment must have exactly 2 components")
+            field_validations["alignment"] = {"valid": False, "message": "Invalid alignment format"}
+        elif self.alignment[0] not in valid_ethics or self.alignment[1] not in valid_morals:
+            issues.append(f"Invalid alignment: {self.alignment}")
+            field_validations["alignment"] = {"valid": False, "message": "Invalid alignment values"}
+        else:
+            field_validations["alignment"] = {"valid": True}
+        
+        # Validate ability scores
+        ability_issues = []
+        for ability_name in ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]:
+            ability_obj = self.get_ability_score(ability_name)
+            if ability_obj:
+                if ability_obj.base_score < 1 or ability_obj.base_score > 20:
+                    ability_issues.append(f"{ability_name} base score out of range: {ability_obj.base_score}")
+                if ability_obj.total_score > 30:
+                    warnings.append(f"{ability_name} total score very high: {ability_obj.total_score}")
+        
+        if ability_issues:
+            issues.extend(ability_issues)
+            field_validations["ability_scores"] = {"valid": False, "issues": ability_issues}
+        else:
+            field_validations["ability_scores"] = {"valid": True}
+        
+        # Validate personality elements
+        personality_warnings = []
+        if len(self.personality_traits) > 10:
+            personality_warnings.append(f"Many personality traits: {len(self.personality_traits)}")
+        if len(self.ideals) > 5:
+            personality_warnings.append(f"Many ideals: {len(self.ideals)}")
+        if len(self.bonds) > 5:
+            personality_warnings.append(f"Many bonds: {len(self.bonds)}")
+        if len(self.flaws) > 5:
+            personality_warnings.append(f"Many flaws: {len(self.flaws)}")
+        
+        if personality_warnings:
+            warnings.extend(personality_warnings)
+        
+        field_validations["personality"] = {
+            "valid": True,
+            "traits_count": len(self.personality_traits),
+            "ideals_count": len(self.ideals),
+            "bonds_count": len(self.bonds),
+            "flaws_count": len(self.flaws)
+        }
+        
+        # Validate backstory length
+        if len(self.backstory) > 5000:
+            issues.append(f"Backstory too long: {len(self.backstory)} characters (max 5000)")
+            field_validations["backstory"] = {"valid": False, "message": "Backstory too long"}
+        else:
+            field_validations["backstory"] = {"valid": True, "length": len(self.backstory)}
+        
+        # Overall validation status
+        is_valid = len(issues) == 0
+        completeness_score = self._calculate_completeness_score()
+        
+        return {
+            "valid": is_valid,
+            "issues": issues,
+            "warnings": warnings,
+            "field_validations": field_validations,
+            "completeness_score": completeness_score,
+            "validation_timestamp": datetime.now().isoformat()
+        }
     
-    def get_total_currency_value_in_gold(self) -> float:
-        """Get total currency value converted to gold pieces."""
-        return (self.currency["copper"] * 0.01 + 
-                self.currency["silver"] * 0.1 + 
-                self.currency["gold"] + 
-                self.currency["platinum"] * 10)
+    def _calculate_completeness_score(self) -> float:
+        """Calculate a completeness score (0.0 to 1.0) for the character."""
+        score = 0.0
+        total_possible = 10.0
+        
+        # Core identity (4 points)
+        if self.name.strip():
+            score += 1.0
+        if self.species:
+            score += 1.0
+        if self.character_classes:
+            score += 1.0
+        if self.background:
+            score += 1.0
+        
+        # Personality (4 points)
+        if self.personality_traits:
+            score += 1.0
+        if self.ideals:
+            score += 1.0
+        if self.bonds:
+            score += 1.0
+        if self.flaws:
+            score += 1.0
+        
+        # Backstory (2 points)
+        if self.backstory.strip():
+            score += 1.0
+        if self.detailed_backstory:
+            score += 1.0
+        
+        return score / total_possible
+    
+    def get_character_summary(self) -> Dict[str, Any]:
+        """
+        Get a comprehensive summary of the character for API responses.
+        
+        Returns:
+            Dict with character summary including validation and completeness
+        """
+        validation = self.validate_character_data()
+        
+        return {
+            "identity": {
+                "name": self.name,
+                "species": self.species,
+                "classes": self.character_classes,
+                "level": self.level,
+                "background": self.background,
+                "alignment": self.alignment
+            },
+            "ability_scores": self.get_ability_scores(),
+            "ability_modifiers": self.get_ability_modifiers(),
+            "personality": {
+                "traits": self.personality_traits,
+                "ideals": self.ideals,
+                "bonds": self.bonds,
+                "flaws": self.flaws,
+                "backstory_length": len(self.backstory),
+                "detailed_backstory_elements": len(self.detailed_backstory)
+            },
+            "proficiencies": self.get_proficiencies(),
+            "validation": {
+                "is_valid": validation["valid"],
+                "completeness_score": validation["completeness_score"],
+                "issue_count": len(validation["issues"]),
+                "warning_count": len(validation["warnings"])
+            },
+            "last_updated": datetime.now().isoformat()
+        }
+
+
+# ============================================================================
+# CHARACTER STATE (IN-GAME DATA)
+# ============================================================================
+
+class CharacterState:
+    """
+    Current character state - changes during gameplay.
+    This includes HP, XP, equipment, conditions, currency, and other mutable data.
+    """
+    
+    def __init__(self, character_core: CharacterCore):
+        self.character_core = character_core
+        
+        # Hit Points and Health
+        self.current_hit_points: int = 0
+        self.max_hit_points: int = 0
+        self.temporary_hit_points: int = 0
+        self.hit_dice_remaining: Dict[str, int] = {}  # e.g., {"d8": 3, "d10": 2}
+        
+        # Experience Points and Leveling
+        self.experience_points: int = 0
+        self.milestone_progress: int = 0  # For milestone leveling systems
+        self.pending_level_ups: List[Dict[str, Any]] = []  # Classes that can level up
+        self.xp_history: List[Dict[str, Any]] = []  # XP awards history
+        
+        # Conditions and Status Effects
+        self.conditions: List[DnDCondition] = []
+        self.exhaustion_level: int = 0
+        self.temporary_conditions: Dict[str, Dict[str, Any]] = {}  # Time-limited conditions
+        
+        # Currency
+        self.currency: Dict[str, int] = {
+            "copper": 0,
+            "silver": 0,
+            "electrum": 0,
+            "gold": 0,
+            "platinum": 0
+        }
+        
+        # Equipment State
+        self.equipped_items: Dict[str, str] = {}  # slot -> item_id mapping
+        self.inventory: List[Dict[str, Any]] = []
+        self.attuned_items: List[str] = []  # Max 3 items
+        
+        # Spell Slots and Resources
+        self.spell_slots_remaining: Dict[int, int] = {}  # spell_level -> remaining_slots
+        self.spell_slots_max: Dict[int, int] = {}
+        self.class_resources: Dict[str, Dict[str, Any]] = {}  # Class-specific resources
+        
+        # Journal and Notes
+        self.session_notes: List[Dict[str, Any]] = []
+        self.campaign_journal: List[str] = []
+        self.character_goals: List[str] = []
+        
+        # Initiative and Combat
+        self.initiative_modifier: int = 0
+        self.death_save_successes: int = 0
+        self.death_save_failures: int = 0
+        
+        # Rest tracking
+        self.last_short_rest: Optional[str] = None
+        self.last_long_rest: Optional[str] = None
+        
+        # Initialize based on character level
+        self._initialize_from_character_core()
+    
+    def _initialize_from_character_core(self):
+        """Initialize state based on character core data."""
+        if self.character_core:
+            # Calculate initial HP (minimum for level 1)
+            con_modifier = self.character_core.constitution.modifier
+            total_level = self.character_core.level
+            
+            if total_level >= 1:
+                # Estimate HP based on average hit die + con modifier per level
+                # This is a simplified calculation - should be improved with class hit dice data
+                estimated_hp = 8 + con_modifier + ((total_level - 1) * (5 + con_modifier))
+                self.max_hit_points = max(1, estimated_hp)
+                self.current_hit_points = self.max_hit_points
+            
+            # Set XP based on current level
+            self.experience_points = self.calculate_xp_for_level(total_level)
     
     # ============================================================================
-    # GETTER METHODS FOR API ACCESS
+    # D&D 5E XP TABLE AND LEVEL MANAGEMENT
     # ============================================================================
     
-    def get_current_hit_points(self) -> int:
-        """Get current hit points."""
-        return self.current_hit_points
+    @staticmethod
+    def get_xp_table() -> Dict[int, int]:
+        """Get the D&D 5e experience point table."""
+        return {
+            1: 0,
+            2: 300,
+            3: 900,
+            4: 2700,
+            5: 6500,
+            6: 14000,
+            7: 23000,
+            8: 34000,
+            9: 48000,
+            10: 64000,
+            11: 85000,
+            12: 100000,
+            13: 120000,
+            14: 140000,
+            15: 165000,
+            16: 195000,
+            17: 225000,
+            18: 265000,
+            19: 305000,
+            20: 355000
+        }
     
-    def get_temporary_hit_points(self) -> int:
-        """Get temporary hit points."""
-        return self.temporary_hit_points
+    @staticmethod
+    def calculate_xp_for_level(level: int) -> int:
+        """Calculate XP required for a given level."""
+        xp_table = CharacterState.get_xp_table()
+        return xp_table.get(min(max(level, 1), 20), 0)
     
-    def get_armor(self) -> str:
-        """Get equipped armor."""
-        return self.armor
+    @staticmethod
+    def get_level_for_xp(xp: int) -> int:
+        """Get character level based on XP."""
+        xp_table = CharacterState.get_xp_table()
+        
+        for level in range(20, 0, -1):  # Check from level 20 down to 1
+            if xp >= xp_table[level]:
+                return level
+        
+        return 1  # Minimum level
     
-    def get_weapons(self) -> List[Dict[str, Any]]:
-        """Get equipped weapons."""
-        return self.weapons.copy()
+    def get_xp_to_next_level(self) -> Dict[str, int]:
+        """Get XP information for next level."""
+        current_level = self.get_level_for_xp(self.experience_points)
+        
+        if current_level >= 20:
+            return {
+                "current_level": 20,
+                "next_level": 20,
+                "current_xp": self.experience_points,
+                "xp_for_next_level": self.calculate_xp_for_level(20),
+                "xp_needed": 0,
+                "progress_percentage": 100.0
+            }
+        
+        next_level = current_level + 1
+        current_level_xp = self.calculate_xp_for_level(current_level)
+        next_level_xp = self.calculate_xp_for_level(next_level)
+        
+        xp_needed = next_level_xp - self.experience_points
+        xp_in_current_level = self.experience_points - current_level_xp
+        xp_for_level_range = next_level_xp - current_level_xp
+        
+        progress_percentage = (xp_in_current_level / xp_for_level_range) * 100.0 if xp_for_level_range > 0 else 0.0
+        
+        return {
+            "current_level": current_level,
+            "next_level": next_level,
+            "current_xp": self.experience_points,
+            "xp_for_current_level": current_level_xp,
+            "xp_for_next_level": next_level_xp,
+            "xp_needed": xp_needed,
+            "xp_in_current_level": xp_in_current_level,
+            "progress_percentage": round(progress_percentage, 1)
+        }
     
-    def get_equipment(self) -> List[Dict[str, Any]]:
-        """Get all equipment."""
-        return self.equipment.copy()
+    # ============================================================================
+    # XP AND LEVELING SETTER METHODS
+    # ============================================================================
     
-    def get_active_conditions(self) -> Dict[str, Dict[str, Any]]:
-        """Get all active conditions."""
-        return self.active_conditions.copy()
+    def set_experience_points(self, xp: int, reason: str = "Manual adjustment") -> Dict[str, Any]:
+        """
+        Set experience points with validation and level-up detection.
+        
+        Args:
+            xp: New experience point total
+            reason: Reason for XP change (for logging)
+            
+        Returns:
+            Dict with success status and level-up information
+        """
+        if not isinstance(xp, int):
+            return {"success": False, "error": "XP must be an integer"}
+        
+        if xp < 0:
+            return {"success": False, "error": "XP cannot be negative"}
+        
+        if xp > 355000:  # Maximum XP for level 20
+            return {"success": False, "error": "XP cannot exceed 355,000 (level 20 maximum)"}
+        
+        old_xp = self.experience_points
+        old_level = self.get_level_for_xp(old_xp)
+        
+        self.experience_points = xp
+        new_level = self.get_level_for_xp(xp)
+        
+        # Record XP change in history
+        xp_change = {
+            "old_xp": old_xp,
+            "new_xp": xp,
+            "change": xp - old_xp,
+            "reason": reason,
+            "timestamp": datetime.now().isoformat(),
+            "session_date": datetime.now().strftime("%Y-%m-%d")
+        }
+        self.xp_history.append(xp_change)
+        
+        # Check for level up
+        level_up_info = None
+        if new_level > old_level:
+            level_up_info = self._handle_level_up(old_level, new_level)
+            logger.info(f"Character leveled up from {old_level} to {new_level} (XP: {old_xp} -> {xp})")
+        
+        logger.info(f"XP updated: {old_xp} -> {xp} ({reason})")
+        
+        return {
+            "success": True,
+            "old_xp": old_xp,
+            "new_xp": xp,
+            "xp_change": xp - old_xp,
+            "old_level": old_level,
+            "new_level": new_level,
+            "level_up": level_up_info,
+            "xp_to_next_level": self.get_xp_to_next_level()
+        }
+    
+    def add_experience_points(self, xp_gained: int, reason: str = "Session reward") -> Dict[str, Any]:
+        """
+        Add experience points (most common DM operation).
+        
+        Args:
+            xp_gained: Amount of XP to add
+            reason: Reason for XP gain
+            
+        Returns:
+            Dict with success status and level-up information
+        """
+        if not isinstance(xp_gained, int):
+            return {"success": False, "error": "XP gained must be an integer"}
+        
+        if xp_gained < 0:
+            return {"success": False, "error": "XP gained cannot be negative (use set_experience_points for reductions)"}
+        
+        new_total = self.experience_points + xp_gained
+        return self.set_experience_points(new_total, f"{reason} (+{xp_gained} XP)")
+    
+    def _handle_level_up(self, old_level: int, new_level: int) -> Dict[str, Any]:
+        """Handle level up logic and create pending level-up choices."""
+        
+        # Determine which classes can level up
+        # In D&D 5e, players choose which class to level when they gain a level
+        current_classes = self.character_core.character_classes.copy()
+        
+        # For multiclass characters, they need to choose which class to advance
+        available_classes = list(current_classes.keys()) if current_classes else ["Fighter"]  # Default to Fighter if no classes
+        
+        level_up_info = {
+            "old_level": old_level,
+            "new_level": new_level,
+            "levels_gained": new_level - old_level,
+            "available_classes": available_classes,
+            "pending_choices": [],
+            "automatic_benefits": []
+        }
+        
+        # Add pending level-up choices for each level gained
+        for level in range(old_level + 1, new_level + 1):
+            pending_choice = {
+                "target_level": level,
+                "available_classes": available_classes,
+                "requires_asi_choice": False,
+                "requires_spell_choice": False,
+                "requires_feature_choice": False
+            }
+            
+            # Check if any class would grant an ASI at this level
+            for class_name in available_classes:
+                class_level = current_classes.get(class_name, 0) + 1  # Potential new level in this class
+                asi_levels = self.character_core.level_manager.asi_manager.get_asi_levels_for_class(class_name)
+                
+                if class_level in asi_levels:
+                    pending_choice["requires_asi_choice"] = True
+                    pending_choice["asi_class"] = class_name
+                    pending_choice["asi_level"] = class_level
+            
+            level_up_info["pending_choices"].append(pending_choice)
+            self.pending_level_ups.append(pending_choice)
+        
+        # Automatic benefits (can be calculated immediately)
+        level_up_info["automatic_benefits"] = [
+            f"Total character level increased to {new_level}",
+            f"Proficiency bonus may have increased",
+            f"Hit points can be increased when class is chosen"
+        ]
+        
+        return level_up_info
+    
+    def apply_level_up_choice(self, choice_index: int, class_name: str, 
+                            asi_choice: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Apply a level-up choice for a specific class.
+        
+        Args:
+            choice_index: Index in pending_level_ups list
+            class_name: Class to level up in
+            asi_choice: ASI choice if applicable ({"type": "asi", "improvements": {...}} or {"type": "feat", "feat_name": "..."})
+            
+        Returns:
+            Dict with success status and results
+        """
+        if choice_index >= len(self.pending_level_ups):
+            return {"success": False, "error": f"Invalid choice index: {choice_index}"}
+        
+        pending_choice = self.pending_level_ups[choice_index]
+        
+        if class_name not in pending_choice["available_classes"]:
+            return {"success": False, "error": f"Class {class_name} not available for level up"}
+        
+        # Apply the level up to the character core
+        try:
+            self.character_core.level_up(class_name, asi_choice)
+            
+            # Remove the pending choice
+            resolved_choice = self.pending_level_ups.pop(choice_index)
+            
+            # Update max HP (simplified - should be based on class hit die)
+            con_modifier = self.character_core.constitution.modifier
+            hp_increase = 5 + con_modifier  # Average hit die + con modifier
+            self.max_hit_points += max(1, hp_increase)
+            self.current_hit_points += max(1, hp_increase)
+            
+            logger.info(f"Applied level up: {class_name} (choice {choice_index})")
+            
+            return {
+                "success": True,
+                "class_leveled": class_name,
+                "new_class_level": self.character_core.character_classes.get(class_name, 1),
+                "new_total_level": self.character_core.level,
+                "hp_gained": max(1, hp_increase),
+                "new_max_hp": self.max_hit_points,
+                "asi_applied": asi_choice is not None,
+                "remaining_pending_choices": len(self.pending_level_ups)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error applying level up: {str(e)}")
+            return {"success": False, "error": f"Failed to apply level up: {str(e)}"}
+    
+    # ============================================================================
+    # OTHER STATE SETTER METHODS
+    # ============================================================================
+    
+    def set_hit_points(self, current_hp: int, max_hp: Optional[int] = None) -> Dict[str, Any]:
+        """Set current hit points with validation."""
+        if not isinstance(current_hp, int):
+            return {"success": False, "error": "Hit points must be an integer"}
+        
+        if max_hp is not None:
+            if not isinstance(max_hp, int) or max_hp < 1:
+                return {"success": False, "error": "Max HP must be a positive integer"}
+            
+            old_max_hp = self.max_hit_points
+            self.max_hit_points = max_hp
+        else:
+            old_max_hp = self.max_hit_points
+        
+        # Validate current HP
+        if current_hp > self.max_hit_points:
+            return {"success": False, "error": f"Current HP cannot exceed max HP ({self.max_hit_points})"}
+        
+        old_current_hp = self.current_hit_points
+        self.current_hit_points = max(0, current_hp)  # HP can't go below 0
+        
+        logger.info(f"Hit points updated: {old_current_hp}/{old_max_hp} -> {self.current_hit_points}/{self.max_hit_points}")
+        
+        return {
+            "success": True,
+            "old_current_hp": old_current_hp,
+            "new_current_hp": self.current_hit_points,
+            "old_max_hp": old_max_hp,
+            "new_max_hp": self.max_hit_points,
+            "is_unconscious": self.current_hit_points == 0,
+            "is_dying": self.current_hit_points == 0 and DnDCondition.UNCONSCIOUS not in self.conditions
+        }
+    
+    def add_condition(self, condition: DnDCondition, duration: Optional[str] = None) -> Dict[str, Any]:
+        """Add a condition to the character."""
+        if condition in self.conditions:
+            return {"success": False, "error": f"Character already has condition: {condition.value}"}
+        
+        self.conditions.append(condition)
+        
+        if duration:
+            self.temporary_conditions[condition.value] = {
+                "duration": duration,
+                "applied_at": datetime.now().isoformat()
+            }
+        
+        logger.info(f"Added condition: {condition.value}" + (f" (duration: {duration})" if duration else ""))
+        
+        return {
+            "success": True,
+            "condition": condition.value,
+            "duration": duration,
+            "active_conditions": [c.value for c in self.conditions]
+        }
+    
+    def remove_condition(self, condition: DnDCondition) -> Dict[str, Any]:
+        """Remove a condition from the character."""
+        if condition not in self.conditions:
+            return {"success": False, "error": f"Character does not have condition: {condition.value}"}
+        
+        self.conditions.remove(condition)
+        
+        if condition.value in self.temporary_conditions:
+            del self.temporary_conditions[condition.value]
+        
+        logger.info(f"Removed condition: {condition.value}")
+        
+        return {
+            "success": True,
+            "condition": condition.value,
+            "active_conditions": [c.value for c in self.conditions]
+        }
+    
+    def set_exhaustion_level(self, level: int) -> Dict[str, Any]:
+        """Set exhaustion level with D&D 5e 2024 rules."""
+        if not isinstance(level, int) or level < 0 or level > 6:
+            return {"success": False, "error": "Exhaustion level must be between 0 and 6"}
+        
+        old_level = self.exhaustion_level
+        self.exhaustion_level = level
+        
+        effects = ExhaustionLevel.get_effects(level)
+        is_dead = ExhaustionLevel.is_dead(level)
+        
+        logger.info(f"Exhaustion level changed: {old_level} -> {level}")
+        
+        return {
+            "success": True,
+            "old_level": old_level,
+            "new_level": level,
+            "effects": effects,
+            "is_dead": is_dead
+        }
+    
+    def update_currency(self, currency_changes: Dict[str, int]) -> Dict[str, Any]:
+        """Update currency amounts."""
+        if not isinstance(currency_changes, dict):
+            return {"success": False, "error": "Currency changes must be a dictionary"}
+        
+        old_currency = self.currency.copy()
+        results = {}
+        
+        for coin_type, amount in currency_changes.items():
+            if coin_type not in self.currency:
+                results[coin_type] = {"success": False, "error": f"Invalid coin type: {coin_type}"}
+                continue
+            
+            if not isinstance(amount, int):
+                results[coin_type] = {"success": False, "error": "Amount must be an integer"}
+                continue
+            
+            new_amount = self.currency[coin_type] + amount
+            if new_amount < 0:
+                results[coin_type] = {"success": False, "error": f"Insufficient {coin_type} (have {self.currency[coin_type]}, trying to remove {abs(amount)})"}
+                continue
+            
+            self.currency[coin_type] = new_amount
+            results[coin_type] = {
+                "success": True,
+                "old_amount": old_currency[coin_type],
+                "change": amount,
+                "new_amount": new_amount
+            }
+        
+        logger.info(f"Currency updated: {currency_changes}")
+        
+        return {
+            "success": all(r["success"] for r in results.values()),
+            "results": results,
+            "old_currency": old_currency,
+            "new_currency": self.currency.copy()
+        }
+    
+    # ============================================================================
+    # GETTER METHODS FOR STATE DATA
+    # ============================================================================
+    
+    def get_experience_points(self) -> int:
+        """Get current experience points."""
+        return self.experience_points
+    
+    def get_level_info(self) -> Dict[str, Any]:
+        """Get comprehensive level and XP information."""
+        return {
+            "current_level": self.get_level_for_xp(self.experience_points),
+            "experience_points": self.experience_points,
+            "xp_progress": self.get_xp_to_next_level(),
+            "pending_level_ups": len(self.pending_level_ups),
+            "xp_history_count": len(self.xp_history)
+        }
+    
+    def get_hit_points(self) -> Dict[str, int]:
+        """Get hit point information."""
+        return {
+            "current": self.current_hit_points,
+            "maximum": self.max_hit_points,
+            "temporary": self.temporary_hit_points
+        }
+    
+    def get_conditions(self) -> List[str]:
+        """Get list of active conditions."""
+        return [condition.value for condition in self.conditions]
     
     def get_exhaustion_level(self) -> int:
         """Get current exhaustion level."""
@@ -634,458 +1478,34 @@ class CharacterState:
         """Get currency amounts."""
         return self.currency.copy()
     
-    # ============================================================================
-    # SETTER METHODS FOR API ACCESS
-    # ============================================================================
-    
-    def set_current_hit_points(self, hp: int) -> None:
-        """Set current hit points."""
-        self.current_hit_points = max(0, hp)
-    
-    def set_temporary_hit_points(self, temp_hp: int) -> None:
-        """Set temporary hit points."""
-        self.temporary_hit_points = max(0, temp_hp)
-    
-    def set_armor(self, armor: str) -> None:
-        """Set equipped armor."""
-        self.armor = armor
-    
-    def set_currency(self, currency: Dict[str, int]) -> None:
-        """Set currency amounts."""
-        self.currency.update(currency)
-
-# ============================================================================
-# CHARACTER STATISTICS
-# ============================================================================
-
-class CharacterStats:
-    """Calculated character statistics."""
-    
-    def __init__(self, core: CharacterCore, state: CharacterState):
-        self.core = core
-        self.state = state
-        self._cache = {}
-    
-    @property
-    def proficiency_bonus(self) -> int:
-        if "proficiency_bonus" not in self._cache:
-            level = self.core.total_level
-            self._cache["proficiency_bonus"] = 2 + ((level - 1) // 4)
-        return self._cache["proficiency_bonus"]
-    
-    @property
-    def armor_class(self) -> int:
-        if "armor_class" not in self._cache:
-            base_ac = 10 + self.core.dexterity.modifier
-            # Enhanced armor calculation
-            armor_name = self.state.armor.lower()
-            if "leather" in armor_name:
-                base_ac = 11 + self.core.dexterity.modifier
-            elif "studded" in armor_name:
-                base_ac = 12 + self.core.dexterity.modifier
-            elif "chain shirt" in armor_name:
-                base_ac = 13 + min(self.core.dexterity.modifier, 2)
-            elif "chain mail" in armor_name:
-                base_ac = 16
-            elif "plate" in armor_name:
-                base_ac = 18
-            elif "magical" in armor_name or "enchanted" in armor_name:
-                base_ac = 16 + 2  # Assume +2 magical armor
-            
-            self._cache["armor_class"] = base_ac
-        return self._cache["armor_class"]
-    
-    @property
-    def max_hit_points(self) -> int:
-        if "max_hit_points" not in self._cache:
-            if not self.core.character_classes:
-                self._cache["max_hit_points"] = 1
-                return 1
-            
-            hit_die_sizes = {
-                "Barbarian": 12, "Fighter": 10, "Paladin": 10, "Ranger": 10,
-                "Wizard": 6, "Sorcerer": 6, "Rogue": 8, "Bard": 8,
-                "Cleric": 8, "Druid": 8, "Monk": 8, "Warlock": 8
-            }
-            
-            total = 0
-            con_mod = self.core.constitution.modifier
-            
-            for class_name, level in self.core.character_classes.items():
-                hit_die = hit_die_sizes.get(class_name, 8)  # Default to d8
-                if level > 0:
-                    # First level gets max hit die + con mod
-                    total += hit_die + con_mod
-                    # Subsequent levels get average + con mod
-                    total += (level - 1) * ((hit_die // 2) + 1 + con_mod)
-            
-            self._cache["max_hit_points"] = max(1, total)
-        return self._cache["max_hit_points"]
-    
-    def invalidate_cache(self):
-        self._cache.clear()
-
-# ============================================================================
-# MAIN CHARACTER SHEET (Enhanced)
-# ============================================================================
-
-class CharacterSheet:
-    """Main character sheet combining all components with journal tracking."""
-    
-    def __init__(self, name: str = ""):
-        self.core = CharacterCore(name)
-        self.state = CharacterState()
-        self.stats = CharacterStats(self.core, self.state)
-        
-        # Add initial journal entry for new characters
-        if name:
-            self.state.add_journal_entry(
-                f"Character '{name}' has been created and begins their adventure!",
-                tags=["character_creation", "beginning"]
-            )
-    
-    # ============================================================================
-    # COMPREHENSIVE GETTER METHODS FOR API
-    # ============================================================================
-    
-    def get_character_summary(self) -> Dict[str, Any]:
-        """Get complete character summary including journal."""
+    def get_character_state_summary(self) -> Dict[str, Any]:
+        """Get comprehensive character state summary."""
         return {
-            "name": self.core.name,
-            "species": self.core.species,
-            "level": self.core.total_level,
-            "classes": self.core.character_classes,
-            "background": self.core.background,
-            "alignment": self.core.alignment,
-            "ability_scores": self.core.get_ability_scores(),
-            "ability_modifiers": self.core.get_ability_modifiers(),
-            "ac": self.stats.armor_class,
-            "hp": {
-                "current": self.state.current_hit_points,
-                "max": self.stats.max_hit_points,
-                "temp": self.state.temporary_hit_points
+            "level_info": self.get_level_info(),
+            "hit_points": self.get_hit_points(),
+            "conditions": {
+                "active": self.get_conditions(),
+                "exhaustion_level": self.exhaustion_level,
+                "exhaustion_effects": ExhaustionLevel.get_effects(self.exhaustion_level)
             },
-            "proficiency_bonus": self.stats.proficiency_bonus,
-            "proficiencies": self.core.get_proficiencies(),
-            "personality": {
-                "traits": self.core.get_personality_traits(),
-                "ideals": self.core.get_ideals(),
-                "bonds": self.core.get_bonds(),
-                "flaws": self.core.get_flaws()
-            },
-            "backstory": self.core.get_backstory(),
-            "detailed_backstory": self.core.get_detailed_backstory(),
-            "custom_content": self.core.custom_content_used,
+            "currency": self.get_currency(),
             "equipment": {
-                "armor": self.state.armor,
-                "weapons": self.state.weapons,
-                "items": self.state.equipment
+                "inventory_items": len(self.inventory),
+                "attuned_items": len(self.attuned_items),
+                "equipped_items": len(self.equipped_items)
             },
-            "conditions": self.state.get_active_conditions(),
-            "condition_effects": self.state.get_condition_effects(),
-            "exhaustion_level": self.state.exhaustion_level,
-            "exhaustion_effects": ExhaustionLevel.get_effects(self.state.exhaustion_level),
-            "currency": self.state.get_currency(),
+            "resources": {
+                "spell_slots": self.spell_slots_remaining,
+                "class_resources": self.class_resources
+            },
             "journal": {
-                "entries": self.state.get_journal_entries(),
-                "summary": self.state.get_journal_summary()
-            }
+                "session_notes": len(self.session_notes),
+                "campaign_entries": len(self.campaign_journal),
+                "character_goals": len(self.character_goals)
+            },
+            "last_updated": datetime.now().isoformat()
         }
-    
-    # Individual getter methods for specific data
-    def get_name(self) -> str:
-        return self.core.get_name()
-    
-    def get_species(self) -> str:
-        return self.core.get_species()
-    
-    def get_level(self) -> int:
-        return self.core.total_level
-    
-    def get_classes(self) -> Dict[str, int]:
-        return self.core.get_character_classes()
-    
-    def get_background(self) -> str:
-        return self.core.get_background()
-    
-    def get_alignment(self) -> List[str]:
-        return self.core.get_alignment()
-    
-    def get_ability_scores(self) -> Dict[str, int]:
-        return self.core.get_ability_scores()
-    
-    def get_ability_modifiers(self) -> Dict[str, int]:
-        return self.core.get_ability_modifiers()
-    
-    def get_armor_class(self) -> int:
-        return self.stats.armor_class
-    
-    def get_hit_points(self) -> Dict[str, int]:
-        return {
-            "current": self.state.get_current_hit_points(),
-            "max": self.stats.max_hit_points,
-            "temp": self.state.get_temporary_hit_points()
-        }
-    
-    def get_proficiency_bonus(self) -> int:
-        return self.stats.proficiency_bonus
-    
-    def get_proficiencies(self) -> Dict[str, Any]:
-        return self.core.get_proficiencies()
-    
-    def get_personality(self) -> Dict[str, List[str]]:
-        return {
-            "traits": self.core.get_personality_traits(),
-            "ideals": self.core.get_ideals(),
-            "bonds": self.core.get_bonds(),
-            "flaws": self.core.get_flaws()
-        }
-    
-    def get_backstory(self) -> str:
-        return self.core.get_backstory()
-    
-    def get_detailed_backstory(self) -> Dict[str, str]:
-        return self.core.get_detailed_backstory()
-    
-    def get_equipment(self) -> Dict[str, Any]:
-        return {
-            "armor": self.state.get_armor(),
-            "weapons": self.state.get_weapons(),
-            "items": self.state.get_equipment()
-        }
-    
-    def get_conditions(self) -> Dict[str, Dict[str, Any]]:
-        return self.state.get_active_conditions()
-    
-    def get_condition_effects(self) -> Dict[str, Any]:
-        return self.state.get_condition_effects()
-    
-    def get_exhaustion_level(self) -> int:
-        return self.state.get_exhaustion_level()
-    
-    def get_exhaustion_effects(self) -> Dict[str, Any]:
-        return ExhaustionLevel.get_effects(self.state.exhaustion_level)
-    
-    def get_currency(self) -> Dict[str, int]:
-        return self.state.get_currency()
-    
-    def get_journal_entries(self) -> List[Dict[str, Any]]:
-        return self.state.get_journal_entries()
-    
-    def get_journal_summary(self) -> Dict[str, Any]:
-        return self.state.get_journal_summary()
-    
-    # ============================================================================
-    # SETTER METHODS FOR GAMEPLAY STATE (API ACCESSIBLE)
-    # ============================================================================
-    
-    def set_current_hit_points(self, hp: int) -> None:
-        """Set current hit points."""
-        max_hp = self.stats.max_hit_points
-        self.state.set_current_hit_points(min(hp, max_hp))
-    
-    def set_temporary_hit_points(self, temp_hp: int) -> None:
-        """Set temporary hit points."""
-        self.state.set_temporary_hit_points(temp_hp)
-    
-    def set_armor(self, armor: str) -> None:
-        """Set equipped armor."""
-        self.state.set_armor(armor)
-        self.stats.invalidate_cache()  # Recalculate AC
-    
-    def set_currency(self, currency: Dict[str, int]) -> None:
-        """Set currency amounts."""
-        self.state.set_currency(currency)
-    
-    def add_journal_entry(self, entry: str, session_date: Optional[str] = None, 
-                         tags: Optional[List[str]] = None) -> None:
-        """Add a journal entry."""
-        self.state.add_journal_entry(entry, session_date, tags)
-    
-    def clear_journal(self) -> None:
-        """Clear all journal entries."""
-        self.state.clear_journal()
-    
-    def add_condition(self, condition: DnDCondition, duration: str = "indefinite", 
-                     save_dc: int = 0, save_ability: str = "", source: str = "") -> None:
-        """Add a condition to the character."""
-        self.state.add_condition(condition, duration, save_dc, save_ability, source)
-    
-    def remove_condition(self, condition: DnDCondition) -> None:
-        """Remove a condition from the character."""
-        self.state.remove_condition(condition)
-    
-    def add_exhaustion(self, levels: int = 1) -> Dict[str, Any]:
-        """Add exhaustion levels."""
-        return self.state.add_exhaustion(levels)
-    
-    def remove_exhaustion(self, levels: int = 1, method: str = "long_rest") -> Dict[str, Any]:
-        """Remove exhaustion levels."""
-        return self.state.remove_exhaustion(levels, method)
-    
-    def add_equipment_item(self, item: Dict[str, Any]) -> None:
-        """Add equipment item."""
-        self.state.add_equipment(item)
-    
-    def add_weapon(self, weapon: Dict[str, Any]) -> None:
-        """Add weapon."""
-        self.state.add_weapon(weapon)
-    
-    # ============================================================================
-    # ENHANCED GAMEPLAY METHODS
-    # ============================================================================
-    
-    def generate_sheet(self) -> Dict[str, Any]:
-        """Generate a complete character sheet - alias for get_character_summary."""
-        return self.get_character_summary()
-    
-    def calculate_all_derived_stats(self):
-        """Recalculate all derived statistics."""
-        self.stats.invalidate_cache()
-        if self.state.current_hit_points == 0:  # Only set if not already set
-            self.state.current_hit_points = self.stats.max_hit_points
-    
-    def level_up(self, class_name: str, asi_choice: Optional[Dict[str, Any]] = None):
-        """Level up the character in the specified class."""
-        old_level = self.core.character_classes.get(class_name, 0)
-        self.core.level_up(class_name, asi_choice)
-        new_level = self.core.character_classes.get(class_name, 0)
-        
-        # Add journal entry for level up
-        self.state.add_journal_entry(
-            f"Leveled up in {class_name} from level {old_level} to {new_level}!",
-            tags=["level_up", class_name.lower()]
-        )
-        
-        self.calculate_all_derived_stats()
-        logger.info(f"Character {self.core.name} leveled up to {class_name} level {new_level}")
-    
-    def take_damage(self, damage: int, source: str = "") -> Dict[str, int]:
-        """Apply damage to the character."""
-        max_hp = self.stats.max_hit_points
-        result = self.state.take_damage(damage)
-        
-        # Ensure current HP doesn't exceed max HP after calculation
-        if self.state.current_hit_points > max_hp:
-            self.state.current_hit_points = max_hp
-        
-        # Add journal entry for significant damage
-        if damage > 0:
-            self.state.add_journal_entry(
-                f"Took {damage} damage{' from ' + source if source else ''}. HP: {self.state.current_hit_points}/{max_hp}",
-                tags=["combat", "damage"]
-            )
-            
-        return result
-    
-    def heal(self, healing: int, source: str = "") -> Dict[str, int]:
-        """Heal the character."""
-        max_hp = self.stats.max_hit_points
-        result = self.state.heal(healing)
-        
-        # Cap healing at max HP
-        if self.state.current_hit_points > max_hp:
-            actual_healing = healing - (self.state.current_hit_points - max_hp)
-            self.state.current_hit_points = max_hp
-            result["healing_applied"] = actual_healing
-            result["new_hp"] = max_hp
-        
-        # Add journal entry for healing
-        if healing > 0:
-            self.state.add_journal_entry(
-                f"Healed for {result['healing_applied']} HP{' from ' + source if source else ''}. HP: {self.state.current_hit_points}/{max_hp}",
-                tags=["healing", "recovery"]
-            )
-            
-        return result
-    
-    def long_rest(self) -> Dict[str, Any]:
-        """Perform a long rest, restoring HP and removing exhaustion."""
-        max_hp = self.stats.max_hit_points
-        old_hp = self.state.current_hit_points
-        old_exhaustion = self.state.exhaustion_level
-        
-        # Restore HP to max
-        self.state.current_hit_points = max_hp
-        
-        # Remove 1 level of exhaustion
-        exhaustion_result = self.state.remove_exhaustion(1, "long_rest")
-        
-        # Add journal entry
-        self.state.add_journal_entry(
-            f"Completed a long rest. HP restored from {old_hp} to {max_hp}. " +
-            f"Exhaustion reduced from {old_exhaustion} to {self.state.exhaustion_level}.",
-            tags=["rest", "recovery"]
-        )
-        
-        return {
-            "hp_restored": max_hp - old_hp,
-            "exhaustion_removed": exhaustion_result,
-            "new_hp": max_hp,
-            "new_exhaustion": self.state.exhaustion_level
-        }
-    
-    def get_character_evolution_analysis(self) -> Dict[str, Any]:
-        """Analyze character evolution based on journal entries."""
-        journal_analysis = self.state.get_journal_summary()
-        
-        # Enhanced analysis combining journal with current build
-        primary_class = max(self.core.character_classes.items(), key=lambda x: x[1])[0] if self.core.character_classes else "Unknown"
-        
-        analysis = {
-            "primary_class": primary_class,
-            "journal_analysis": journal_analysis,
-            "suggested_evolution": [],
-            "character_arc": ""
-        }
-        
-        themes = journal_analysis.get("themes", [])
-        
-        # Suggest evolution based on journal themes vs current class
-        if "Stealth-oriented" in themes and primary_class not in ["Rogue", "Ranger"]:
-            analysis["suggested_evolution"].append("Consider multiclassing into Rogue for stealth abilities")
-        
-        if "Social interactions" in themes and primary_class not in ["Bard", "Paladin", "Warlock"]:
-            analysis["suggested_evolution"].append("Consider developing social skills or Charisma-based abilities")
-        
-        if "Magic user" in themes and primary_class not in ["Wizard", "Sorcerer", "Warlock", "Cleric", "Druid"]:
-            analysis["suggested_evolution"].append("Consider multiclassing into a spellcasting class")
-        
-        if "Combat-focused" in themes and primary_class not in ["Fighter", "Barbarian", "Paladin"]:
-            analysis["suggested_evolution"].append("Consider combat feats or martial multiclassing")
-        
-        # Create character arc summary
-        entry_count = journal_analysis.get("total_entries", 0)
-        if entry_count > 0:
-            analysis["character_arc"] = f"Through {entry_count} adventures, {self.core.name} has grown from a {primary_class} into a character with strong {', '.join(themes) if themes else 'general adventuring'} tendencies."
-        
-        return analysis
-    
-    def validate_character(self) -> Dict[str, Any]:
-        """Validate the complete character sheet."""
-        core_validation = self.core.validate()
-        
-        # Additional validations
-        issues = core_validation["issues"].copy()
-        warnings = core_validation["warnings"].copy()
-        
-        # Check if HP is set properly
-        if self.state.current_hit_points > self.stats.max_hit_points:
-            issues.append("Current HP exceeds maximum HP")
-        
-        # Check for basic equipment
-        if not self.state.armor and not self.state.weapons:
-            warnings.append("Character has no armor or weapons equipped")
-        
-        # Check for deadly conditions
-        if ExhaustionLevel.is_dead(self.state.exhaustion_level):
-            issues.append("Character is dead from exhaustion")
-        
-        return {
-            "valid": len(issues) == 0,
-            "issues": issues,
-            "warnings": warnings
-        }
+
 
 # ============================================================================
 # CHARACTER ITERATION CACHE

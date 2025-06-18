@@ -1,4 +1,5 @@
-# -bW6Ej3lDBEG0q8r3nivua01PZwz-Rs_vBSyOcNmunB90z9AIB_2OVTie3IZ-EGhv80InrWilgvT3BlbkFJw-NkqVe7el0RIJXcmAUfKFdm1rCHjinVQ2pNlrZPBTBhi1HOPDnVE2vBSJZgnUYpJhyOwTsRgA
+# OpenAI API Key should be stored in .env file
+# Copy .env.example to .env and add your API key there
 
 
 

@@ -315,28 +315,44 @@ def create_llm_service(provider: str = "auto", api_key: str = None, model: str =
     """
     print("🔧 Initializing LLM service...")
     
-    # Extract OpenAI API key from the file if available
+    # Extract OpenAI API key from environment variables
     if not api_key:
         try:
-            # Check llm_service_new.py first (where the API key is stored)
             import os
-            new_service_file = os.path.join(os.path.dirname(__file__), 'llm_service_new.py')
-            if os.path.exists(new_service_file):
-                with open(new_service_file, 'r') as f:
-                    first_line = f.readline().strip()
-                    if first_line.startswith('# '):
-                        api_key = first_line[2:].strip()  # Remove '# ' prefix
-                        print("🔑 Found OpenAI API key in llm_service_new.py")
+            from dotenv import load_dotenv
             
-            # Fallback: check current file
-            if not api_key:
-                with open(__file__, 'r') as f:
-                    first_line = f.readline().strip()
-                    if first_line.startswith('# '):
-                        api_key = first_line[2:].strip()  # Remove '# ' prefix
-                        print("🔑 Found OpenAI API key in current file")
+            # Load environment variables from .env file
+            load_dotenv()
+            
+            api_key = os.getenv('OPENAI_API_KEY')
+            if api_key:
+                print("🔑 Found OpenAI API key in environment variables")
+            else:
+                # Fallback: check llm_service_new.py file for backward compatibility
+                new_service_file = os.path.join(os.path.dirname(__file__), 'llm_service_new.py')
+                if os.path.exists(new_service_file):
+                    with open(new_service_file, 'r') as f:
+                        first_line = f.readline().strip()
+                        if first_line.startswith('# '):
+                            api_key = first_line[2:].strip()  # Remove '# ' prefix
+                            print("🔑 Found OpenAI API key in llm_service_new.py (fallback)")
+                
+        except ImportError:
+            print("⚠️  python-dotenv not installed. Install with: pip install python-dotenv")
+            # Fallback to file-based reading
+            try:
+                import os
+                new_service_file = os.path.join(os.path.dirname(__file__), 'llm_service_new.py')
+                if os.path.exists(new_service_file):
+                    with open(new_service_file, 'r') as f:
+                        first_line = f.readline().strip()
+                        if first_line.startswith('# '):
+                            api_key = first_line[2:].strip()
+                            print("🔑 Found OpenAI API key in file (no dotenv)")
+            except Exception as e:
+                print(f"⚠️  Could not read API key: {e}")
         except Exception as e:
-            print(f"⚠️  Could not read API key from file: {e}")
+            print(f"⚠️  Could not read API key from environment: {e}")
             pass
     
     # Auto-detect provider if not specified

@@ -379,6 +379,10 @@ class CharacterSheet:
             "equipment": self.state.equipment
         }
     
+    def generate_sheet(self) -> Dict[str, Any]:
+        """Generate a complete character sheet - alias for get_character_summary."""
+        return self.get_character_summary()
+    
     def calculate_all_derived_stats(self):
         """Recalculate all derived statistics."""
         self.stats.invalidate_cache()

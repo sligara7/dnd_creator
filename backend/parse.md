@@ -1,4 +1,4 @@
-Looking at this massive script, I'll break it down using clean architecture principles. Here's how to separate it into modular, maintainable components:
+<!-- Looking at this massive script, I'll break it down using clean architecture principles. Here's how to separate it into modular, maintainable components: -->
 
 ## **1. `core_models.py`**
 **Domain entities and core business logic**

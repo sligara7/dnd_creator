@@ -1,6 +1,4 @@
-# Couldn't find '/home/ajs7/.ollama/id_ed25519'. Generating new private key.
-# Your new public key is: 
-# ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPWX2w5ykeyQYzJtlznpHlTz+X8pilc5UD+14K9FXBun
+# standalone file, but needs to be decomposed into modules for better organization
 
 """
 D&D Character Backend Service - Enhanced with Iterative Creation and Compelling Backstories

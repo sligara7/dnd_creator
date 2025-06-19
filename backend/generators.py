@@ -287,16 +287,30 @@ Return ONLY this JSON:
     
     def _generate_custom_spells(self, character_data: Dict[str, Any], 
                               user_description: str, count: int = 3) -> List[CustomSpell]:
-        """Generate custom spells."""
+        """Generate custom spells with thematic consistency."""
         spells = []
         try:
             name = character_data.get('name', 'Unknown')
+            character_level = character_data.get('level', 1)
             
-            prompt = f"""Create {count} unique D&D spells for {name}.
+            # Extract themes for consistent spell generation
+            from character_creation import ConceptualValidator, LevelValidator
+            themes = ConceptualValidator.extract_themes(user_description)
+            theme_desc = f" with {themes[0]} theme" if themes else ""
+            
+            # Determine appropriate spell level
+            max_spell_level = LevelValidator.MAX_SPELL_LEVEL_BY_CHARACTER_LEVEL.get(character_level, 1)
+            suggested_level = min(max_spell_level, 2)  # Conservative approach for custom spells
+            
+            prompt = f"""Create {count} unique D&D spells for {name}{theme_desc}.
+Character Level: {character_level} (max spell level: {max_spell_level})
 Description: {user_description}
 
+Make spells thematically consistent with the character concept and appropriate for level {character_level}.
+Include rich lore and backstory for each spell.
+
 Return ONLY this JSON array:
-[{{"name":"Spell Name","level":1,"school":"Evocation","casting_time":"1 action","range":"60 feet","components":"V, S","duration":"Instantaneous","description":"Spell effect"}}]"""
+[{{"name":"Spell Name","level":{suggested_level},"school":"Evocation","casting_time":"1 action","range":"60 feet","components":["V","S"],"duration":"Instantaneous","description":"Spell mechanical effect","origin_story":"How this spell was discovered or created","creator_name":"Who created this spell","casting_flavor":"Visual and sensory description when cast"}}]"""
             
             response = self.llm_service.generate(prompt, timeout_seconds=25)
             data = json.loads(self._clean_json_response(response))
@@ -320,13 +334,32 @@ Return ONLY this JSON array:
     
     def _generate_custom_weapons(self, character_data: Dict[str, Any], 
                                user_description: str, count: int = 2) -> List[CustomWeapon]:
-        """Generate custom weapons."""
+        """Generate custom weapons with thematic consistency and level appropriateness."""
         weapons = []
         try:
             name = character_data.get('name', 'Unknown')
+            character_level = character_data.get('level', 1)
             
-            prompt = f"""Create {count} unique D&D weapons for {name}.
+            # Extract themes for consistent weapon generation
+            from character_creation import ConceptualValidator
+            themes = ConceptualValidator.extract_themes(user_description)
+            theme_desc = f" with {themes[0]} theme" if themes else ""
+            
+            # Determine appropriate weapon tier
+            if character_level <= 4:
+                weapon_tier = "simple, non-magical"
+            elif character_level <= 10:
+                weapon_tier = "martial, possibly +1 enhancement"
+            elif character_level <= 16:
+                weapon_tier = "magical with special properties"
+            else:
+                weapon_tier = "rare magical with unique abilities"
+            
+            prompt = f"""Create {count} unique D&D weapons for {name}{theme_desc}.
+Character Level: {character_level} (appropriate tier: {weapon_tier})
 Description: {user_description}
+
+Make weapons thematically consistent with the character concept and appropriate for level {character_level}.
 
 Return ONLY this JSON array:
 [{{"name":"Weapon Name","weapon_type":"martial","damage":"1d8","damage_type":"slashing","properties":["versatile"],"weight":3,"cost":"15 gp","description":"Weapon description"}}]"""

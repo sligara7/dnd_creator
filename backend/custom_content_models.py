@@ -414,7 +414,7 @@ class CustomSpell:
     
     def __init__(self, name: str, level: int, school: str, casting_time: str,
                  range_distance: str, components: List[str], duration: str,
-                 description: str, classes: List[str]):
+                 description: str, classes: List[str] = None):
         self.name = name
         self.level = level  # 0-9 (0 = cantrip)
         self.school = school  # One of the 8 schools
@@ -423,13 +423,20 @@ class CustomSpell:
         self.components = components  # ["V", "S", "M (material description)"]
         self.duration = duration  # "Instantaneous", "Concentration, up to 1 minute", etc.
         self.description = description
-        self.classes = classes  # Which classes can learn this spell
+        self.classes = classes or []  # Which classes can learn this spell
         self.targets = ""  # What the spell targets
         self.area_of_effect = ""  # Shape and size if applicable
         self.saving_throw = ""  # Type of save if applicable
         self.attack_roll = False  # Whether it requires an attack roll
         self.damage_type = ""  # Type of damage if applicable
         self.higher_levels = ""  # What happens when cast at higher levels
+        
+        # Enhanced lore and background
+        self.origin_story = ""  # How this spell was discovered/created
+        self.creator_name = ""  # Who created this spell
+        self.historical_significance = ""  # Role in history or legends
+        self.casting_flavor = ""  # What it looks/sounds/feels like when cast
+        self.component_details = ""  # Detailed material component descriptions
 
 class CustomWeapon:
     """Represents a custom weapon with D&D 5e 2024 compliant attributes."""
@@ -463,6 +470,10 @@ class CustomWeapon:
         # Description and lore
         self.description = ""
         self.origin_story = ""  # How this weapon was created/found
+        self.creator_name = ""  # Who forged/enchanted this weapon
+        self.historical_significance = ""  # Famous battles or owners
+        self.legends_and_myths = ""  # Stories told about this weapon
+        self.discovery_circumstances = ""  # How the character obtained it
         
         # Proficiency requirement
         self.proficiency_required = self._determine_proficiency_requirement()
@@ -603,6 +614,10 @@ class CustomArmor:
         # Description and lore
         self.description = ""
         self.origin_story = ""  # How this armor was created/found
+        self.creator_name = ""  # Who crafted this armor
+        self.historical_significance = ""  # Famous wearers or battles
+        self.crafting_materials = ""  # Special materials used in creation
+        self.discovery_circumstances = ""  # How the character obtained it
         
         # Magical enhancements
         self.magical = False

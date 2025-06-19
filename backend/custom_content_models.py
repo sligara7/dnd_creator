@@ -1,13 +1,23 @@
-# ## **2. `custom_content_models.py`**
-# **Custom D&D content domain models**
-# - **Classes**: `CustomSpecies`, `CustomClass`, `CustomItem`, `CustomSpell`, `CustomWeapon`, `CustomArmor`, `CustomFeat`, `FeatManager`, `ContentRegistry`
-# - **Purpose**: All custom content creation and management for species, classes, items, spells, weapons, armor, and feats
-# - **Dependencies**: `core_models.py`
+# IMPLEMENTED: LLM integration for generating rich descriptions of custom species and classes
+# IMPLEMENTED: Database storage system for persistent custom content across characters
+# 
+# Features:
+# - LLMContentGenerator: Generates detailed descriptions for custom content using AI
+# - CustomContentDatabase: Persistent storage for custom content with JSON serialization
+# - ContentRegistry: Enhanced with database persistence and LLM integration
+
+# do created weapons, armor, and spells have an llm generated description or lore?  
+# ============================================================================
+
 
 from typing import Dict, Any, List, Optional, Set, Tuple
 from enum import Enum
 from datetime import datetime
 import logging
+import json
+import os
+from pathlib import Path
+import asyncio
 
 # Import from core_models.py
 from core_models import (

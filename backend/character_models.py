@@ -79,12 +79,12 @@ logger = logging.getLogger(__name__)
 class CharacterCore:
     """Enhanced core character data with level and ASI management."""
     
-    def __init__(self, name: str = ""):
+    def __init__(self, name: str = "", species: str = "", background: str = ""):
         # Basic identity
         self.name = name
-        self.species = ""
+        self.species = species
         self.character_classes: Dict[str, int] = {}
-        self.background = ""
+        self.background = background
         self.alignment = ["Neutral", "Neutral"]
         
         # Enhanced ability scores

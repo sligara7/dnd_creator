@@ -1,70 +1,55 @@
-# how to ensure that a the created species, class, weapons, armor, and spells are all consistent and aligned with created character concept?  
-# for instance, if a water species is created, that it isn't given a fire weapon?
-
-# additionally, how to ensure that a created character is given weapons, spells, and armor consistent with its character level?
-# for instance, if a level 1 character is created, that it isn't given a level 20 weapon or spell?
-
 """
-Character Creation Service - Refactored and Simplified
+Creature Creation Service - Simplified for D&D Creatures
 
-This module provides the main character creation workflow by integrating
-the cleaned modular components. It handles the complete character creation
-process including validation, generation, and iterative improvements.
+This module provides creature creation for D&D beasts, monsters, animals, and NPCs.
+It's a condensed and simplified version of the character creation system, 
+focusing on the subset of features needed for creatures rather than full player characters.
 
-Dependencies: All cleaned backend modules
+Key differences from character creation:
+- Simplified stat blocks (no complex character progression)
+- Focus on basic creature attributes (AC, HP, abilities, attacks)
+- Streamlined generation without backstory complexity
+- Support for creature types (Beast, Monstrosity, Humanoid, etc.)
+- Challenge Rating system instead of character levels
+
+Dependencies: Core backend modules (simplified subset)
 """
-
-# REFACTORED: Journal tracker integration complete. Character creation now includes:
-# - Journal-based character evolution analysis
-# - Play history integration for character updates
-# - Automatic character progression suggestions based on journal themes
-# - Enhanced backstory generation incorporating journal entries
-# - Background evolution with journal highlights during level-ups
-# - Character progression snapshots for tracking development over time
-# - NPC and relationship tracking through journal entries
 
 import asyncio
 import json
 import logging
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
-from typing import Dict, Any, List, Optional, Callable
-from datetime import datetime
+from typing import Dict, Any, List, Optional
 
-# Import from cleaned modules
-from character_models import CharacterCore, CharacterState, CharacterSheet, CharacterStats
-from core_models import AbilityScore, ASIManager, MagicItemManager, CharacterLevelManager, ProficiencyLevel, AbilityScoreSource
-from custom_content_models import ContentRegistry, FeatManager
-from ability_management import AdvancedAbilityManager, CustomContentAbilityManager
+# Import only needed modules for creature creation
 from llm_service_new import create_llm_service, LLMService
-from generators import BackstoryGenerator, CustomContentGenerator
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ============================================================================
-# CONFIGURATION AND RESULT CLASSES
+# CREATURE CREATION CONFIGURATION
 # ============================================================================
 
 @dataclass
-class CreationConfig:
-    """Configuration for character creation process."""
-    base_timeout: int = 20
-    backstory_timeout: int = 15
-    custom_content_timeout: int = 30
+class CreatureConfig:
+    """Configuration for creature creation process."""
+    base_timeout: int = 15
     max_retries: int = 2
-    enable_progress_feedback: bool = True
-    auto_save: bool = False
+    include_tactics: bool = True
+    include_lore: bool = False
+    auto_calculate_cr: bool = True
 
-class CreationResult:
-    """Result container for character creation operations."""
+@dataclass
+class CreatureResult:
+    """Result container for creature creation operations."""
     
-    def __init__(self, success: bool = False, data: Dict[str, Any] = None, 
+    def __init__(self, success: bool = False, creature_data: Dict[str, Any] = None, 
                  error: str = "", warnings: List[str] = None):
         self.success = success
-        self.data = data or {}
+        self.creature_data = creature_data or {}
         self.error = error
         self.warnings = warnings or []
         self.creation_time: float = 0.0
@@ -75,11 +60,347 @@ class CreationResult:
     
     def is_valid(self) -> bool:
         """Check if the result is valid."""
-        return self.success and bool(self.data)
+        return self.success and bool(self.creature_data)
 
 # ============================================================================
-# JOURNAL-BASED CHARACTER EVOLUTION
+# CREATURE MODELS
 # ============================================================================
+
+@dataclass
+class CreatureStatBlock:
+    """Basic creature stat block for D&D creatures."""
+    name: str
+    creature_type: str  # Beast, Monstrosity, Humanoid, etc.
+    size: str  # Tiny, Small, Medium, Large, Huge, Gargantuan
+    challenge_rating: float
+    armor_class: int
+    hit_points: int
+    hit_dice: str
+    speed: Dict[str, int]  # walk, fly, swim, burrow, climb
+    ability_scores: Dict[str, int]  # STR, DEX, CON, INT, WIS, CHA
+    skills: Dict[str, int] = None
+    damage_resistances: List[str] = None
+    damage_immunities: List[str] = None
+    condition_immunities: List[str] = None
+    senses: Dict[str, int] = None
+    languages: List[str] = None
+    proficiency_bonus: int = 2
+    
+    def __post_init__(self):
+        self.skills = self.skills or {}
+        self.damage_resistances = self.damage_resistances or []
+        self.damage_immunities = self.damage_immunities or []
+        self.condition_immunities = self.condition_immunities or []
+        self.senses = self.senses or {"passive_perception": 10}
+        self.languages = self.languages or []
+
+@dataclass
+class CreatureAction:
+    """Represents a creature action (attack, spell, ability)."""
+    name: str
+    action_type: str  # "attack", "spell", "ability", "legendary"
+    description: str
+    damage_dice: str = None
+    damage_type: str = None
+    attack_bonus: int = None
+    save_dc: int = None
+    save_ability: str = None
+    recharge: str = None  # "5-6", "6", etc.
+
+# ============================================================================
+# CREATURE CREATION SERVICE
+# ============================================================================
+
+class CreatureCreationService:
+    """
+    Main service for creating D&D creatures.
+    Simplified version of character creation focused on creature stat blocks.
+    """
+    
+    def __init__(self, llm_service: Optional[LLMService] = None):
+        self.llm_service = llm_service or create_llm_service()
+        self.validator = CreatureValidator()
+        self.generator = CreatureDataGenerator(self.llm_service)
+        self.logger = logging.getLogger(__name__)
+    
+    # ========================================================================
+    # MAIN CREATION METHODS
+    # ========================================================================
+    
+    async def create_creature(self, creature_concept: Dict[str, Any], 
+                            config: CreatureConfig = None) -> CreatureResult:
+        """
+        Create a complete creature from a concept.
+        
+        Args:
+            creature_concept: Basic creature concept (name, type, CR, etc.)
+            config: Creation configuration
+            
+        Returns:
+            CreatureResult with complete stat block
+        """
+        # TODO: Implement creature creation workflow
+        # 1. Validate concept
+        # 2. Generate base stats
+        # 3. Calculate derived stats (HP, AC, etc.)
+        # 4. Generate actions and abilities
+        # 5. Validate final creature
+        pass
+    
+    async def create_creature_variant(self, base_creature: Dict[str, Any], 
+                                    variant_concept: Dict[str, Any]) -> CreatureResult:
+        """
+        Create a variant of an existing creature.
+        
+        Args:
+            base_creature: Existing creature to modify
+            variant_concept: Variant modifications
+            
+        Returns:
+            CreatureResult with variant creature
+        """
+        # TODO: Implement variant creation
+        # 1. Copy base creature
+        # 2. Apply variant modifications
+        # 3. Recalculate stats as needed
+        # 4. Validate variant
+        pass
+    
+    async def bulk_create_creatures(self, creature_list: List[Dict[str, Any]]) -> List[CreatureResult]:
+        """
+        Create multiple creatures efficiently.
+        
+        Args:
+            creature_list: List of creature concepts
+            
+        Returns:
+            List of CreatureResults
+        """
+        # TODO: Implement bulk creation
+        # 1. Process creatures in batches
+        # 2. Handle parallel creation where possible
+        # 3. Collect and return results
+        pass
+    
+    # ========================================================================
+    # CREATURE GENERATION HELPERS
+    # ========================================================================
+    
+    def calculate_challenge_rating(self, stat_block: CreatureStatBlock) -> float:
+        """
+        Calculate appropriate challenge rating for a creature.
+        
+        Args:fin
+            stat_block: Creature stat block
+            
+        Returns:
+            Calculated challenge rating
+        """
+        # TODO: Implement CR calculation
+        # 1. Calculate offensive CR (damage output)
+        # 2. Calculate defensive CR (HP, AC, saves)
+        # 3. Average and adjust for special abilities
+        pass
+    
+    def generate_creature_actions(self, stat_block: CreatureStatBlock, 
+                                num_actions: int = 2) -> List[CreatureAction]:
+        """
+        Generate appropriate actions for a creature.
+        
+        Args:
+            stat_block: Creature stat block
+            num_actions: Number of actions to generate
+            
+        Returns:
+            List of creature actions
+        """
+        # TODO: Implement action generation
+        # 1. Determine action types based on creature type
+        # 2. Calculate attack bonuses and damage
+        # 3. Generate special abilities if appropriate
+        pass
+    
+    def balance_creature_stats(self, stat_block: CreatureStatBlock) -> CreatureStatBlock:
+        """
+        Balance creature stats for appropriate challenge level.
+        
+        Args:
+            stat_block: Initial stat block
+            
+        Returns:
+            Balanced stat block
+        """
+        # TODO: Implement stat balancing
+        # 1. Check if stats are appropriate for CR
+        # 2. Adjust HP, AC, damage to match target CR
+        # 3. Ensure no stats are too high/low for creature type
+        pass
+
+# ============================================================================
+# CREATURE VALIDATION
+# ============================================================================
+
+class CreatureValidator:
+    """Validates creature stat blocks for correctness and balance."""
+    
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+    
+    def validate_creature(self, stat_block: CreatureStatBlock) -> List[str]:
+        """
+        Validate a complete creature stat block.
+        
+        Args:
+            stat_block: Creature to validate
+            
+        Returns:
+            List of validation errors (empty if valid)
+        """
+        # TODO: Implement validation
+        # 1. Check required fields are present
+        # 2. Validate stat ranges for creature type
+        # 3. Check CR matches actual power level
+        # 4. Validate action mechanics
+        pass
+    
+    def validate_creature_type(self, creature_type: str, size: str) -> bool:
+        """
+        Validate creature type and size combination.
+        
+        Args:
+            creature_type: Type of creature
+            size: Size category
+            
+        Returns:
+            True if valid combination
+        """
+        # TODO: Implement type/size validation
+        pass
+    
+    def validate_challenge_rating(self, stat_block: CreatureStatBlock) -> Dict[str, Any]:
+        """
+        Validate that creature stats match its challenge rating.
+        
+        Args:
+            stat_block: Creature to validate
+            
+        Returns:
+            Validation results with suggested CR if different
+        """
+        # TODO: Implement CR validation
+        pass
+
+# ============================================================================
+# CREATURE DATA GENERATION
+# ============================================================================
+
+class CreatureDataGenerator:
+    """Generates creature data using LLM services."""
+    
+    def __init__(self, llm_service: LLMService):
+        self.llm_service = llm_service
+        self.logger = logging.getLogger(__name__)
+    
+    async def generate_creature_description(self, stat_block: CreatureStatBlock) -> str:
+        """
+        Generate descriptive text for a creature.
+        
+        Args:
+            stat_block: Creature stat block
+            
+        Returns:
+            Generated description
+        """
+        # TODO: Implement description generation
+        pass
+    
+    async def generate_creature_tactics(self, stat_block: CreatureStatBlock, 
+                                      actions: List[CreatureAction]) -> str:
+        """
+        Generate tactical combat description.
+        
+        Args:
+            stat_block: Creature stat block
+            actions: Creature actions
+            
+        Returns:
+            Tactical description
+        """
+        # TODO: Implement tactics generation
+        pass
+    
+    async def generate_creature_lore(self, stat_block: CreatureStatBlock) -> Dict[str, str]:
+        """
+        Generate background lore for a creature.
+        
+        Args:
+            stat_block: Creature stat block
+            
+        Returns:
+            Dictionary with lore sections
+        """
+        # TODO: Implement lore generation
+        pass
+    
+    def suggest_creature_variants(self, base_creature: CreatureStatBlock) -> List[Dict[str, Any]]:
+        """
+        Suggest interesting variants of a base creature.
+        
+        Args:
+            base_creature: Base creature stat block
+            
+        Returns:
+            List of variant suggestions
+        """
+        # TODO: Implement variant suggestions
+        pass
+
+# ============================================================================
+# UTILITY FUNCTIONS
+# ============================================================================
+
+def quick_creature(name: str, creature_type: str, challenge_rating: float) -> CreatureResult:
+    """
+    Quickly create a basic creature with minimal input.
+    
+    Args:
+        name: Creature name
+        creature_type: Type of creature
+        challenge_rating: Desired challenge rating
+        
+    Returns:
+        CreatureResult with basic creature
+    """
+    # TODO: Implement quick creature creation
+    pass
+
+def creature_from_template(template_name: str, modifications: Dict[str, Any] = None) -> CreatureResult:
+    """
+    Create a creature from a predefined template.
+    
+    Args:
+        template_name: Name of creature template
+        modifications: Optional modifications to apply
+        
+    Returns:
+        CreatureResult with template-based creature
+    """
+    # TODO: Implement template-based creation
+    pass
+
+def export_creature_statblock(creature: CreatureStatBlock, format: str = "json") -> str:
+    """
+    Export creature stat block in various formats.
+    
+    Args:
+        creature: Creature stat block
+        format: Export format ("json", "markdown", "dnd_beyond")
+        
+    Returns:
+        Formatted creature data
+    """
+    # TODO: Implement export functionality
+    pass
 
 class JournalBasedEvolution:
     """Handles character evolution based on journal entries and play history."""

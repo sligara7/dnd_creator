@@ -1,3 +1,6 @@
+# this follows the character creation module, but should condensed and simplified for creating NPCs - which are a largely a subset of the character creation
+# this is a placeholder for the NPC creation module, which will be used to create non-player characters (NPCs) in the game
+# should utilize a similar process of using an LLM service to generate character concepts, backstories, and other attributes, but for NPCs - generally, NPCs are much simpler than full characters, so a lot of features can be eliminated
 # how to ensure that a the created species, class, weapons, armor, and spells are all consistent and aligned with created character concept?  
 # for instance, if a water species is created, that it isn't given a fire weapon?
 

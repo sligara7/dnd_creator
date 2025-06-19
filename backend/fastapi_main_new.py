@@ -173,7 +173,7 @@ from config_new import settings
 from llm_service_new import create_llm_service
 
 # Import database models and operations
-from database_models_new import CharacterDB, SessionDB, Character, CharacterSession, init_database, get_db
+from database_models_new import CharacterDB, CharacterSessionDB, Character, CharacterSession, init_database, get_db
 from database_models_new import (
     CharacterRepository, CharacterBranch, CharacterCommit, CharacterTag,
     CharacterRepositoryManager, CharacterVersioningAPI
@@ -422,7 +422,7 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

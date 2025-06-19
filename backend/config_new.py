@@ -21,10 +21,12 @@ class Settings(BaseSettings):
     # Database Configuration
     database_url: str = "sqlite:///./characters.db"  # Default to SQLite for development
     database_echo: bool = False  # Set to True for SQL query logging
+    db_password: Optional[str] = None  # Additional database password field
     
     # External LLM Service Configuration
     llm_provider: str = "openai"  # "openai", "anthropic", "cohere", etc.
     openai_api_key: Optional[str] = None
+    openai_model: Optional[str] = None  # Allow OpenAI model override
     anthropic_api_key: Optional[str] = None
     
     # LLM Request Configuration
@@ -38,7 +40,14 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     
     # CORS Configuration
-    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:8080"]
+    cors_origins: str = "http://localhost:3000,http://localhost:8080"
+    
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Parse CORS origins from comma-separated string."""
+        if isinstance(self.cors_origins, str):
+            return [origin.strip() for origin in self.cors_origins.split(",")]
+        return self.cors_origins
     
     # Logging Configuration
     log_level: str = "INFO"
@@ -47,6 +56,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "ignore"  # Ignore extra fields from .env
 
 
 # Global settings instance

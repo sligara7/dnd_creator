@@ -47,8 +47,8 @@ def test_imports():
         return False
         
     try:
-        # Skip FastAPI import for now due to missing CharacterRepositoryManager
-        print("⚠️  FastAPI app import skipped (needs CharacterRepositoryManager implementation)")
+        from fastapi_main_new import app
+        print("✅ FastAPI app imported successfully")
         return True
     except Exception as e:
         print(f"❌ FastAPI app import failed: {e}")

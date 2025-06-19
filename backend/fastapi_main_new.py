@@ -178,7 +178,7 @@ from database_models_new import (
     CharacterRepository, CharacterBranch, CharacterCommit, CharacterTag,
     CharacterRepositoryManager, CharacterVersioningAPI
 )
-from character_models import CharacterSheet, DnDCondition
+from character_models import CharacterCore, DnDCondition
 
 logger = logging.getLogger(__name__)
 
@@ -480,14 +480,14 @@ async def create_character(character_data: CharacterCreateRequest, db = Depends(
     Operation Flow: Request -> CharacterSheet -> CharacterDB.save_character_sheet() -> Database
     """
     try:
-        # Create CharacterSheet from request data
-        character_sheet = CharacterSheet(character_data.name)
+        # Create CharacterCore from request data
+        character_sheet = CharacterCore(character_data.name)
         
         # Set core character properties
-        character_sheet.core.species = character_data.species
-        character_sheet.core.background = character_data.background
-        character_sheet.core.alignment = character_data.alignment
-        character_sheet.core.character_classes = character_data.character_classes
+        character_sheet.species = character_data.species
+        character_sheet.background = character_data.background
+        character_sheet.alignment = character_data.alignment
+        character_sheet.character_classes = character_data.character_classes
         character_sheet.core.backstory = character_data.backstory
         
         # Set ability scores
@@ -835,14 +835,14 @@ async def validate_character(character_data: CharacterCreateRequest):
     Operation Flow: Request -> CharacterSheet -> validate() -> Response
     """
     try:
-        # Create temporary CharacterSheet for validation
-        character_sheet = CharacterSheet(character_data.name)
+        # Create temporary CharacterCore for validation
+        character_sheet = CharacterCore(character_data.name)
         
         # Set character properties
-        character_sheet.core.species = character_data.species
-        character_sheet.core.background = character_data.background
-        character_sheet.core.alignment = character_data.alignment
-        character_sheet.core.character_classes = character_data.character_classes
+        character_sheet.species = character_data.species
+        character_sheet.background = character_data.background
+        character_sheet.alignment = character_data.alignment
+        character_sheet.character_classes = character_data.character_classes
         character_sheet.core.backstory = character_data.backstory
         
         # Set ability scores

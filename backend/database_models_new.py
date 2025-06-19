@@ -605,6 +605,508 @@ class CharacterSessionDB:
 
 
 # ============================================================================
+# CHARACTER REPOSITORY MANAGER - GIT-LIKE OPERATIONS
+# ============================================================================
+
+class CharacterRepositoryManager:
+    """
+    High-level manager for Git-like character versioning operations.
+    
+    This class provides convenient methods for:
+    - Creating and managing character repositories
+    - Branch operations (create, merge, list)
+    - Commit operations (create, retrieve, compare)
+    - Character state management across versions
+    """
+    
+    @staticmethod
+    def create_repository(db: Session, name: str, description: str = None, 
+                         player_name: str = None, initial_character_data: Dict[str, Any] = None) -> CharacterRepository:
+        """
+        Create a new character repository with initial commit.
+        
+        Args:
+            db: Database session
+            name: Repository name (character name)
+            description: Repository description
+            player_name: Player name
+            initial_character_data: Initial character state
+            
+        Returns:
+            CharacterRepository: Created repository
+        """
+        # Create repository
+        repo = CharacterRepository(
+            name=name,
+            description=description,
+            player_name=player_name
+        )
+        db.add(repo)
+        db.flush()  # Get the ID
+        
+        # Create main branch
+        main_branch = CharacterBranch(
+            repository_id=repo.id,
+            branch_name="main",
+            description="Main character development branch",
+            branch_type="main"
+        )
+        db.add(main_branch)
+        db.flush()
+        
+        # Create initial commit if character data provided
+        if initial_character_data:
+            initial_commit = CharacterRepositoryManager.create_commit(
+                db=db,
+                repository_id=repo.id,
+                branch_name="main",
+                commit_message="Initial character creation",
+                character_data=initial_character_data,
+                character_level=initial_character_data.get("level", 1),
+                commit_type="initial"
+            )
+            repo.initial_commit_hash = initial_commit.commit_hash
+            main_branch.head_commit_hash = initial_commit.commit_hash
+        
+        db.commit()
+        return repo
+    
+    @staticmethod
+    def create_branch(db: Session, repository_id: int, branch_name: str, 
+                     description: str = None, parent_branch: str = "main",
+                     branch_point_hash: str = None) -> CharacterBranch:
+        """
+        Create a new development branch.
+        
+        Args:
+            db: Database session
+            repository_id: Repository ID
+            branch_name: New branch name
+            description: Branch description
+            parent_branch: Branch to create from
+            branch_point_hash: Specific commit to branch from
+            
+        Returns:
+            CharacterBranch: Created branch
+        """
+        # Get parent branch info
+        parent = db.query(CharacterBranch).filter(
+            CharacterBranch.repository_id == repository_id,
+            CharacterBranch.branch_name == parent_branch
+        ).first()
+        
+        if not parent:
+            raise ValueError(f"Parent branch '{parent_branch}' not found")
+        
+        # Use parent's head commit if no specific branch point
+        if not branch_point_hash:
+            branch_point_hash = parent.head_commit_hash
+        
+        # Create new branch
+        branch = CharacterBranch(
+            repository_id=repository_id,
+            branch_name=branch_name,
+            description=description,
+            parent_branch=parent_branch,
+            branch_point_hash=branch_point_hash,
+            head_commit_hash=branch_point_hash  # Start at branch point
+        )
+        
+        db.add(branch)
+        db.commit()
+        return branch
+    
+    @staticmethod
+    def create_commit(db: Session, repository_id: int, branch_name: str,
+                     commit_message: str, character_data: Dict[str, Any],
+                     character_level: int, commit_type: str = "update",
+                     milestone_name: str = None, session_date: datetime = None,
+                     campaign_context: str = None, created_by: str = None) -> CharacterCommit:
+        """
+        Create a new character commit.
+        
+        Args:
+            db: Database session
+            repository_id: Repository ID
+            branch_name: Target branch
+            commit_message: Commit message
+            character_data: Character state data
+            character_level: Character level
+            commit_type: Type of commit (initial, level_up, story, etc.)
+            milestone_name: Milestone name
+            session_date: Game session date
+            campaign_context: Campaign context
+            created_by: Creator name
+            
+        Returns:
+            CharacterCommit: Created commit
+        """
+        # Get branch
+        branch = db.query(CharacterBranch).filter(
+            CharacterBranch.repository_id == repository_id,
+            CharacterBranch.branch_name == branch_name
+        ).first()
+        
+        if not branch:
+            raise ValueError(f"Branch '{branch_name}' not found")
+        
+        # Generate commit hash
+        import time
+        hash_input = f"{character_data}{commit_message}{time.time()}{branch.head_commit_hash}"
+        commit_hash = hashlib.sha256(hash_input.encode()).hexdigest()
+        short_hash = commit_hash[:8]
+        
+        # Create commit
+        commit = CharacterCommit(
+            repository_id=repository_id,
+            branch_id=branch.id,
+            commit_hash=commit_hash,
+            short_hash=short_hash,
+            commit_message=commit_message,
+            commit_type=commit_type,
+            character_level=character_level,
+            character_data=character_data,
+            parent_commit_hash=branch.head_commit_hash,
+            milestone_name=milestone_name,
+            session_date=session_date,
+            campaign_context=campaign_context,
+            created_by=created_by
+        )
+        
+        db.add(commit)
+        
+        # Update branch head
+        branch.head_commit_hash = commit_hash
+        branch.updated_at = datetime.utcnow()
+        
+        db.commit()
+        return commit
+    
+    @staticmethod
+    def get_commit_history(db: Session, repository_id: int, branch_name: str = None,
+                          limit: int = 50) -> List[CharacterCommit]:
+        """
+        Get commit history for a repository or branch.
+        
+        Args:
+            db: Database session
+            repository_id: Repository ID
+            branch_name: Branch name (optional)
+            limit: Maximum commits to return
+            
+        Returns:
+            List[CharacterCommit]: List of commits
+        """
+        query = db.query(CharacterCommit).filter(
+            CharacterCommit.repository_id == repository_id
+        )
+        
+        if branch_name:
+            branch = db.query(CharacterBranch).filter(
+                CharacterBranch.repository_id == repository_id,
+                CharacterBranch.branch_name == branch_name
+            ).first()
+            if branch:
+                query = query.filter(CharacterCommit.branch_id == branch.id)
+        
+        return query.order_by(CharacterCommit.created_at.desc()).limit(limit).all()
+    
+    @staticmethod
+    def get_character_at_commit(db: Session, commit_hash: str) -> Dict[str, Any]:
+        """
+        Get character data at a specific commit.
+        
+        Args:
+            db: Database session
+            commit_hash: Commit hash
+            
+        Returns:
+            Dict: Character data at commit
+        """
+        commit = db.query(CharacterCommit).filter(
+            CharacterCommit.commit_hash == commit_hash
+        ).first()
+        
+        if not commit:
+            raise ValueError(f"Commit '{commit_hash}' not found")
+        
+        return commit.character_data
+    
+    @staticmethod
+    def create_tag(db: Session, repository_id: int, tag_name: str,
+                   commit_hash: str, description: str = None,
+                   tag_type: str = "milestone", created_by: str = None) -> CharacterTag:
+        """
+        Create a tag for a specific commit.
+        
+        Args:
+            db: Database session
+            repository_id: Repository ID
+            tag_name: Tag name
+            commit_hash: Target commit hash
+            description: Tag description
+            tag_type: Tag type
+            created_by: Creator name
+            
+        Returns:
+            CharacterTag: Created tag
+        """
+        tag = CharacterTag(
+            repository_id=repository_id,
+            tag_name=tag_name,
+            commit_hash=commit_hash,
+            description=description,
+            tag_type=tag_type,
+            created_by=created_by
+        )
+        
+        db.add(tag)
+        db.commit()
+        return tag
+    
+    @staticmethod
+    def get_repository_tree(db: Session, repository_id: int) -> Dict[str, Any]:
+        """
+        Get complete repository tree structure for visualization.
+        
+        Args:
+            db: Database session
+            repository_id: Repository ID
+            
+        Returns:
+            Dict: Repository tree data
+        """
+        repo = db.query(CharacterRepository).filter(
+            CharacterRepository.id == repository_id
+        ).first()
+        
+        if not repo:
+            raise ValueError(f"Repository {repository_id} not found")
+        
+        branches = db.query(CharacterBranch).filter(
+            CharacterBranch.repository_id == repository_id
+        ).all()
+        
+        commits = db.query(CharacterCommit).filter(
+            CharacterCommit.repository_id == repository_id
+        ).order_by(CharacterCommit.created_at.desc()).all()
+        
+        tags = db.query(CharacterTag).filter(
+            CharacterTag.repository_id == repository_id
+        ).all()
+        
+        return {
+            "repository": repo.to_dict(),
+            "branches": [branch.to_dict() for branch in branches],
+            "commits": [commit.to_dict() for commit in commits],
+            "tags": [tag.to_dict() for tag in tags]
+        }
+
+
+# ============================================================================
+# CHARACTER VERSIONING API - FRONTEND-FRIENDLY METHODS
+# ============================================================================
+
+class CharacterVersioningAPI:
+    """
+    Frontend-friendly API methods for character versioning.
+    
+    This class provides methods optimized for frontend consumption:
+    - Timeline data for visualization components
+    - Graph data for D3.js/vis.js integration
+    - Simplified data structures for JavaScript consumption
+    """
+    
+    @staticmethod
+    def get_character_timeline_for_frontend(db: Session, repository_id: int) -> Dict[str, Any]:
+        """
+        Get timeline data optimized for frontend visualization.
+        
+        Args:
+            db: Database session
+            repository_id: Repository ID
+            
+        Returns:
+            Dict: Timeline data for frontend
+        """
+        commits = db.query(CharacterCommit).filter(
+            CharacterCommit.repository_id == repository_id
+        ).order_by(CharacterCommit.created_at.asc()).all()
+        
+        branches = db.query(CharacterBranch).filter(
+            CharacterBranch.repository_id == repository_id
+        ).all()
+        
+        # Build timeline events
+        events = []
+        for commit in commits:
+            branch_name = next((b.branch_name for b in branches if b.id == commit.branch_id), "main")
+            
+            events.append({
+                "id": commit.commit_hash,
+                "type": "commit",
+                "timestamp": commit.created_at.isoformat(),
+                "level": commit.character_level,
+                "message": commit.commit_message,
+                "branch": branch_name,
+                "milestone": commit.milestone_name,
+                "commit_type": commit.commit_type,
+                "short_hash": commit.short_hash
+            })
+        
+        # Add branch creation events
+        for branch in branches:
+            if branch.branch_name != "main":  # Skip main branch
+                events.append({
+                    "id": f"branch_{branch.id}",
+                    "type": "branch_create",
+                    "timestamp": branch.created_at.isoformat(),
+                    "message": f"Created branch: {branch.branch_name}",
+                    "branch": branch.branch_name,
+                    "description": branch.description
+                })
+        
+        # Sort by timestamp
+        events.sort(key=lambda x: x["timestamp"])
+        
+        return {
+            "repository_id": repository_id,
+            "events": events,
+            "branch_count": len(branches),
+            "commit_count": len(commits)
+        }
+    
+    @staticmethod
+    def get_character_visualization_data(db: Session, repository_id: int) -> Dict[str, Any]:
+        """
+        Get graph visualization data for D3.js/vis.js.
+        
+        Args:
+            db: Database session
+            repository_id: Repository ID
+            
+        Returns:
+            Dict: Graph data with nodes and edges
+        """
+        commits = db.query(CharacterCommit).filter(
+            CharacterCommit.repository_id == repository_id
+        ).all()
+        
+        branches = db.query(CharacterBranch).filter(
+            CharacterBranch.repository_id == repository_id
+        ).all()
+        
+        # Create branch color mapping
+        branch_colors = {
+            "main": "#2563eb",  # Blue
+            "development": "#16a34a",  # Green
+            "experimental": "#dc2626",  # Red
+            "alternate": "#7c3aed"  # Purple
+        }
+        
+        # Build nodes (commits)
+        nodes = []
+        for commit in commits:
+            branch = next((b for b in branches if b.id == commit.branch_id), None)
+            branch_name = branch.branch_name if branch else "main"
+            
+            nodes.append({
+                "id": commit.commit_hash,
+                "label": f"L{commit.character_level}: {commit.short_hash}",
+                "title": commit.commit_message,
+                "group": branch_name,
+                "color": branch_colors.get(branch.branch_type if branch else "main", "#6b7280"),
+                "level": commit.character_level,
+                "timestamp": commit.created_at.isoformat(),
+                "commit_type": commit.commit_type,
+                "milestone": commit.milestone_name
+            })
+        
+        # Build edges (commit relationships)
+        edges = []
+        for commit in commits:
+            if commit.parent_commit_hash:
+                edges.append({
+                    "from": commit.parent_commit_hash,
+                    "to": commit.commit_hash,
+                    "arrows": "to"
+                })
+            
+            # Handle merge commits
+            if commit.merge_parent_hash:
+                edges.append({
+                    "from": commit.merge_parent_hash,
+                    "to": commit.commit_hash,
+                    "arrows": "to",
+                    "dashes": True,
+                    "color": {"color": "#f59e0b"}  # Orange for merge
+                })
+        
+        return {
+            "nodes": nodes,
+            "edges": edges,
+            "branches": [
+                {
+                    "name": branch.branch_name,
+                    "type": branch.branch_type,
+                    "color": branch_colors.get(branch.branch_type, "#6b7280"),
+                    "active": branch.is_active,
+                    "merged": branch.is_merged
+                }
+                for branch in branches
+            ]
+        }
+    
+    @staticmethod
+    def level_up_character(db: Session, repository_id: int, branch_name: str,
+                          new_character_data: Dict[str, Any], level_up_choices: Dict[str, Any] = None) -> CharacterCommit:
+        """
+        Handle character level up with automatic commit creation.
+        
+        Args:
+            db: Database session
+            repository_id: Repository ID
+            branch_name: Target branch
+            new_character_data: Updated character data
+            level_up_choices: Level up choices made
+            
+        Returns:
+            CharacterCommit: Level up commit
+        """
+        current_level = new_character_data.get("level", 1)
+        previous_level = current_level - 1
+        
+        # Build commit message
+        class_info = new_character_data.get("character_classes", {})
+        class_names = ", ".join([f"{cls} {lvl}" for cls, lvl in class_info.items()])
+        commit_message = f"Level {current_level}: {class_names}"
+        
+        if level_up_choices:
+            choices_summary = []
+            if "new_spells" in level_up_choices:
+                choices_summary.append(f"Learned {len(level_up_choices['new_spells'])} spells")
+            if "ability_score_improvement" in level_up_choices:
+                choices_summary.append("ASI applied")
+            if "new_features" in level_up_choices:
+                choices_summary.append(f"Gained {len(level_up_choices['new_features'])} features")
+            
+            if choices_summary:
+                commit_message += f" - {', '.join(choices_summary)}"
+        
+        # Create level up commit
+        return CharacterRepositoryManager.create_commit(
+            db=db,
+            repository_id=repository_id,
+            branch_name=branch_name,
+            commit_message=commit_message,
+            character_data=new_character_data,
+            character_level=current_level,
+            commit_type="level_up",
+            milestone_name=f"Level {current_level}"
+        )
+
+
+# ============================================================================
 # USAGE EXAMPLES AND DOCUMENTATION
 # ============================================================================
 

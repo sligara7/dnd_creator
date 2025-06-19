@@ -65,6 +65,19 @@ COMPLETE FRONTEND INTEGRATION SUPPORT:
    - Personality: traits, ideals, bonds, flaws, backstory
    - Journal entries and character evolution tracking
 
+📊 CHARACTER VERSIONING SYSTEM (Git-like):
+   - POST /api/v1/character-repositories - Create character with versioning
+   - GET /api/v1/character-repositories/{id} - Get repository information
+   - GET /api/v1/character-repositories/{id}/timeline - Timeline for visualization
+   - GET /api/v1/character-repositories/{id}/visualization - Graph visualization data
+   - POST /api/v1/character-repositories/{id}/branches - Create alternate development paths
+   - GET /api/v1/character-repositories/{id}/branches - List all branches
+   - POST /api/v1/character-repositories/{id}/commits - Create character commits
+   - GET /api/v1/character-repositories/{id}/commits - Get commit history
+   - GET /api/v1/character-commits/{hash}/character - Get character at specific commit
+   - POST /api/v1/character-repositories/{id}/level-up - Level up with auto-commit
+   - POST /api/v1/character-repositories/{id}/tags - Tag important milestones
+
 🔧 PARAMETER SETTING (All Setter Methods via API):
    - PUT /api/v1/characters/{id} - Update core character properties
    - PUT /api/v1/characters/{id}/state - Real-time state updates (HP, conditions, etc.)
@@ -161,6 +174,10 @@ from llm_service_new import create_llm_service
 
 # Import database models and operations
 from database_models_new import CharacterDB, SessionDB, Character, CharacterSession, init_database, get_db
+from database_models_new import (
+    CharacterRepository, CharacterBranch, CharacterCommit, CharacterTag,
+    CharacterRepositoryManager, CharacterVersioningAPI
+)
 from character_models import CharacterSheet, DnDCondition
 
 logger = logging.getLogger(__name__)
@@ -224,9 +241,134 @@ class CharacterResponse(BaseModel):
     proficiency_bonus: int
     equipment: Dict[str, Any]
     backstory: Optional[str]
+
+# ============================================================================
+# CHARACTER VERSIONING PYDANTIC MODELS
+# ============================================================================
+
+class CharacterRepositoryCreateRequest(BaseModel):
+    """Request model for creating a character repository."""
+    name: str
+    player_name: Optional[str] = None
+    description: Optional[str] = None
+    character_data: Dict[str, Any]
+
+class CharacterBranchCreateRequest(BaseModel):
+    """Request model for creating a character branch."""
+    branch_name: str
+    source_commit_hash: str
+    description: Optional[str] = None
+
+class CharacterCommitCreateRequest(BaseModel):
+    """Request model for creating a character commit."""
+    branch_name: str
+    character_data: Dict[str, Any]
+    commit_message: str
+    commit_type: Optional[str] = "update"
+    milestone_name: Optional[str] = None
+    session_date: Optional[str] = None
+    campaign_context: Optional[str] = None
+    created_by: Optional[str] = None
+
+class CharacterLevelUpRequest(BaseModel):
+    """Request model for character level up."""
+    branch_name: str
+    new_character_data: Dict[str, Any]
+    level_info: Dict[str, Any]
+    session_context: Optional[str] = None
+
+class CharacterTagCreateRequest(BaseModel):
+    """Request model for creating a character tag."""
+    commit_hash: str
+    tag_name: str
+    tag_type: Optional[str] = "milestone"
+    description: Optional[str] = None
+    created_by: Optional[str] = None
+
+class CharacterRepositoryResponse(BaseModel):
+    """Response model for character repository data."""
+    id: int
+    repository_id: str
+    name: str
+    description: Optional[str]
+    player_name: Optional[str]
+    is_public: bool
+    allow_forks: bool
+    initial_commit_hash: Optional[str]
+    default_branch: str
     created_at: str
     updated_at: str
+    branch_count: int
+    commit_count: int
 
+class CharacterBranchResponse(BaseModel):
+    """Response model for character branch data."""
+    id: int
+    repository_id: int
+    branch_name: str
+    description: Optional[str]
+    branch_type: str
+    head_commit_hash: Optional[str]
+    parent_branch: Optional[str]
+    branch_point_hash: Optional[str]
+    is_active: bool
+    is_merged: bool
+    merged_into: Optional[str]
+    created_at: str
+    updated_at: str
+    commit_count: int
+
+class CharacterCommitResponse(BaseModel):
+    """Response model for character commit data."""
+    id: int
+    repository_id: int
+    branch_id: int
+    commit_hash: str
+    short_hash: str
+    commit_message: str
+    commit_type: str
+    character_level: int
+    experience_points: int
+    milestone_name: Optional[str]
+    parent_commit_hash: Optional[str]
+    merge_parent_hash: Optional[str]
+    character_data: Dict[str, Any]
+    changes_summary: Optional[Dict[str, Any]]
+    files_changed: Optional[List[str]]
+    session_date: Optional[str]
+    campaign_context: Optional[str]
+    dm_notes: Optional[str]
+    created_at: str
+    created_by: Optional[str]
+
+class CharacterTagResponse(BaseModel):
+    """Response model for character tag data."""
+    id: int
+    repository_id: int
+    tag_name: str
+    tag_type: str
+    description: Optional[str]
+    commit_hash: str
+    created_at: str
+    created_by: Optional[str]
+
+class CharacterTimelineResponse(BaseModel):
+    """Response model for character timeline visualization."""
+    character_name: str
+    player_name: Optional[str]
+    branches: List[Dict[str, Any]]
+    commits: List[Dict[str, Any]]
+    connections: List[Dict[str, Any]]
+
+class CharacterVisualizationResponse(BaseModel):
+    """Response model for frontend graph visualization."""
+    nodes: List[Dict[str, Any]]
+    edges: List[Dict[str, Any]]
+    character_name: str
+    player_name: Optional[str]
+    branches: List[Dict[str, Any]]
+
+# ...existing code...
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -752,30 +894,363 @@ async def validate_existing_character(character_id: int, db = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Validation failed: {str(e)}")
 
 
-# Error handlers
-@app.exception_handler(404)
-async def not_found_handler(request, exc):
-    return JSONResponse(
-        status_code=404,
-        content={"detail": "Endpoint not found"}
-    )
+# ============================================================================
+# CHARACTER VERSIONING ENDPOINTS
+# ============================================================================
+
+@app.post("/api/v1/character-repositories", response_model=CharacterRepositoryResponse, tags=["character-versioning"])
+async def create_character_repository(
+    repo_data: CharacterRepositoryCreateRequest, 
+    db = Depends(get_db)
+):
+    """
+    Create a new character repository with Git-like versioning.
+    
+    This creates the initial character repository with an initial commit on the main branch.
+    The repository serves as a container for all versions and branches of a character concept.
+    
+    Operation Flow: Request -> CharacterRepositoryManager.create_repository() -> Response
+    """
+    try:
+        repo = CharacterRepositoryManager.create_repository(
+            db=db,
+            name=repo_data.name,
+            initial_character_data=repo_data.character_data,
+            player_name=repo_data.player_name,
+            description=repo_data.description
+        )
+        
+        return CharacterRepositoryResponse(**repo.to_dict())
+        
+    except Exception as e:
+        logger.error(f"Failed to create character repository: {e}")
+        raise HTTPException(status_code=500, detail=f"Repository creation failed: {str(e)}")
 
 
-@app.exception_handler(500)
-async def internal_error_handler(request, exc):
-    logger.error(f"Internal server error: {exc}")
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "Internal server error"}
-    )
+@app.get("/api/v1/character-repositories/{repository_id}", response_model=CharacterRepositoryResponse, tags=["character-versioning"])
+async def get_character_repository(repository_id: int, db = Depends(get_db)):
+    """
+    Get character repository information.
+    
+    Returns basic repository metadata including branch and commit counts.
+    """
+    try:
+        repo = db.query(CharacterRepository).filter(CharacterRepository.id == repository_id).first()
+        if not repo:
+            raise HTTPException(status_code=404, detail="Character repository not found")
+        
+        return CharacterRepositoryResponse(**repo.to_dict())
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get character repository {repository_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Repository retrieval failed: {str(e)}")
 
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(
-        "fastapi_main_new:app",
-        host=settings.host,
-        port=settings.port,
-        reload=settings.debug,
-        log_level=settings.log_level.lower()
-    )
+@app.get("/api/v1/character-repositories/{repository_id}/timeline", response_model=CharacterTimelineResponse, tags=["character-versioning"])
+async def get_character_timeline(repository_id: int, db = Depends(get_db)):
+    """
+    Get character timeline data for frontend visualization.
+    
+    Returns complete repository structure including branches, commits, and relationships
+    formatted for frontend graph display.
+    
+    Operation Flow: Request -> CharacterVersioningAPI.get_character_timeline_for_frontend() -> Response
+    """
+    try:
+        timeline_data = CharacterVersioningAPI.get_character_timeline_for_frontend(db, repository_id)
+        if not timeline_data:
+            raise HTTPException(status_code=404, detail="Character repository not found")
+        
+        return CharacterTimelineResponse(**timeline_data)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get character timeline for repository {repository_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Timeline retrieval failed: {str(e)}")
+
+
+@app.get("/api/v1/character-repositories/{repository_id}/visualization", response_model=CharacterVisualizationResponse, tags=["character-versioning"])
+async def get_character_visualization(repository_id: int, db = Depends(get_db)):
+    """
+    Get character visualization data formatted for graph libraries.
+    
+    Returns nodes, edges, and metadata formatted for frontend graph visualization
+    libraries like D3.js, vis.js, or Cytoscape.js.
+    
+    Operation Flow: Request -> CharacterRepositoryManager.get_repository_tree() -> Format -> Response
+    """
+    try:
+        tree_data = CharacterRepositoryManager.get_repository_tree(db, repository_id)
+        if not tree_data:
+            raise HTTPException(status_code=404, detail="Character repository not found")
+        
+        # Format for graph visualization
+        nodes = []
+        edges = []
+        
+        # Create nodes for each commit
+        for commit in tree_data["commits"]:
+            nodes.append({
+                "id": commit["short_hash"],
+                "label": f"Level {commit['character_level']}\\n{commit['commit_message'][:30]}...",
+                "level": commit["character_level"],
+                "type": commit["commit_type"],
+                "branch": commit["branch_id"],
+                "color": get_commit_color(commit["commit_type"]),
+                "size": get_commit_size(commit["character_level"]),
+                "title": commit["commit_message"],
+                "commit_hash": commit["commit_hash"],
+                "created_at": commit["created_at"]
+            })
+        
+        # Create edges for commit relationships
+        for commit_hash, parent_hash in tree_data["relationships"]["parent_child"].items():
+            edges.append({
+                "from": parent_hash[:8],
+                "to": commit_hash[:8],
+                "type": "progression",
+                "color": "#666666"
+            })
+        
+        return CharacterVisualizationResponse(
+            nodes=nodes,
+            edges=edges,
+            character_name=tree_data["repository"]["name"],
+            player_name=tree_data["repository"]["player_name"],
+            branches=tree_data["branches"]
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get character visualization for repository {repository_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Visualization data retrieval failed: {str(e)}")
+
+
+@app.post("/api/v1/character-repositories/{repository_id}/branches", response_model=CharacterBranchResponse, tags=["character-versioning"])
+async def create_character_branch(
+    repository_id: int, 
+    branch_data: CharacterBranchCreateRequest, 
+    db = Depends(get_db)
+):
+    """
+    Create a new character development branch.
+    
+    Branches allow players to explore "what-if" scenarios from any point in their character's
+    development history. For example, branching at level 3 to explore multiclassing options.
+    
+    Operation Flow: Request -> CharacterRepositoryManager.create_branch() -> Response
+    """
+    try:
+        branch = CharacterRepositoryManager.create_branch(
+            db=db,
+            repository_id=repository_id,
+            new_branch_name=branch_data.branch_name,
+            source_commit_hash=branch_data.source_commit_hash,
+            description=branch_data.description
+        )
+        
+        return CharacterBranchResponse(**branch.to_dict())
+        
+    except Exception as e:
+        logger.error(f"Failed to create character branch: {e}")
+        raise HTTPException(status_code=500, detail=f"Branch creation failed: {str(e)}")
+
+
+@app.get("/api/v1/character-repositories/{repository_id}/branches", response_model=List[CharacterBranchResponse], tags=["character-versioning"])
+async def list_character_branches(repository_id: int, db = Depends(get_db)):
+    """
+    List all branches in a character repository.
+    
+    Returns all development branches for a character, including their status and metadata.
+    """
+    try:
+        branches = db.query(CharacterBranch).filter(
+            CharacterBranch.repository_id == repository_id
+        ).all()
+        
+        return [CharacterBranchResponse(**branch.to_dict()) for branch in branches]
+        
+    except Exception as e:
+        logger.error(f"Failed to list character branches for repository {repository_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Branch listing failed: {str(e)}")
+
+
+@app.post("/api/v1/character-repositories/{repository_id}/commits", response_model=CharacterCommitResponse, tags=["character-versioning"])
+async def create_character_commit(
+    repository_id: int, 
+    commit_data: CharacterCommitCreateRequest, 
+    db = Depends(get_db)
+):
+    """
+    Create a new character commit.
+    
+    Commits represent character state changes like leveling up, equipment changes,
+    story developments, or any other significant character modifications.
+    
+    Operation Flow: Request -> CharacterRepositoryManager.commit_character_change() -> Response
+    """
+    try:
+        commit = CharacterRepositoryManager.commit_character_change(
+            db=db,
+            repository_id=repository_id,
+            branch_name=commit_data.branch_name,
+            character_data=commit_data.character_data,
+            commit_message=commit_data.commit_message,
+            commit_type=commit_data.commit_type,
+            milestone_name=commit_data.milestone_name,
+            session_date=commit_data.session_date,
+            campaign_context=commit_data.campaign_context,
+            created_by=commit_data.created_by
+        )
+        
+        return CharacterCommitResponse(**commit.to_dict())
+        
+    except Exception as e:
+        logger.error(f"Failed to create character commit: {e}")
+        raise HTTPException(status_code=500, detail=f"Commit creation failed: {str(e)}")
+
+
+@app.get("/api/v1/character-repositories/{repository_id}/commits", response_model=List[CharacterCommitResponse], tags=["character-versioning"])
+async def get_character_commits(
+    repository_id: int, 
+    branch_name: Optional[str] = None, 
+    limit: int = 50,
+    db = Depends(get_db)
+):
+    """
+    Get commit history for a character repository.
+    
+    Returns commits in reverse chronological order. Can be filtered by branch name.
+    
+    Operation Flow: Request -> CharacterRepositoryManager.get_commit_history() -> Response
+    """
+    try:
+        commits = CharacterRepositoryManager.get_commit_history(
+            db=db,
+            repository_id=repository_id,
+            branch_name=branch_name,
+            limit=limit
+        )
+        
+        return [CharacterCommitResponse(**commit.to_dict()) for commit in commits]
+        
+    except Exception as e:
+        logger.error(f"Failed to get character commits for repository {repository_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Commit history retrieval failed: {str(e)}")
+
+
+@app.get("/api/v1/character-commits/{commit_hash}/character", tags=["character-versioning"])
+async def get_character_at_commit(commit_hash: str, db = Depends(get_db)):
+    """
+    Get character data at a specific commit.
+    
+    Returns the complete character state as it existed at the specified commit.
+    Useful for viewing character history or rolling back to previous states.
+    
+    Operation Flow: Request -> CharacterRepositoryManager.get_character_at_commit() -> Response
+    """
+    try:
+        character_data = CharacterRepositoryManager.get_character_at_commit(db, commit_hash)
+        if not character_data:
+            raise HTTPException(status_code=404, detail="Commit not found")
+        
+        return {
+            "success": True,
+            "commit_hash": commit_hash,
+            "character_data": character_data
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get character data at commit {commit_hash}: {e}")
+        raise HTTPException(status_code=500, detail=f"Character retrieval failed: {str(e)}")
+
+
+@app.post("/api/v1/character-repositories/{repository_id}/level-up", tags=["character-versioning"])
+async def level_up_character(
+    repository_id: int, 
+    level_up_data: CharacterLevelUpRequest, 
+    db = Depends(get_db)
+):
+    """
+    Handle character level up with automatic commit creation.
+    
+    This is a high-level operation that creates a commit specifically for character
+    level advancement, with appropriate commit messages and milestone tracking.
+    
+    Operation Flow: Request -> CharacterVersioningAPI.level_up_character() -> Response
+    """
+    try:
+        result = CharacterVersioningAPI.level_up_character(
+            db=db,
+            repository_id=repository_id,
+            branch_name=level_up_data.branch_name,
+            new_character_data=level_up_data.new_character_data,
+            level_info=level_up_data.level_info
+        )
+        
+        return {
+            "success": True,
+            "level_up": result,
+            "message": f"Character leveled up to level {level_up_data.level_info['new_level']}"
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to level up character: {e}")
+        raise HTTPException(status_code=500, detail=f"Level up failed: {str(e)}")
+
+
+@app.post("/api/v1/character-repositories/{repository_id}/tags", response_model=CharacterTagResponse, tags=["character-versioning"])
+async def create_character_tag(
+    repository_id: int, 
+    tag_data: CharacterTagCreateRequest, 
+    db = Depends(get_db)
+):
+    """
+    Create a tag for a specific commit.
+    
+    Tags mark important milestones like deaths, resurrections, epic achievements,
+    or other significant story moments.
+    
+    Operation Flow: Request -> CharacterRepositoryManager.create_tag() -> Response
+    """
+    try:
+        tag = CharacterRepositoryManager.create_tag(
+            db=db,
+            repository_id=repository_id,
+            commit_hash=tag_data.commit_hash,
+            tag_name=tag_data.tag_name,
+            tag_type=tag_data.tag_type,
+            description=tag_data.description,
+            created_by=tag_data.created_by
+        )
+        
+        return CharacterTagResponse(**tag.to_dict())
+        
+    except Exception as e:
+        logger.error(f"Failed to create character tag: {e}")
+        raise HTTPException(status_code=500, detail=f"Tag creation failed: {str(e)}")
+
+
+# Helper functions for visualization
+def get_commit_color(commit_type: str) -> str:
+    """Get color for commit based on type."""
+    colors = {
+        "initial": "#4CAF50",     # Green
+        "level_up": "#2196F3",    # Blue
+        "equipment": "#FF9800",   # Orange
+        "story": "#9C27B0",       # Purple
+        "death": "#F44336",       # Red
+        "resurrection": "#00BCD4", # Cyan
+        "update": "#607D8B"       # Blue Grey
+    }
+    return colors.get(commit_type, "#607D8B")
+
+def get_commit_size(level: int) -> int:
+    """Get node size based on character level."""
+    return min(20 + level * 2, 60)  # Scale with level, max size 60

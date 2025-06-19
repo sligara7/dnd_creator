@@ -1,20 +1,254 @@
 """
-Database models for the D&D Character Creator.
+Database models for the D&D Character Creator with Git-like versioning system.
 """
 from datetime import datetime
 from typing import Dict, Any, Optional, List
-from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean, JSON, create_engine
+import hashlib
+import uuid
+from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean, JSON, ForeignKey, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, Session, sessionmaker
 
 Base = declarative_base()
 
+# ============================================================================
+# CHARACTER VERSIONING SYSTEM (Git-like Branching)
+# ============================================================================
+
+class CharacterRepository(Base):
+    """
+    Represents a character's complete version history - like a Git repository.
+    This is the root container for all versions/branches of a single character concept.
+    """
+    __tablename__ = "character_repositories"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    repository_id = Column(String(36), unique=True, index=True, default=lambda: str(uuid.uuid4()))
+    
+    # Repository metadata
+    name = Column(String(100), nullable=False, index=True)  # "Gandalf the Grey"
+    description = Column(Text, nullable=True)  # "A wise wizard character with multiple storylines"
+    player_name = Column(String(100), nullable=True)
+    
+    # Repository settings
+    is_public = Column(Boolean, default=False)  # Can others see/fork this character?
+    allow_forks = Column(Boolean, default=True)  # Can others create branches?
+    
+    # Initial character data (the "genesis" commit)
+    initial_commit_hash = Column(String(64), nullable=True)  # Points to first CharacterCommit
+    default_branch = Column(String(50), default="main")  # Default branch name
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    branches = relationship("CharacterBranch", back_populates="repository", cascade="all, delete-orphan")
+    commits = relationship("CharacterCommit", back_populates="repository", cascade="all, delete-orphan")
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "repository_id": self.repository_id,
+            "name": self.name,
+            "description": self.description,
+            "player_name": self.player_name,
+            "is_public": self.is_public,
+            "allow_forks": self.allow_forks,
+            "initial_commit_hash": self.initial_commit_hash,
+            "default_branch": self.default_branch,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "branch_count": len(self.branches) if self.branches else 0,
+            "commit_count": len(self.commits) if self.commits else 0
+        }
+
+
+class CharacterBranch(Base):
+    """
+    Represents a branch of character development - like Git branches.
+    Examples: "main", "multiclass-wizard", "evil-alternate", "level-20-path"
+    """
+    __tablename__ = "character_branches"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    repository_id = Column(Integer, ForeignKey("character_repositories.id"), nullable=False)
+    
+    # Branch metadata
+    branch_name = Column(String(50), nullable=False, index=True)  # "main", "multiclass-path", etc.
+    description = Column(Text, nullable=True)  # "Path where character becomes a wizard/fighter"
+    branch_type = Column(String(20), default="development")  # "main", "development", "experimental", "alternate"
+    
+    # Branch pointers
+    head_commit_hash = Column(String(64), nullable=True)  # Current HEAD of this branch
+    parent_branch = Column(String(50), nullable=True)  # Branch this was created from
+    branch_point_hash = Column(String(64), nullable=True)  # Commit where this branch started
+    
+    # Branch status
+    is_active = Column(Boolean, default=True)
+    is_merged = Column(Boolean, default=False)  # Has this branch been merged back?
+    merged_into = Column(String(50), nullable=True)  # Which branch was this merged into?
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    repository = relationship("CharacterRepository", back_populates="branches")
+    commits = relationship("CharacterCommit", back_populates="branch", cascade="all, delete-orphan")
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "repository_id": self.repository_id,
+            "branch_name": self.branch_name,
+            "description": self.description,
+            "branch_type": self.branch_type,
+            "head_commit_hash": self.head_commit_hash,
+            "parent_branch": self.parent_branch,
+            "branch_point_hash": self.branch_point_hash,
+            "is_active": self.is_active,
+            "is_merged": self.is_merged,
+            "merged_into": self.merged_into,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "commit_count": len(self.commits) if self.commits else 0
+        }
+
+
+class CharacterCommit(Base):
+    """
+    Represents a single character state/version - like Git commits.
+    Each level-up, major change, or story development creates a new commit.
+    """
+    __tablename__ = "character_commits"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    repository_id = Column(Integer, ForeignKey("character_repositories.id"), nullable=False)
+    branch_id = Column(Integer, ForeignKey("character_branches.id"), nullable=False)
+    
+    # Commit identification
+    commit_hash = Column(String(64), unique=True, nullable=False, index=True)  # SHA-256 hash
+    short_hash = Column(String(8), nullable=False, index=True)  # First 8 chars for display
+    
+    # Commit metadata
+    commit_message = Column(Text, nullable=False)  # "Level 2: Gained Action Surge"
+    commit_type = Column(String(20), default="update")  # "initial", "level_up", "story", "equipment", "death", "resurrection"
+    
+    # Character level/progression info
+    character_level = Column(Integer, nullable=False)
+    experience_points = Column(Integer, default=0)
+    milestone_name = Column(String(100), nullable=True)  # "Defeated the Dragon", "Learned Fireball"
+    
+    # Git-like relationship tracking
+    parent_commit_hash = Column(String(64), nullable=True)  # Previous commit (null for initial)
+    merge_parent_hash = Column(String(64), nullable=True)  # If this is a merge commit
+    
+    # Character data snapshot (complete character state at this point)
+    character_data = Column(JSON, nullable=False)  # Full CharacterCore + CharacterState data
+    
+    # Change tracking
+    changes_summary = Column(JSON, nullable=True)  # What changed from parent commit
+    files_changed = Column(JSON, nullable=True)  # Which aspects changed (abilities, equipment, etc.)
+    
+    # Story/campaign context
+    session_date = Column(DateTime, nullable=True)  # When this change happened in real life
+    campaign_context = Column(Text, nullable=True)  # What was happening in the story
+    dm_notes = Column(Text, nullable=True)  # DM notes about this character state
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow)
+    created_by = Column(String(100), nullable=True)  # Who made this commit (player, DM, auto)
+    
+    # Relationships
+    repository = relationship("CharacterRepository", back_populates="commits")
+    branch = relationship("CharacterBranch", back_populates="commits")
+    
+    def generate_commit_hash(self) -> str:
+        """Generate a unique commit hash based on character data and metadata."""
+        # Create hash from character data, timestamp, and parent commit
+        hash_input = f"{self.character_data}{self.commit_message}{self.created_at}{self.parent_commit_hash}"
+        return hashlib.sha256(hash_input.encode()).hexdigest()
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "repository_id": self.repository_id,
+            "branch_id": self.branch_id,
+            "commit_hash": self.commit_hash,
+            "short_hash": self.short_hash,
+            "commit_message": self.commit_message,
+            "commit_type": self.commit_type,
+            "character_level": self.character_level,
+            "experience_points": self.experience_points,
+            "milestone_name": self.milestone_name,
+            "parent_commit_hash": self.parent_commit_hash,
+            "merge_parent_hash": self.merge_parent_hash,
+            "character_data": self.character_data,
+            "changes_summary": self.changes_summary,
+            "files_changed": self.files_changed,
+            "session_date": self.session_date.isoformat() if self.session_date else None,
+            "campaign_context": self.campaign_context,
+            "dm_notes": self.dm_notes,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "created_by": self.created_by
+        }
+
+
+class CharacterTag(Base):
+    """
+    Tags for marking important commits - like Git tags.
+    Examples: "v1.0-creation", "v2.0-multiclass", "v20.0-epic", "death", "resurrection"
+    """
+    __tablename__ = "character_tags"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    repository_id = Column(Integer, ForeignKey("character_repositories.id"), nullable=False)
+    
+    # Tag information
+    tag_name = Column(String(50), nullable=False, index=True)  # "v1.0", "death-by-dragon", "epic-level"
+    tag_type = Column(String(20), default="milestone")  # "milestone", "death", "resurrection", "retirement"
+    description = Column(Text, nullable=True)
+    
+    # Points to specific commit
+    commit_hash = Column(String(64), nullable=False)
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow)
+    created_by = Column(String(100), nullable=True)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "repository_id": self.repository_id,
+            "tag_name": self.tag_name,
+            "tag_type": self.tag_type,
+            "description": self.description,
+            "commit_hash": self.commit_hash,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "created_by": self.created_by
+        }
+
+
+# ============================================================================
+# LEGACY CHARACTER MODEL (for backwards compatibility)
+# ============================================================================
 
 class Character(Base):
-    """Database model for D&D characters."""
+    """
+    Legacy database model for D&D characters.
+    This is kept for backwards compatibility and simple use cases.
+    New characters should use the CharacterRepository system.
+    """
     __tablename__ = "characters"
     
     id = Column(Integer, primary_key=True, index=True)
+    
+    # Link to new versioning system (optional)
+    repository_id = Column(Integer, ForeignKey("character_repositories.id"), nullable=True)
+    commit_hash = Column(String(64), nullable=True)  # Which commit this represents
+    
+    # Original character fields
     name = Column(String(100), nullable=False, index=True)
     player_name = Column(String(100), nullable=True)
     
@@ -237,73 +471,49 @@ class CharacterDB:
         if not db_character:
             return None
         
-        # Update basic fields
-        for field in ["name", "player_name", "species", "background", "alignment", "level"]:
-            if field in updates:
-                setattr(db_character, field, updates[field])
+        # Update character fields with provided data
+        for key, value in updates.items():
+            if hasattr(db_character, key):
+                setattr(db_character, key, value)
         
-        # Update ability scores
-        if "abilities" in updates:
-            abilities = updates["abilities"]
-            for ability in ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]:
-                if ability in abilities:
-                    setattr(db_character, ability, abilities[ability])
-        
-        # Update other fields
-        for field in ["armor_class", "hit_points", "proficiency_bonus", "backstory", "notes"]:
-            if field in updates:
-                setattr(db_character, field, updates[field])
-        
-        # Update JSON fields
-        for json_field in ["character_classes", "equipment", "features", "spells", "skills"]:
-            if json_field in updates:
-                setattr(db_character, json_field, updates[json_field])
-        
-        db_character.updated_at = datetime.utcnow()
         db.commit()
         db.refresh(db_character)
         return db_character
     
     @staticmethod
-    def save_character_sheet(db: Session, character_sheet, character_id: int = None) -> Character:
+    def delete_character(db: Session, character_id: int) -> bool:
+        """Soft delete a character (set is_active = False)."""
+        db_character = CharacterDB.get_character(db, character_id)
+        if not db_character:
+            return False
+        
+        db_character.is_active = False
+        db.commit()
+        return True
+    
+    @staticmethod
+    def list_characters(db: Session, player_name: str = None, limit: int = 50, offset: int = 0) -> List[Character]:
+        """List characters with optional filtering."""
+        query = db.query(Character).filter(Character.is_active == True)
+        
+        if player_name:
+            query = query.filter(Character.player_name == player_name)
+        
+        return query.offset(offset).limit(limit).all()
+    
+    @staticmethod
+    def save_character_sheet(db: Session, character_sheet) -> Character:
         """
         Save a CharacterSheet object to the database.
-        If character_id is provided, update existing character.
-        Otherwise, create new character.
+        This bridges the gap between the new character models and database storage.
         """
-        # Convert CharacterSheet to dictionary format
-        character_data = character_sheet.get_character_summary()
+        character_data = character_sheet.to_dict()
         
-        # Prepare data for database
-        db_data = {
-            "name": character_data["name"],
-            "species": character_data["species"],
-            "background": character_data["background"],
-            "alignment": character_data["alignment"],
-            "level": character_data["level"],
-            "character_classes": character_data["classes"],
-            "abilities": {
-                "strength": character_data["ability_scores"]["strength"],
-                "dexterity": character_data["ability_scores"]["dexterity"],
-                "constitution": character_data["ability_scores"]["constitution"],
-                "intelligence": character_data["ability_scores"]["intelligence"],
-                "wisdom": character_data["ability_scores"]["wisdom"],
-                "charisma": character_data["ability_scores"]["charisma"]
-            },
-            "armor_class": character_data["ac"],
-            "hit_points": character_data["hp"]["max"],
-            "proficiency_bonus": character_data["proficiency_bonus"],
-            "equipment": character_data["equipment"],
-            "skills": character_data["proficiencies"]["skills"],
-            "backstory": character_data["backstory"]
-        }
-        
-        if character_id:
-            # Update existing character
-            return CharacterDB.update_character(db, character_id, db_data)
+        # Check if this character has an ID (existing character)
+        if hasattr(character_sheet, 'id') and character_sheet.id:
+            return CharacterDB.update_character(db, character_sheet.id, character_data)
         else:
-            # Create new character
-            return CharacterDB.create_character(db, db_data)
+            return CharacterDB.create_character(db, character_data)
     
     @staticmethod
     def load_character_sheet(db: Session, character_id: int):
@@ -315,89 +525,64 @@ class CharacterDB:
         if not db_character:
             return None
         
-        # Import CharacterSheet here to avoid circular imports
-        from character_models import CharacterSheet
+        # Import here to avoid circular imports
+        from character_models import CharacterCore, CharacterState
         
-        # Create CharacterSheet from database data
-        character_sheet = CharacterSheet(db_character.name)
+        # Create CharacterCore from database data
+        character_core = CharacterCore(db_character.name)
+        character_core.species = db_character.species
+        character_core.background = db_character.background or ""
+        character_core.alignment = db_character.alignment.split() if db_character.alignment else ["Neutral", "Neutral"]
+        character_core.character_classes = db_character.character_classes or {}
         
-        # Update core character data
-        character_sheet.core.species = db_character.species or ""
-        character_sheet.core.background = db_character.background or ""
-        character_sheet.core.alignment = db_character.alignment.split() if db_character.alignment else ["Neutral", "Neutral"]
-        character_sheet.core.character_classes = db_character.character_classes or {}
-        character_sheet.core.backstory = db_character.backstory or ""
+        # Set ability scores
+        character_core.strength.base_score = db_character.strength
+        character_core.dexterity.base_score = db_character.dexterity
+        character_core.constitution.base_score = db_character.constitution
+        character_core.intelligence.base_score = db_character.intelligence
+        character_core.wisdom.base_score = db_character.wisdom
+        character_core.charisma.base_score = db_character.charisma
         
-        # Update ability scores
-        character_sheet.core.strength.base_score = db_character.strength
-        character_sheet.core.dexterity.base_score = db_character.dexterity
-        character_sheet.core.constitution.base_score = db_character.constitution
-        character_sheet.core.intelligence.base_score = db_character.intelligence
-        character_sheet.core.wisdom.base_score = db_character.wisdom
-        character_sheet.core.charisma.base_score = db_character.charisma
+        # Set backstory and other data
+        character_core.backstory = db_character.backstory or ""
         
-        # Update game state
-        character_sheet.state.current_hit_points = db_character.hit_points
+        # Create CharacterState
+        character_state = CharacterState(character_core)
+        character_state.max_hit_points = db_character.hit_points
+        character_state.current_hit_points = db_character.hit_points
         
-        # Update equipment if available
-        if db_character.equipment:
-            character_sheet.state.equipment = db_character.equipment.get("items", [])
-            character_sheet.state.armor = db_character.equipment.get("armor", "")
-            character_sheet.state.weapons = db_character.equipment.get("weapons", [])
+        # Store database ID for future saves
+        character_core.id = db_character.id
         
-        # Update proficiencies if available
-        if db_character.skills:
-            character_sheet.core.skill_proficiencies = db_character.skills
-        
-        # Recalculate derived stats
-        character_sheet.calculate_all_derived_stats()
-        
-        return character_sheet
-    
-    @staticmethod
-    def delete_character(db: Session, character_id: int) -> bool:
-        """Soft delete a character (mark as inactive)."""
-        db_character = CharacterDB.get_character(db, character_id)
-        if not db_character:
-            return False
-        
-        db_character.is_active = False
-        db_character.updated_at = datetime.utcnow()
-        db.commit()
-        return True
-    
-    @staticmethod
-    def list_characters(db: Session, player_name: str = None, limit: int = 100) -> List[Character]:
-        """List characters, optionally filtered by player name."""
-        query = db.query(Character).filter(Character.is_active == True)
-        if player_name:
-            query = query.filter(Character.player_name == player_name)
-        return query.limit(limit).all()
+        return {
+            "core": character_core,
+            "state": character_state,
+            "db_character": db_character
+        }
 
 # ============================================================================
-# SESSION DATABASE OPERATIONS
+# CHARACTER SESSION OPERATIONS
 # ============================================================================
 
-class SessionDB:
+class CharacterSessionDB:
     """Database operations for character creation sessions."""
     
     @staticmethod
     def create_session(db: Session, session_id: str, initial_data: Dict[str, Any] = None) -> CharacterSession:
         """Create a new character creation session."""
-        db_session = CharacterSession(
+        session = CharacterSession(
             session_id=session_id,
-            current_step="basic_info",
-            session_data=initial_data or {}
+            session_data=initial_data or {},
+            current_step="basic_info"
         )
-        
-        db.add(db_session)
+        db.add(session)
         db.commit()
-        db.refresh(db_session)
-        return db_session
+        db.refresh(session)
+        return session
     
     @staticmethod
     def get_session(db: Session, session_id: str) -> Optional[CharacterSession]:
-        """Retrieve a character creation session."""
+        """Get a character creation session."""
         return db.query(CharacterSession).filter(
             CharacterSession.session_id == session_id,
             CharacterSession.is_active == True
@@ -406,67 +591,202 @@ class SessionDB:
     @staticmethod
     def update_session(db: Session, session_id: str, updates: Dict[str, Any]) -> Optional[CharacterSession]:
         """Update a character creation session."""
-        db_session = SessionDB.get_session(db, session_id)
-        if not db_session:
+        session = CharacterSessionDB.get_session(db, session_id)
+        if not session:
             return None
         
-        for field in ["current_step", "session_data", "character_id"]:
-            if field in updates:
-                setattr(db_session, field, updates[field])
+        for key, value in updates.items():
+            if hasattr(session, key):
+                setattr(session, key, value)
         
-        db_session.updated_at = datetime.utcnow()
         db.commit()
-        db.refresh(db_session)
-        return db_session
+        db.refresh(session)
+        return session
+
 
 # ============================================================================
-# USAGE EXAMPLES AND PATTERNS
+# USAGE EXAMPLES AND DOCUMENTATION
 # ============================================================================
 
 """
-USAGE PATTERNS:
+CHARACTER VERSIONING SYSTEM USAGE EXAMPLES:
 
-1. CREATE NEW CHARACTER:
+1. CREATE A NEW CHARACTER WITH VERSIONING:
    ```python
-   # Create character using CharacterSheet
-   from character_models import CharacterSheet
-   character = CharacterSheet("Gandalf")
-   character.core.species = "Human"
-   # ... set other properties
+   # Create character data
+   character_data = {
+       "name": "Gandalf the Grey",
+       "species": "Wizard (Maiar)",
+       "level": 1,
+       "character_classes": {"Wizard": 1},
+       "abilities": {"strength": 10, "intelligence": 18, ...}
+   }
    
-   # Save to database
-   with get_db() as db:
-       db_character = CharacterDB.save_character_sheet(db, character)
-       character_id = db_character.id
+   # Create repository with initial commit
+   repo = CharacterRepositoryManager.create_repository(
+       db=db,
+       name="Gandalf the Grey",
+       initial_character_data=character_data,
+       player_name="Tolkien",
+       description="The wise wizard of Middle-earth"
+   )
    ```
 
-2. LOAD EXISTING CHARACTER FOR UPDATES:
+2. LEVEL UP CHARACTER:
    ```python
-   # Load from database
-   with get_db() as db:
-       character = CharacterDB.load_character_sheet(db, character_id)
-       
-       # Make updates using getter/setter methods
-       character.core.set_name("Gandalf the Grey")
-       character.state.set_current_hit_points(50)
-       
-       # Save back to database
-       CharacterDB.save_character_sheet(db, character, character_id)
+   # Update character data for level 2
+   level_2_data = character_data.copy()
+   level_2_data["level"] = 2
+   level_2_data["character_classes"] = {"Wizard": 2}
+   
+   # Commit the level up
+   commit = CharacterRepositoryManager.commit_character_change(
+       db=db,
+       repository_id=repo.id,
+       branch_name="main",
+       character_data=level_2_data,
+       commit_message="Level 2: Gained Arcane Recovery",
+       commit_type="level_up",
+       milestone_name="First Level Up"
+   )
    ```
 
-3. IN-GAME PLAY SESSION:
+3. CREATE ALTERNATE CHARACTER PATH:
    ```python
-   # Load character for gameplay
-   with get_db() as db:
-       character = CharacterDB.load_character_sheet(db, character_id)
-       
-       # Use real-time update methods during play
-       character.take_damage(10, "orc attack")
-       character.add_condition(DnDCondition.POISONED)
-       character.heal(5, "healing potion")
-       
-       # Save updated state back to database
-       CharacterDB.save_character_sheet(db, character, character_id)
+   # Create branch for multiclass path at level 3
+   multiclass_branch = CharacterRepositoryManager.create_branch(
+       db=db,
+       repository_id=repo.id,
+       new_branch_name="multiclass-fighter",
+       source_commit_hash=level_2_commit.commit_hash,
+       description="Exploring multiclass with Fighter"
+   )
+   
+   # Commit multiclass level 3
+   multiclass_data = level_2_data.copy()
+   multiclass_data["level"] = 3
+   multiclass_data["character_classes"] = {"Wizard": 2, "Fighter": 1}
+   
+   multiclass_commit = CharacterRepositoryManager.commit_character_change(
+       db=db,
+       repository_id=repo.id,
+       branch_name="multiclass-fighter",
+       character_data=multiclass_data,
+       commit_message="Level 3: Multiclassed into Fighter",
+       commit_type="level_up"
+   )
    ```
+
+4. GET CHARACTER TIMELINE FOR FRONTEND:
+   ```python
+   timeline = CharacterVersioningAPI.get_character_timeline_for_frontend(
+       db=db,
+       repository_id=repo.id
+   )
+   # Returns formatted data for graph visualization
+   ```
+
+5. RETRIEVE CHARACTER AT SPECIFIC POINT:
+   ```python
+   # Get character data at level 2
+   level_2_character = CharacterRepositoryManager.get_character_at_commit(
+       db=db,
+       commit_hash=level_2_commit.commit_hash
+   )
+   ```
+
+FRONTEND INTEGRATION:
+- Use CharacterVersioningAPI.get_character_timeline_for_frontend() for graph data
+- Display branches as different colored lines
+- Show commits as nodes with level/milestone information
+- Allow users to click commits to view character state at that point
+- Provide branch creation UI for "What if?" scenarios
+- Show diff between commits to highlight changes
+
+DATABASE SCHEMA:
+- character_repositories: Main character containers
+- character_branches: Different development paths
+- character_commits: Individual character states/versions
+- character_tags: Mark important milestones
+- characters: Legacy table (kept for compatibility)
+
+The system enables:
+- Complete character development history
+- "What if?" exploration with branches
+- Visual timeline of character progression
+- Rollback to previous character states
+- Comparison between different development paths
+- Story/campaign context tracking
+- Collaborative character development
+"""
+
+
+# ============================================================================
+# MODULE SUMMARY
+# ============================================================================
+"""
+ENHANCED DATABASE MODELS WITH GIT-LIKE CHARACTER VERSIONING
+
+This module provides a comprehensive database layer for D&D character management
+with a revolutionary Git-like versioning system that allows players to explore
+alternate character development paths.
+
+KEY FEATURES:
+
+1. CHARACTER REPOSITORIES (Git-like System):
+   - CharacterRepository: Container for all versions of a character concept
+   - CharacterBranch: Different development paths (main, multiclass, alternate stories)
+   - CharacterCommit: Individual character states with full data snapshots
+   - CharacterTag: Mark important milestones (deaths, resurrections, epic levels)
+
+2. VERSION CONTROL OPERATIONS:
+   - Create repositories with initial character commits
+   - Branch from any commit to explore alternate paths
+   - Commit character changes with detailed change tracking
+   - Tag important milestones and story events
+   - Retrieve character state at any point in history
+
+3. VISUALIZATION SUPPORT:
+   - Complete repository tree data for frontend graphs
+   - Parent-child commit relationships for timeline display
+   - Branch visualization with merge/split points
+   - Diff calculation between character states
+
+4. INTEGRATION SYSTEMS:
+   - CharacterRepositoryManager: High-level Git-like operations
+   - CharacterVersioningAPI: Frontend-friendly API methods
+   - Integration with existing CharacterCore/CharacterState classes
+   - Backwards compatibility with legacy Character model
+
+5. USE CASES:
+   - Track complete character development history
+   - Explore "What if I multiclassed?" scenarios
+   - Compare different character builds
+   - Rollback to previous character states
+   - Visualize character evolution over campaigns
+   - Create alternate storyline branches
+   - Collaborative character development
+
+6. DATABASE OPERATIONS:
+   - CharacterDB: CRUD operations for legacy characters
+   - CharacterSessionDB: Character creation session management
+   - Proper database session management with context managers
+   - Integration with SQLAlchemy ORM
+
+The system transforms character management from a simple database record into
+a rich, explorable history that enhances storytelling and player engagement.
+Players can see their character's journey visually, explore alternate paths,
+and make informed decisions about character development.
+
+FRONTEND VISUALIZATION:
+The system is designed to support rich frontend visualizations showing:
+- Character development timelines as interactive graphs
+- Branch points where different paths diverged
+- Commit nodes with level, XP, and milestone information
+- Visual diffs between character states
+- Tag markers for important story moments
+
+This creates a "comic book multiverse" experience where players can explore
+all the different paths their character might have taken.
 """
 

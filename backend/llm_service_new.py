@@ -1,11 +1,12 @@
-# ADDRESSED: OpenAI API Key now loaded from .env file automatically
+# REFACTORED: Now defaults to Ollama with Llama3 for local testing
+# REFACTORED: No API keys needed for local development
+# ADDRESSED: OpenAI API Key support via .env file for production use
 # ADDRESSED: Proper rate limiting implemented per OpenAI cookbook recommendations
-# ADDRESSED: Strict Tier 1 rate limits enforced (3 RPM, 200 RPD for free tier)
 
 """
-External LLM API service for content generation with rate limiting.
-Replaces the local Ollama service with cloud-based LLM providers.
-Includes comprehensive rate limiting to comply with API tier limits.
+LLM API service for content generation - defaults to local Ollama for testing.
+Supports both local Ollama service and cloud-based LLM providers.
+Includes comprehensive rate limiting for cloud providers.
 """
 import json
 import logging
@@ -527,36 +528,195 @@ class HTTPLLMService(LLMService):
         await self.client.aclose()
 
 
-def create_llm_service(provider: str, **kwargs) -> LLMService:
+class OllamaLLMService(LLMService):
+    """Ollama local LLM service - ideal for testing without API costs."""
+    
+    def __init__(self, model: str = "llama3:latest", base_url: str = "http://localhost:11434", 
+                 timeout: int = 60):
+        self.model = model
+        self.base_url = base_url.rstrip('/')
+        self.timeout = timeout
+        
+        # Ollama is local, so no strict rate limiting needed
+        # But we'll implement the interface for consistency
+        self.request_count = 0
+        self.last_request_time = 0
+        
+        logger.info(f"Initialized Ollama LLM service with model '{model}' at {base_url}")
+    
+    async def generate_content(self, prompt: str, **kwargs) -> str:
+        """
+        Generate content using Ollama API.
+        
+        Args:
+            prompt: Input prompt for the model
+            **kwargs: Additional parameters (temperature, max_tokens, etc.)
+            
+        Returns:
+            Generated text content
+        """
+        import httpx
+        
+        # Track request for rate limit interface compliance
+        self.request_count += 1
+        self.last_request_time = time.time()
+        
+        # Prepare request payload
+        payload = {
+            "model": self.model,
+            "prompt": prompt,
+            "stream": False,  # Get complete response
+            "options": {}
+        }
+        
+        # Add any additional parameters
+        if "temperature" in kwargs:
+            payload["options"]["temperature"] = kwargs["temperature"]
+        if "max_tokens" in kwargs:
+            payload["options"]["num_predict"] = kwargs["max_tokens"]
+        if "top_p" in kwargs:
+            payload["options"]["top_p"] = kwargs["top_p"]
+        
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                logger.info(f"Sending request to Ollama: {self.base_url}/api/generate")
+                
+                response = await client.post(
+                    f"{self.base_url}/api/generate",
+                    json=payload,
+                    headers={"Content-Type": "application/json"}
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    generated_text = result.get("response", "")
+                    
+                    logger.info(f"Ollama generated {len(generated_text)} characters")
+                    return generated_text
+                else:
+                    error_msg = f"Ollama API error: {response.status_code} - {response.text}"
+                    logger.error(error_msg)
+                    raise Exception(error_msg)
+                    
+        except httpx.TimeoutException:
+            error_msg = f"Ollama request timed out after {self.timeout} seconds"
+            logger.error(error_msg)
+            raise Exception(error_msg)
+        except Exception as e:
+            error_msg = f"Ollama API error: {str(e)}"
+            logger.error(error_msg)
+            raise Exception(error_msg)
+    
+    async def test_connection(self) -> bool:
+        """Test if Ollama is available and the model is accessible."""
+        import httpx
+        
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                # First check if Ollama is running
+                response = await client.get(f"{self.base_url}/api/tags")
+                
+                if response.status_code != 200:
+                    logger.error(f"Ollama not responding: {response.status_code}")
+                    return False
+                
+                # Check if our model is available
+                models = response.json()
+                model_names = [model["name"] for model in models.get("models", [])]
+                
+                if self.model not in model_names:
+                    logger.warning(f"Model '{self.model}' not found. Available models: {model_names}")
+                    logger.info(f"You may need to run: ollama pull {self.model}")
+                    return False
+                
+                logger.info(f"Ollama connection successful. Model '{self.model}' is available.")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Failed to connect to Ollama: {str(e)}")
+            logger.info("Make sure Ollama is installed and running:")
+            logger.info("1. Install: https://ollama.ai/")
+            logger.info("2. Start: ollama serve")
+            logger.info(f"3. Pull model: ollama pull {self.model}")
+            return False
+    
+    def get_rate_limit_status(self) -> Dict[str, Any]:
+        """Get rate limit status (Ollama has no limits, but interface compliance)."""
+        return {
+            "provider": "ollama",
+            "model": self.model,
+            "base_url": self.base_url,
+            "requests_made": self.request_count,
+            "last_request": self.last_request_time,
+            "rate_limited": False,  # Ollama is local, no rate limits
+            "available": True
+        }
+
+
+def create_llm_service(provider: str = "ollama", **kwargs) -> LLMService:
     """
     Factory function to create LLM service instances with automatic .env loading.
     
     Args:
-        provider: LLM provider ("openai", "anthropic", "http")
+        provider: LLM provider ("ollama", "openai", "anthropic", "http")
+                 Default: "ollama" for local testing
         **kwargs: Provider-specific configuration
     
     Returns:
-        Configured LLM service instance with rate limiting enabled
+        Configured LLM service instance
         
     Examples:
-        # Using .env file (recommended):
+        # Default Ollama for testing (no API key needed):
+        llm_service = create_llm_service()  # Uses Ollama with llama3
+        
+        # Explicit Ollama with custom model:
+        llm_service = create_llm_service("ollama", model="llama3:8b")
+        
+        # OpenAI with .env file:
         llm_service = create_llm_service("openai")
         
         # Explicit API key:
         llm_service = create_llm_service("openai", api_key="...")
-        
-        # Custom rate limits:
-        custom_config = RateLimitConfig(requests_per_minute=5)
-        llm_service = create_llm_service("openai", rate_limit_config=custom_config)
     """
-    if provider.lower() == "openai":
+    if provider.lower() == "ollama":
+        return OllamaLLMService(**kwargs)
+    elif provider.lower() == "openai":
         return OpenAILLMService(**kwargs)
     elif provider.lower() == "anthropic":
         return AnthropicLLMService(**kwargs)
     elif provider.lower() == "http":
         return HTTPLLMService(**kwargs)
     else:
-        raise ValueError(f"Unsupported LLM provider: {provider}")
+        raise ValueError(f"Unsupported LLM provider: {provider}. Supported: 'ollama', 'openai', 'anthropic', 'http'")
+
+
+def create_ollama_service(
+    model: str = "llama3:latest",
+    base_url: str = "http://localhost:11434",
+    timeout: int = 60
+) -> OllamaLLMService:
+    """
+    Convenience function to create Ollama service for local testing.
+    
+    Args:
+        model: Ollama model to use (default: "llama3:latest")
+        base_url: Ollama server URL (default: "http://localhost:11434")
+        timeout: Request timeout in seconds (default: 60)
+        
+    Returns:
+        Ollama service configured for local testing
+        
+    Examples:
+        # Default configuration:
+        llm_service = create_ollama_service()
+        
+        # Custom model:
+        llm_service = create_ollama_service(model="codellama:latest")
+        
+        # Remote Ollama server:
+        llm_service = create_ollama_service(base_url="http://your-server:11434")
+    """
+    return OllamaLLMService(model=model, base_url=base_url, timeout=timeout)
 
 
 def create_rate_limited_openai_service(
@@ -600,6 +760,15 @@ def create_rate_limited_openai_service(
 """
 SETUP INSTRUCTIONS:
 
+OPTION 1: LOCAL OLLAMA (RECOMMENDED FOR TESTING)
+1. Install Ollama: https://ollama.ai/
+2. Start Ollama server: ollama serve
+3. Pull Llama3 model: ollama pull llama3
+4. Use without any API keys:
+   llm_service = create_llm_service()  # Defaults to Ollama with llama3:latest
+   result = await llm_service.generate_content("Create a D&D character")
+
+OPTION 2: CLOUD PROVIDERS (FOR PRODUCTION)
 1. Install required packages:
    pip install openai anthropic httpx python-dotenv
 
@@ -609,9 +778,15 @@ SETUP INSTRUCTIONS:
 
 3. Usage examples:
 
-   # Basic usage with .env file:
+   # Default (Ollama for testing):
+   llm_service = create_llm_service()
+   
+   # OpenAI with .env file:
    llm_service = create_llm_service("openai")
    result = await llm_service.generate_content("Create a D&D character")
+   
+   # Custom Ollama model:
+   llm_service = create_llm_service("ollama", model="codellama")
    
    # With custom rate limits for paid tiers:
    config = RateLimitConfig(requests_per_minute=60, requests_per_day=10000)
@@ -620,11 +795,17 @@ SETUP INSTRUCTIONS:
    # Strict free tier compliance:
    llm_service = create_rate_limited_openai_service()
    
-   # Check rate limit status:
-   status = llm_service.get_rate_limit_status()
-   print(f"Requests this minute: {status['requests_per_minute']}/{status['rpm_limit']}")
+   # Test connection:
+   is_available = await llm_service.test_connection()
+   if is_available:
+       print("LLM service is ready!")
 
-RATE LIMITING:
+PROVIDER COMPARISON:
+- Ollama: Free, local, no API keys needed, slower, good for testing
+- OpenAI: Fast, cloud-based, requires API key, rate limited, good for production
+- Anthropic: Fast, cloud-based, requires API key, rate limited, alternative to OpenAI
+
+RATE LIMITING (Cloud providers only):
 - Free tier limits are strictly enforced
 - Automatic exponential backoff on rate limit errors
 - Token usage estimation and tracking

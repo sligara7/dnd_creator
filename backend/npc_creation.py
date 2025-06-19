@@ -3,6 +3,7 @@
 # should utilize a similar process of using an LLM service to generate character concepts, backstories, and other attributes, but for NPCs - generally, NPCs are much simpler than full characters, so a lot of features can be eliminated
 # how to ensure that a the created species, class, weapons, armor, and spells are all consistent and aligned with created character concept?  
 # for instance, if a water species is created, that it isn't given a fire weapon?
+# consider the interface with custom_content_models and how to ensure that custom content is applied correctly to NPCs
 
 # additionally, how to ensure that a created character is given weapons, spells, and armor consistent with its character level?
 # for instance, if a level 1 character is created, that it isn't given a level 20 weapon or spell?

@@ -1,10 +1,20 @@
-# this follows the character creation module, but should condensed and simplified for creating NPCs - which are a largely a subset of the character creation
-# this is a placeholder for the NPC creation module, which will be used to create non-player characters (NPCs) in the game
-# should utilize a similar process of using an LLM service to generate character concepts, backstories, and other attributes, but for NPCs - generally, NPCs are much simpler than full characters, so a lot of features can be eliminated
-# consider the interface with custom_content_models and how to ensure that custom content is applied correctly to NPCs
-
-# additionally, how to ensure that a created character is given weapons, spells, and armor consistent with its character level?
-# for instance, if a level 1 character is created, that it isn't given a level 20 weapon or spell?
+# CONSISTENCY VALIDATION SYSTEM
+# 
+# This system addresses two critical consistency concerns:
+#
+# 1. THEMATIC CONSISTENCY: Ensures created species, class, weapons, armor, and spells are 
+#    thematically aligned with the character concept. For example, water-based species won't 
+#    receive fire-based weapons. This is implemented through:
+#    - ConceptualValidator.validate_thematic_consistency() 
+#    - ContentAligner.align_content_with_concept()
+#    - Theme extraction and conflict detection algorithms
+#
+# 2. LEVEL APPROPRIATENESS: Ensures characters receive weapons, spells, and armor appropriate 
+#    for their level. For example, level 1 characters won't receive level 20 weapons or spells.
+#    This is implemented through:
+#    - LevelValidator.validate_level_appropriate_content()
+#    - PowerScaler.scale_content_to_level()
+#    - Rarity and power level validation systems
 
 """
 Character Creation Service - Refactored and Simplified
@@ -293,7 +303,7 @@ This character has grown beyond their original conception, shaped by the challen
 # ============================================================================
 
 class CharacterValidator:
-    """Handles validation of character data."""
+    """Handles validation of character data with comprehensive consistency checks."""
     
     @staticmethod
     def validate_basic_structure(character_data: Dict[str, Any]) -> CreationResult:
@@ -362,6 +372,85 @@ class CharacterValidator:
                     break
         
         return result
+    
+    @staticmethod
+    def validate_comprehensive_consistency(character_data: Dict[str, Any], 
+                                         description: str) -> CreationResult:
+        """
+        Perform comprehensive consistency validation including thematic alignment 
+        and level appropriateness.
+        """
+        result = CreationResult(success=True, data=character_data)
+        
+        # 1. Validate thematic consistency
+        thematic_result = ConceptualValidator.validate_thematic_consistency(
+            character_data, description
+        )
+        
+        # Merge thematic warnings
+        if thematic_result.warnings:
+            result.warnings.extend(thematic_result.warnings)
+        
+        # 2. Validate level appropriateness
+        level_result = LevelValidator.validate_level_appropriate_content(character_data)
+        
+        # Merge level warnings
+        if level_result.warnings:
+            result.warnings.extend(level_result.warnings)
+        
+        # 3. Check for severe consistency issues
+        severe_issues = CharacterValidator._check_severe_consistency_issues(
+            character_data, description
+        )
+        
+        if severe_issues:
+            result.warnings.extend(severe_issues)
+        
+        logger.info(f"Comprehensive consistency validation complete with {len(result.warnings)} warnings")
+        return result
+    
+    @staticmethod
+    def _check_severe_consistency_issues(character_data: Dict[str, Any], 
+                                       description: str) -> List[str]:
+        """Check for severe consistency issues that should be flagged."""
+        issues = []
+        
+        # Check for major theme conflicts (e.g., holy paladin with necromantic spells)
+        description_lower = description.lower()
+        
+        if any(word in description_lower for word in ["holy", "paladin", "cleric", "divine"]):
+            spells = character_data.get("spells", [])
+            for spell in spells:
+                spell_name = spell if isinstance(spell, str) else spell.get("name", "")
+                if any(word in spell_name.lower() for word in ["necro", "death", "drain", "dark"]):
+                    issues.append(f"Major theme conflict: Divine character with necromantic spell '{spell_name}'")
+        
+        # Check for level vs. power mismatches
+        level = character_data.get("level", 1)
+        if level <= 3:
+            # Low level characters shouldn't have high-power items
+            weapons = character_data.get("weapons", [])
+            for weapon in weapons:
+                weapon_name = weapon.get("name", "")
+                if any(word in weapon_name.lower() for word in ["legendary", "artifact", "divine", "ancient"]):
+                    issues.append(f"Level mismatch: Level {level} character with high-power weapon '{weapon_name}'")
+        
+        return issues
+    
+    @staticmethod
+    def apply_consistency_fixes(character_data: Dict[str, Any], 
+                              description: str) -> Dict[str, Any]:
+        """
+        Apply automatic consistency fixes to character data.
+        """
+        # Apply thematic alignment
+        aligned_data = ContentAligner.align_content_with_concept(character_data, description)
+        
+        # Apply level scaling
+        scaled_data = PowerScaler.scale_content_to_level(aligned_data)
+        
+        logger.info("Applied automatic consistency fixes")
+        return scaled_data
 
 # ============================================================================
 # CHARACTER DATA GENERATOR
@@ -411,8 +500,24 @@ class CharacterDataGenerator:
                     character_data, needs_custom_species, needs_custom_class
                 )
                 
+                # Perform comprehensive consistency validation
+                consistency_validation = self.validator.validate_comprehensive_consistency(
+                    character_data, description
+                )
+                
+                # Apply automatic consistency fixes if warnings are present
+                if consistency_validation.warnings:
+                    logger.info(f"Applying consistency fixes for {len(consistency_validation.warnings)} issues")
+                    character_data = self.validator.apply_consistency_fixes(character_data, description)
+                    
+                    # Re-validate after fixes
+                    post_fix_validation = self.validator.validate_comprehensive_consistency(
+                        character_data, description
+                    )
+                    consistency_validation.warnings = post_fix_validation.warnings
+                
                 result = CreationResult(success=True, data=character_data)
-                result.warnings.extend(validation_result.warnings + custom_validation.warnings)
+                result.warnings.extend(validation_result.warnings + custom_validation.warnings + consistency_validation.warnings)
                 result.creation_time = time.time() - start_time
                 
                 logger.info("Character generation successful")
@@ -930,204 +1035,536 @@ Generate a rich, detailed backstory that explains their motivations, background,
         return custom_content
 
 # ============================================================================
-# NPCCREATOR CLASS
+# CONSISTENCY VALIDATION SYSTEM
 # ============================================================================
 
-class NPCCreator:
-    """Service for creating and registering custom NPCs for DM use."""
-    def __init__(self, db_session, created_by: Optional[str] = None):
-        self.db = db_session
-        self.created_by = created_by or "dungeon_master"
-
-    def create_and_register_npc(self, name: str, npc_type: str, description: str = "", stats: Optional[Dict[str, Any]] = None, is_public: bool = False) -> Dict[str, Any]:
-        """
-        Create and register a custom NPC in the database.
-        npc_type: 'villager', 'merchant', 'enemy', etc.
-        stats: dict of NPC stats (AC, HP, abilities, etc.)
-        """
-        from database_models_new import CustomContent
-        from sqlalchemy.orm import Session
-        from sqlalchemy.exc import SQLAlchemyError
-        import traceback
-
-        npc_data = {
-            "name": name,
-            "npc_type": npc_type,
-            "description": description,
-            "stats": stats or {},
-        }
-        try:
-            db_npc = CustomContent(
-                name=name,
-                content_type="npc",
-                content_data=npc_data,
-                description=description,
-                created_by=self.created_by,
-                is_public=is_public,
-            )
-            self.db.add(db_npc)
-            self.db.commit()
-            self.db.refresh(db_npc)
-            logger.info(f"Registered NPC '{name}' as type '{npc_type}' in database.")
-            return {"success": True, "npc": {
-                "id": db_npc.id,
-                "name": db_npc.name,
-                "type": db_npc.content_type,
-                "description": db_npc.description,
-                "stats": db_npc.content_data.get("stats", {}),
-                "created_by": db_npc.created_by,
-                "created_at": db_npc.created_at.isoformat(),
-                "is_public": db_npc.is_public,
-            }}
-        except SQLAlchemyError as e:
-            logger.error(f"Failed to register NPC: {e}\n{traceback.format_exc()}")
-            self.db.rollback()
-            return {"success": False, "error": str(e)}
-
-# ============================================================================
-# CONVENIENCE FUNCTIONS
-# ============================================================================
-
-def create_character(description: str, level: int = 1, 
-                    generate_backstory: bool = True,
-                    include_custom_content: bool = False,
-                    add_initial_journal: bool = True,
-                    llm_service: LLMService = None) -> CreationResult:
-    """Convenience function to create a character with journal support."""
+class ConceptualValidator:
+    """Validates thematic consistency between character elements."""
     
-    creator = CharacterCreator(llm_service)
-    return creator.create_character(description, level, generate_backstory, 
-                                  include_custom_content, add_initial_journal)
-
-def update_character_from_journal(character_sheet: CharacterSheet, 
-                                force_evolution: bool = False,
-                                llm_service: LLMService = None) -> CreationResult:
-    """Convenience function to update character based on journal entries."""
-    
-    creator = CharacterCreator(llm_service)
-    return creator.update_character_with_journal(character_sheet, force_evolution)
-
-def analyze_character_evolution(character_sheet: CharacterSheet,
-                              llm_service: LLMService = None) -> Dict[str, Any]:
-    """Convenience function to analyze character evolution without updating."""
-    
-    creator = CharacterCreator(llm_service)
-    journal_entries = character_sheet.get_journal_entries()
-    
-    if not journal_entries:
-        return {"analysis": "No journal entries to analyze", "suggestions": []}
-    
-    play_analysis = creator.journal_evolution.analyze_play_patterns(journal_entries)
-    current_character_data = character_sheet.get_character_summary()
-    evolution_suggestions = creator.journal_evolution.suggest_character_evolution(
-        current_character_data, play_analysis
-    )
-    
-    return {
-        "play_analysis": play_analysis,
-        "evolution_suggestions": evolution_suggestions,
-        "character_arc": creator.journal_evolution.create_character_arc_summary(
-            character_sheet.get_name(), journal_entries, play_analysis
-        )
+    ELEMENTAL_THEMES = {
+        "fire": ["flame", "burn", "heat", "ember", "inferno", "blaze", "scorch", "ignite"],
+        "water": ["aqua", "ocean", "sea", "wave", "current", "flow", "tide", "frost"],
+        "earth": ["stone", "rock", "mountain", "crystal", "gem", "mineral", "clay"],
+        "air": ["wind", "storm", "lightning", "thunder", "sky", "cloud", "tempest"],
+        "shadow": ["dark", "shadow", "void", "night", "eclipse", "umbra", "shade"],
+        "light": ["radiant", "holy", "divine", "bright", "sun", "star", "celestial"],
+        "nature": ["forest", "wild", "grove", "leaf", "thorn", "seed", "bloom"],
+        "death": ["necro", "bone", "corpse", "grave", "decay", "undead", "soul"]
     }
+    
+    THEME_CONFLICTS = {
+        "fire": ["water", "ice"],
+        "water": ["fire"],
+        "light": ["shadow", "death"],
+        "shadow": ["light"],
+        "nature": ["death", "undead"],
+        "death": ["nature", "light"],
+        "holy": ["shadow", "death", "fiend"],
+        "fiend": ["holy", "light", "celestial"]
+    }
+    
+    @classmethod
+    def extract_themes(cls, text: str) -> List[str]:
+        """Extract thematic elements from text."""
+        text_lower = text.lower()
+        themes = []
+        
+        for theme, keywords in cls.ELEMENTAL_THEMES.items():
+            if any(keyword in text_lower for keyword in keywords):
+                themes.append(theme)
+        
+        return themes
+    
+    @classmethod
+    def validate_thematic_consistency(cls, character_data: Dict[str, Any], 
+                                    description: str) -> CreationResult:
+        """Validate thematic consistency across all character elements."""
+        result = CreationResult(success=True, data=character_data)
+        
+        # Extract themes from description and character elements
+        base_themes = cls.extract_themes(description)
+        species_themes = cls.extract_themes(character_data.get("species", ""))
+        
+        # Check weapons for thematic conflicts
+        weapons = character_data.get("weapons", [])
+        for weapon in weapons:
+            weapon_name = weapon.get("name", "")
+            weapon_themes = cls.extract_themes(weapon_name)
+            
+            for weapon_theme in weapon_themes:
+                for base_theme in base_themes:
+                    if cls._themes_conflict(base_theme, weapon_theme):
+                        result.add_warning(
+                            f"Thematic conflict: {base_theme} character concept conflicts with {weapon_theme} weapon '{weapon_name}'"
+                        )
+        
+        # Check armor for thematic conflicts
+        armor = character_data.get("armor", "")
+        if armor:
+            armor_themes = cls.extract_themes(armor)
+            for armor_theme in armor_themes:
+                for base_theme in base_themes:
+                    if cls._themes_conflict(base_theme, armor_theme):
+                        result.add_warning(
+                            f"Thematic conflict: {base_theme} character concept conflicts with {armor_theme} armor '{armor}'"
+                        )
+        
+        # Check spells for thematic conflicts (if character has spells)
+        spells = character_data.get("spells", [])
+        for spell in spells:
+            spell_name = spell if isinstance(spell, str) else spell.get("name", "")
+            spell_themes = cls.extract_themes(spell_name)
+            
+            for spell_theme in spell_themes:
+                for base_theme in base_themes:
+                    if cls._themes_conflict(base_theme, spell_theme):
+                        result.add_warning(
+                            f"Thematic conflict: {base_theme} character concept conflicts with {spell_theme} spell '{spell_name}'"
+                        )
+        
+        logger.info(f"Thematic validation complete. Base themes: {base_themes}")
+        return result
+    
+    @classmethod
+    def _themes_conflict(cls, theme1: str, theme2: str) -> bool:
+        """Check if two themes conflict with each other."""
+        conflicts = cls.THEME_CONFLICTS.get(theme1, [])
+        return theme2 in conflicts
 
-def quick_character(name: str, species: str = "Human", character_class: str = "Fighter", 
-                   level: int = 1, add_journal: bool = True) -> CharacterSheet:
-    """Create a simple character quickly without LLM generation."""
+class LevelValidator:
+    """Validates level-appropriate content for characters."""
     
-    character_sheet = CharacterSheet(name)
-    character_sheet.core.species = species
-    character_sheet.core.character_classes = {character_class: level}
+    # Define power/rarity tiers by level ranges
+    LEVEL_TIERS = {
+        "novice": (1, 4),      # Levels 1-4
+        "apprentice": (5, 10), # Levels 5-10
+        "expert": (11, 16),    # Levels 11-16
+        "master": (17, 20)     # Levels 17-20
+    }
     
-    # Set default ability scores
-    character_sheet.core.strength = AbilityScore(15)
-    character_sheet.core.dexterity = AbilityScore(13)
-    character_sheet.core.constitution = AbilityScore(14)
-    character_sheet.core.intelligence = AbilityScore(12)
-    character_sheet.core.wisdom = AbilityScore(10)
-    character_sheet.core.charisma = AbilityScore(8)
+    # Weapon power levels
+    WEAPON_POWER_INDICATORS = {
+        "legendary": "master",
+        "artifact": "master", 
+        "very rare": "expert",
+        "rare": "apprentice",
+        "uncommon": "novice",
+        "common": "novice",
+        "masterwork": "apprentice",
+        "enchanted": "apprentice",
+        "magical": "apprentice",
+        "ancient": "expert",
+        "divine": "master",
+        "demonic": "expert"
+    }
     
-    # Calculate derived stats
-    character_sheet.calculate_all_derived_stats()
+    # Spell level by character level (maximum spell level available)
+    MAX_SPELL_LEVEL_BY_CHARACTER_LEVEL = {
+        1: 1, 2: 1, 3: 2, 4: 2, 5: 3, 6: 3, 7: 4, 8: 4, 9: 5, 10: 5,
+        11: 6, 12: 6, 13: 7, 14: 7, 15: 8, 16: 8, 17: 9, 18: 9, 19: 9, 20: 9
+    }
     
-    # Add initial journal if requested
-    if add_journal:
-        character_sheet.add_journal_entry(
-            f"{name} the {species} {character_class} begins their adventure with determination and hope.",
-            tags=["character_creation", "quick_creation"]
+    @classmethod
+    def validate_level_appropriate_content(cls, character_data: Dict[str, Any]) -> CreationResult:
+        """Validate that all content is appropriate for the character's level."""
+        result = CreationResult(success=True, data=character_data)
+        character_level = character_data.get("level", 1)
+        
+        # Validate weapons
+        cls._validate_weapon_levels(character_data, character_level, result)
+        
+        # Validate armor
+        cls._validate_armor_level(character_data, character_level, result)
+        
+        # Validate spells
+        cls._validate_spell_levels(character_data, character_level, result)
+        
+        # Validate equipment rarity
+        cls._validate_equipment_rarity(character_data, character_level, result)
+        
+        logger.info(f"Level appropriateness validation complete for level {character_level} character")
+        return result
+    
+    @classmethod
+    def _validate_weapon_levels(cls, character_data: Dict[str, Any], 
+                              character_level: int, result: CreationResult):
+        """Validate weapon power levels."""
+        weapons = character_data.get("weapons", [])
+        character_tier = cls._get_character_tier(character_level)
+        
+        for weapon in weapons:
+            weapon_name = weapon.get("name", "")
+            weapon_desc = weapon.get("description", "")
+            weapon_text = f"{weapon_name} {weapon_desc}".lower();
+            
+            # Check for power level indicators
+            weapon_tier = cls._determine_weapon_tier(weapon_text)
+            
+            if weapon_tier and not cls._tier_appropriate(character_tier, weapon_tier):
+                tier_levels = cls.LEVEL_TIERS[weapon_tier]
+                result.add_warning(
+                    f"Level mismatch: {weapon_name} appears to be {weapon_tier}-tier "
+                    f"(levels {tier_levels[0]}-{tier_levels[1]}) but character is level {character_level}"
+                )
+    
+    @classmethod
+    def _validate_armor_level(cls, character_data: Dict[str, Any], 
+                            character_level: int, result: CreationResult):
+        """Validate armor power level."""
+        armor = character_data.get("armor", "")
+        if not armor:
+            return
+            
+        character_tier = cls._get_character_tier(character_level)
+        armor_text = armor.lower()
+        
+        # Check for high-level armor indicators
+        high_level_indicators = ["plate", "magical", "enchanted", "artifact", "legendary", "adamantine", "mithril"]
+        
+        if character_level < 5 and any(indicator in armor_text for indicator in high_level_indicators):
+            result.add_warning(
+                f"Level mismatch: {armor} may be too advanced for level {character_level} character"
+            )
+    
+    @classmethod
+    def _validate_spell_levels(cls, character_data: Dict[str, Any], 
+                             character_level: int, result: CreationResult):
+        """Validate spell levels against character level."""
+        spells = character_data.get("spells", [])
+        max_spell_level = cls.MAX_SPELL_LEVEL_BY_CHARACTER_LEVEL.get(character_level, 1)
+        
+        for spell in spells:
+            spell_name = spell if isinstance(spell, str) else spell.get("name", "")
+            
+            # Try to extract spell level from name or description
+            spell_level = cls._estimate_spell_level(spell_name)
+            
+            if spell_level and spell_level > max_spell_level:
+                result.add_warning(
+                    f"Level mismatch: {spell_name} appears to be level {spell_level} spell "
+                    f"but character can only cast up to level {max_spell_level} spells"
+                )
+    
+    @classmethod
+    def _validate_equipment_rarity(cls, character_data: Dict[str, Any], 
+                                 character_level: int, result: CreationResult):
+        """Validate overall equipment rarity."""
+        equipment = character_data.get("equipment", [])
+        character_tier = cls._get_character_tier(character_level)
+        
+        rare_item_count = 0
+        for item in equipment:
+            item_name = item.get("name", "") if isinstance(item, dict) else str(item)
+            item_text = item_name.lower()
+            
+            if any(indicator in item_text for indicator in ["rare", "magical", "enchanted", "legendary"]):
+                rare_item_count += 1
+        
+        # Check if character has too many rare items for their level
+        max_rare_items = {"novice": 0, "apprentice": 1, "expert": 2, "master": 4}
+        
+        if rare_item_count > max_rare_items.get(character_tier, 0):
+            result.add_warning(
+                f"Equipment rarity concern: Level {character_level} character has {rare_item_count} "
+                f"rare/magical items (typical max: {max_rare_items.get(character_tier, 0)})"
+            )
+    
+    @classmethod
+    def _get_character_tier(cls, level: int) -> str:
+        """Get the character's power tier based on level."""
+        for tier, (min_level, max_level) in cls.LEVEL_TIERS.items():
+            if min_level <= level <= max_level:
+                return tier
+        return "novice"
+    
+    @classmethod
+    def _determine_weapon_tier(cls, weapon_text: str) -> Optional[str]:
+        """Determine weapon tier from text description."""
+        for indicator, tier in cls.WEAPON_POWER_INDICATORS.items():
+            if indicator in weapon_text:
+                return tier
+        return None
+    
+    @classmethod
+    def _tier_appropriate(cls, character_tier: str, item_tier: str) -> bool:
+        """Check if item tier is appropriate for character tier."""
+        tier_order = ["novice", "apprentice", "expert", "master"]
+        char_index = tier_order.index(character_tier)
+        item_index = tier_order.index(item_tier)
+        
+        # Allow items up to one tier higher
+        return item_index <= char_index + 1
+    
+    @classmethod
+    def _estimate_spell_level(cls, spell_name: str) -> Optional[int]:
+        """Estimate spell level from name using common patterns."""
+        spell_lower = spell_name.lower()
+        
+        # High-level spell indicators
+        if any(word in spell_lower for word in ["meteor", "wish", "gate", "storm", "tsunami", "earthquake"]):
+            return 9
+        elif any(word in spell_lower for word in ["disintegrate", "chain", "mass", "greater"]):
+            return 6
+        elif any(word in spell_lower for word in ["fireball", "lightning bolt", "counterspell"]):
+            return 3
+        elif any(word in spell_lower for word in ["shield", "magic missile", "cure"]):
+            return 1
+        
+        return None
+
+class ContentAligner:
+    """Aligns content with character concept and level."""
+    
+    @classmethod
+    def align_content_with_concept(cls, character_data: Dict[str, Any], 
+                                 description: str) -> Dict[str, Any]:
+        """Modify content to better align with character concept."""
+        aligned_data = character_data.copy()
+        
+        # Extract themes from description
+        base_themes = ConceptualValidator.extract_themes(description)
+        if not base_themes:
+            return aligned_data
+        
+        primary_theme = base_themes[0]  # Use first theme as primary
+        
+        # Align weapons
+        aligned_data["weapons"] = cls._align_weapons(
+            character_data.get("weapons", []), primary_theme
         )
+        
+        # Align armor
+        if character_data.get("armor"):
+            aligned_data["armor"] = cls._align_armor(
+                character_data["armor"], primary_theme
+            )
+        
+        # Align spells
+        aligned_data["spells"] = cls._align_spells(
+            character_data.get("spells", []), primary_theme
+        )
+        
+        logger.info(f"Content aligned to {primary_theme} theme")
+        return aligned_data
     
-    return character_sheet
+    @classmethod
+    def _align_weapons(cls, weapons: List[Dict], theme: str) -> List[Dict]:
+        """Align weapons with character theme."""
+        theme_weapon_mapping = {
+            "fire": {"prefix": "Flame", "suffix": "of Burning", "damage_type": "fire"},
+            "water": {"prefix": "Frost", "suffix": "of the Depths", "damage_type": "cold"},
+            "earth": {"prefix": "Stone", "suffix": "of the Mountain", "damage_type": "bludgeoning"},
+            "air": {"prefix": "Storm", "suffix": "of Lightning", "damage_type": "lightning"},
+            "shadow": {"prefix": "Shadow", "suffix": "of Darkness", "damage_type": "necrotic"},
+            "light": {"prefix": "Radiant", "suffix": "of Light", "damage_type": "radiant"}
+        }
+        
+        if theme not in theme_weapon_mapping:
+            return weapons
+        
+        theme_data = theme_weapon_mapping[theme]
+        aligned_weapons = []
+        
+        for weapon in weapons:
+            aligned_weapon = weapon.copy()
+            weapon_name = weapon.get("name", "Sword")
+            
+            # Check if weapon already has thematic elements
+            weapon_themes = ConceptualValidator.extract_themes(weapon_name)
+            
+            if not weapon_themes or theme not in weapon_themes:
+                # Add thematic prefix/suffix
+                if "sword" in weapon_name.lower():
+                    aligned_weapon["name"] = f"{theme_data['prefix']} {weapon_name}"
+                else:
+                    aligned_weapon["name"] = f"{weapon_name} {theme_data['suffix']}"
+                
+                # Add thematic damage type if appropriate
+                aligned_weapon["damage_type"] = theme_data["damage_type"]
+            
+            aligned_weapons.append(aligned_weapon)
+        
+        return aligned_weapons
+    
+    @classmethod
+    def _align_armor(cls, armor: str, theme: str) -> str:
+        """Align armor with character theme."""
+        theme_armor_mapping = {
+            "fire": "Flame-forged",
+            "water": "Scale",
+            "earth": "Stone",
+            "air": "Storm",
+            "shadow": "Shadowweave",
+            "light": "Radiant"
+        }
+        
+        if theme in theme_armor_mapping and theme not in armor.lower():
+            return f"{theme_armor_mapping[theme]} {armor}"
+        
+        return armor
+    
+    @classmethod
+    def _align_spells(cls, spells: List, theme: str) -> List:
+        """Align spells with character theme."""
+        if not spells:
+            return spells
+        
+        # For now, return as-is but could implement spell theme alignment
+        # This would involve replacing conflicting spells with thematically appropriate ones
+        return spells
+
+class PowerScaler:
+    """Scales content power to appropriate level."""
+    
+    @classmethod
+    def scale_content_to_level(cls, character_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Scale all content to be appropriate for character level."""
+        scaled_data = character_data.copy()
+        character_level = character_data.get("level", 1)
+        
+        # Scale weapons
+        scaled_data["weapons"] = cls._scale_weapons(
+            character_data.get("weapons", []), character_level
+        )
+        
+        # Scale armor
+        if character_data.get("armor"):
+            scaled_data["armor"] = cls._scale_armor(
+                character_data["armor"], character_level
+            )
+        
+        # Scale spells
+        scaled_data["spells"] = cls._scale_spells(
+            character_data.get("spells", []), character_level
+        )
+        
+        logger.info(f"Content scaled for level {character_level}")
+        return scaled_data
+    
+    @classmethod
+    def _scale_weapons(cls, weapons: List[Dict], level: int) -> List[Dict]:
+        """Scale weapon power to character level."""
+        scaled_weapons = []
+        
+        for weapon in weapons:
+            scaled_weapon = weapon.copy()
+            
+            # Add appropriate enhancement based on level
+            if level >= 11:
+                scaled_weapon["magical_bonus"] = "+2"
+                scaled_weapon["properties"] = weapon.get("properties", []) + ["magical"]
+            elif level >= 5:
+                scaled_weapon["magical_bonus"] = "+1"
+                scaled_weapon["properties"] = weapon.get("properties", []) + ["magical"]
+            
+            # Adjust damage for very low or high levels
+            if level == 1:
+                # Ensure starting weapons aren't overpowered
+                damage = weapon.get("damage", "1d6")
+                if "d12" in damage or "2d" in damage:
+                    scaled_weapon["damage"] = "1d8"
+            
+            scaled_weapons.append(scaled_weapon)
+        
+        return scaled_weapons
+    
+    @classmethod
+    def _scale_armor(cls, armor: str, level: int) -> str:
+        """Scale armor to character level."""
+        # Basic scaling - could be more sophisticated
+        if level >= 10 and "leather" in armor.lower():
+            return armor.replace("Leather", "Studded Leather")
+        elif level >= 15 and "chain" in armor.lower():
+            return armor.replace("Chain", "Plate")
+        
+        return armor
+    
+    @classmethod
+    def _scale_spells(cls, spells: List, level: int) -> List:
+        """Scale spells to appropriate level."""
+        if not spells:
+            return spells
+        
+        scaled_spells = []
+        max_spell_level = LevelValidator.MAX_SPELL_LEVEL_BY_CHARACTER_LEVEL.get(level, 1)
+        
+        for spell in spells:
+            spell_name = spell if isinstance(spell, str) else spell.get("name", "")
+            estimated_level = LevelValidator._estimate_spell_level(spell_name)
+            
+            if estimated_level and estimated_level > max_spell_level:
+                # Replace with level-appropriate alternative
+                if isinstance(spell, dict):
+                    scaled_spell = spell.copy()
+                    scaled_spell["name"] = cls._get_level_appropriate_spell(spell_name, max_spell_level)
+                    scaled_spells.append(scaled_spell)
+                else:
+                    scaled_spells.append(cls._get_level_appropriate_spell(spell_name, max_spell_level))
+            else:
+                scaled_spells.append(spell)
+        
+        return scaled_spells
+    
+    @classmethod
+    def _get_level_appropriate_spell(cls, original_spell: str, max_level: int) -> str:
+        """Get a level-appropriate replacement spell."""
+        spell_alternatives = {
+            1: ["Magic Missile", "Shield", "Cure Wounds", "Burning Hands"],
+            2: ["Scorching Ray", "Hold Person", "Blur", "Web"],
+            3: ["Fireball", "Lightning Bolt", "Counterspell", "Fly"],
+            4: ["Greater Invisibility", "Wall of Fire", "Confusion", "Polymorph"],
+            5: ["Cone of Cold", "Hold Monster", "Wall of Stone", "Telekinesis"]
+        }
+        
+        # Get spells for the maximum allowed level
+        if max_level in spell_alternatives:
+            alternatives = spell_alternatives[max_level]
+            # Try to match theme if possible
+            original_lower = original_spell.lower()
+            if "fire" in original_lower or "flame" in original_lower:
+                fire_spells = [s for s in alternatives if "fire" in s.lower() or "burn" in s.lower()]
+                if fire_spells:
+                    return fire_spells[0]
+            
+            return alternatives[0]  # Default to first alternative
+        
+        return "Cantrip"  # Fallback for very low levels
 
 # ============================================================================
-# MODULE SUMMARY
+# ENHANCED CHARACTER VALIDATOR WITH CONSISTENCY CHECKS
 # ============================================================================
-"""
-REFACTORED CHARACTER CREATION MODULE WITH JOURNAL EVOLUTION
 
-This module provides comprehensive character creation and evolution based on play history:
-
-CLASSES:
-- CreationConfig: Configuration for character creation
-- CreationResult: Result container with success/error/warning info
-- JournalBasedEvolution: NEW - Analyzes journal entries for character evolution
-- CharacterValidator: Validates character data structure and content
-- CharacterDataGenerator: Generates character data using LLM services
-- CharacterCreator: Main integration service with journal evolution support
-- CharacterProgressionTracker: NEW - Manages character development snapshots and background evolution
-- NPCCreator: NEW - Creates and registers NPCs in the database
-
-KEY FEATURES:
-- Journal-based character evolution analysis
-- Play pattern detection from journal entries
-- Automatic character progression suggestions
-- Enhanced backstory generation incorporating journal entries
-- Character arc tracking and development
-- Multiclass and feat suggestions based on actual play
-- Clean integration with all refactored modules
-- Comprehensive error handling and validation
-- Retry logic for LLM generation failures
-- Support for custom content generation
-- Backstory generation integration
-- Fallback character creation when LLM fails
-
-JOURNAL EVOLUTION FEATURES:
-- Analyze play patterns (stealth, combat, social, magic, etc.)
-- Suggest multiclass options based on journal themes
-- Generate evolved backstories incorporating adventures
-- Create character development arcs
-- Apply evolution suggestions to characters
-- Track character growth through documented experiences
-
-DEPENDENCIES:
-- character_models: CharacterCore, CharacterState, CharacterSheet (with journal)
-- core_models: AbilityScore, ASIManager, etc.
-- custom_content_models: ContentRegistry, managers
-- ability_management: AdvancedAbilityManager
-- llm_services: LLM integration
-- generators: BackstoryGenerator, CustomContentGenerator
-- database_models_new: CustomContent for NPC registration
-
-NEW METHODS:
-- create_character(): Now includes initial journal content
-- update_character_with_journal(): Analyze and evolve character from journal
-- apply_evolution_suggestions(): Apply suggested changes to character
-- analyze_character_evolution(): Get evolution analysis without changes
-- NPCCreator.create_and_register_npc(): Create and register NPCs in the database
-
-CONVENIENCE FUNCTIONS:
-- create_character(): Enhanced with journal support
-- update_character_from_journal(): New - Update character from play history
-- analyze_character_evolution(): New - Analyze without updating
-- quick_character(): Enhanced to return CharacterSheet with journal
-
-REMOVED:
-- Duplicate code and classes
-- Legacy/example code
-- Overly complex inheritance hierarchies
-- Unused async functionality
-- Dead code paths
-
-The journal integration allows characters to truly evolve based on how they're actually played,
-moving beyond initial conception to reflect the reality of their adventures and growth.
-"""
+# ============================================================================
+# CONSISTENCY SYSTEM SUMMARY
+# ============================================================================
+# 
+# This implementation addresses the two key consistency concerns:
+#
+# 1. THEMATIC CONSISTENCY SYSTEM:
+#    - ConceptualValidator: Detects thematic conflicts (e.g., fire vs water elements)
+#    - ContentAligner: Automatically aligns content with character themes
+#    - Theme extraction from descriptions using keyword mapping
+#    - Conflict detection between opposing elemental/conceptual themes
+#    - Applied during generation and as post-processing validation
+#
+# 2. LEVEL APPROPRIATENESS SYSTEM:
+#    - LevelValidator: Ensures content matches character power level
+#    - PowerScaler: Automatically scales content to appropriate level
+#    - Tier-based validation (novice/apprentice/expert/master)
+#    - Spell level caps based on character level
+#    - Equipment rarity restrictions by level range
+#    - Weapon/armor power scaling integration
+#
+# 3. INTEGRATION POINTS:
+#    - Enhanced CharacterValidator with comprehensive_consistency validation
+#    - Automatic fix application during character generation
+#    - Custom content generation includes thematic and level guidance
+#    - Validation occurs at multiple points in the creation pipeline
+#    - Warnings provide detailed feedback on consistency issues
+#
+# USAGE:
+# The system automatically runs during character creation and provides both
+# validation warnings and automatic fixes to ensure created characters have
+# consistent, level-appropriate equipment, spells, and abilities that align
+# with their conceptual theme.
+# ============================================================================

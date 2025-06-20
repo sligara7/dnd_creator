@@ -1,11 +1,14 @@
-# this follows the character creation module, but should condensed and simplified for creating individual items (spells, weapons, armors) - which are a largely a subset of the character creation
-# this is a placeholder for the items creation module, which will be used to only create individual items in the game
-# should utilize a similar process of using an LLM service to generate character concepts, backstories, and other attributes, but for NPCs - generally, NPCs are much simpler than full characters, so a lot of features can be eliminated
-# needs to added at initial prompt as an option; ie, user should be asked if they are creating a full character, npc, creature (beasts, monsters, etc), or individual items
-# consider the interface with custom_content_models and how to ensure that custom content is applied correctly to NPCs
-
-
-# this is just a placeholder for future development
+# Item Creation Module
+#
+# This module is intended for creating individual items (spells, weapons, armors) for the game.
+# It should be a simplified version of the character creation process, leveraging LLM services to generate item concepts and attributes.
+# Key goals:
+#   - Ensure items are consistent with character concepts (e.g., no fire weapons for water species)
+#   - Ensure items are appropriate for character level (e.g., no level 20 weapons for level 1 characters)
+#   - Integrate with custom content models to support user-created content
+#   - Allow users to choose between creating a full character, NPC, creature, or individual items at the initial prompt
+#
+# This file is currently a placeholder for future development.
 
 # how to ensure that a the created species, class, weapons, armor, and spells are all consistent and aligned with created character concept?  
 # for instance, if a water species is created, that it isn't given a fire weapon?

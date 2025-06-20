@@ -20,7 +20,14 @@ import sys
 import json
 import asyncio
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
+
+# Try to import json5 for more lenient JSON parsing
+try:
+    import json5
+    HAS_JSON5 = True
+except ImportError:
+    HAS_JSON5 = False
 
 # Add backend directory to path
 backend_dir = Path(__file__).parent
@@ -29,9 +36,12 @@ sys.path.insert(0, str(backend_dir))
 try:
     from character_models import CharacterCore, DnDCondition
     from core_models import ProficiencyLevel
-    from custom_content_models import ContentRegistry, CustomSpecies, CustomClass
     from llm_service_new import create_llm_service, create_ollama_service
-    print("✅ Character, custom content, and LLM services imported successfully")
+    print("✅ Character and LLM services imported successfully")
+    if HAS_JSON5:
+        print("✅ JSON5 library available for robust JSON parsing")
+    else:
+        print("⚠️  JSON5 not available. Install with: pip install json5")
 except ImportError as e:
     print(f"❌ Failed to import required modules: {e}")
     print("Make sure you're running this from the backend directory")
@@ -39,13 +49,13 @@ except ImportError as e:
 
 
 class AICharacterCreator:
-    """AI-driven character creation using LLM services with enhanced custom content."""
+    """AI-driven character creation using LLM services."""
     
-    def __init__(self):
+    def __init__(self, debug_mode: bool = False):
         self.character = None
         self.llm_service = None
-        self.content_registry = ContentRegistry()  # Enhanced registry with database and LLM
         self.character_concept = ""
+        self.debug_mode = debug_mode
         self.generated_content = {
             "species": None,
             "classes": {},
@@ -61,32 +71,46 @@ class AICharacterCreator:
         }
         
     def initialize_llm(self):
-        """Initialize the LLM service and content registry."""
+        """Initialize the LLM service with increased timeout for slow computers."""
         print("🤖 Initializing AI service...")
         try:
-            # Try Ollama first (local), fallback to others
-            self.llm_service = create_ollama_service()
-            print("✅ Connected to Ollama LLM service")
-            
-            # Set up the content registry with LLM integration
-            self.content_registry.set_llm_service(self.llm_service)
-            print("✅ Content registry initialized with LLM integration")
-            
+            # Try Ollama first (local) with longer timeout for slow computers
+            self.llm_service = create_ollama_service(timeout=300)  # 5 minutes timeout
+            print("✅ Connected to Ollama LLM service (5 min timeout)")
             return True
         except Exception as e:
             print(f"⚠️  Ollama not available: {e}")
             try:
                 self.llm_service = create_llm_service()
                 print("✅ Connected to default LLM service")
-                
-                # Set up the content registry with LLM integration
-                self.content_registry.set_llm_service(self.llm_service)
-                print("✅ Content registry initialized with LLM integration")
-                
                 return True
             except Exception as e2:
                 print(f"❌ No LLM service available: {e2}")
                 return False
+    
+    async def test_llm_basic_functionality(self):
+        """Test LLM with a simple request to ensure it's working."""
+        print("🧪 Testing LLM with simple request...")
+        
+        simple_prompt = """Generate a simple JSON response with a name and age:
+        {"name": "Test Character", "age": 25}
+        
+        Please return exactly that JSON format."""
+        
+        try:
+            response = await self.llm_service.generate_content(simple_prompt)
+            test_data = self.parse_json_response(response)
+            
+            if test_data and "name" in test_data:
+                print(f"✅ LLM test successful! Generated: {test_data.get('name', 'Unknown')}")
+                return True
+            else:
+                print(f"⚠️  LLM test partially successful but JSON parsing failed")
+                print(f"   Raw response: {response[:100]}...")
+                return True  # Still proceed, just warn about JSON parsing
+        except Exception as e:
+            print(f"❌ LLM test failed: {e}")
+            return False
     
     async def start_creation(self):
         """Start the AI-driven character creation process."""
@@ -98,6 +122,14 @@ class AICharacterCreator:
         if not self.initialize_llm():
             print("❌ Cannot proceed without LLM service.")
             return
+        
+        # Test LLM functionality first
+        if not await self.test_llm_basic_functionality():
+            print("❌ LLM test failed. Cannot proceed with character generation.")
+            return
+        
+        print("🎯 LLM is working! Proceeding with character generation...")
+        print("⏱️  Note: Generation may take several minutes on slower computers.\n")
         
         # Get character concept from user
         concept = self.get_character_concept()
@@ -149,7 +181,7 @@ class AICharacterCreator:
     
     async def generate_basic_info(self):
         """Generate basic character information."""
-        print("📝 Generating basic character info...")
+        print("📝 Generating basic character info... (this may take a few minutes)")
         
         prompt = f"""
         Based on this character concept: "{self.character_concept}"
@@ -169,7 +201,9 @@ class AICharacterCreator:
         """
         
         try:
-            response = await self.llm_service.generate_text(prompt)
+            print("   ⏳ Sending request to LLM...")
+            response = await self.llm_service.generate_content(prompt)
+            print("   ⚙️  Processing response...")
             basic_info = self.parse_json_response(response)
             
             if basic_info:
@@ -192,173 +226,63 @@ class AICharacterCreator:
             })
     
     async def generate_species_and_classes(self):
-        """Generate unique species and class combinations using enhanced ContentRegistry."""
-        print("🧬 Generating species and classes with rich descriptions...")
+        """Generate unique species and class combinations."""
+        print("🧬 Generating species and classes... (this may take a few minutes)")
         
-        # Parse the character concept to extract species and class hints
-        species_hint, class_hint = self.extract_species_class_hints(self.character_concept)
+        prompt = f"""
+        For this character concept: "{self.character_concept}"
+        
+        Create a unique species and class combination in JSON format:
+        {{
+            "species": {{
+                "name": "Species Name",
+                "description": "What makes this species unique",
+                "traits": ["Trait 1", "Trait 2", "Trait 3"],
+                "abilities": {{
+                    "strength": 12,
+                    "dexterity": 14,
+                    "constitution": 13,
+                    "intelligence": 15,
+                    "wisdom": 10,
+                    "charisma": 16
+                }}
+            }},
+            "primary_class": {{
+                "name": "Class Name",
+                "level": 3,
+                "description": "What this class does",
+                "features": ["Feature 1", "Feature 2"]
+            }},
+            "secondary_class": {{
+                "name": "Optional Second Class",
+                "level": 1,
+                "description": "Multiclass option"
+            }}
+        }}
+        
+        Be creative! Invent new species and class combinations that don't exist in standard D&D.
+        Ability scores should total around 75-80 points.
+        """
         
         try:
-            # Generate custom species with rich LLM description
-            if species_hint:
-                print(f"🌟 Creating custom species: {species_hint}")
-                custom_species = await self.content_registry.create_species_with_llm(
-                    species_hint, self.character_concept
-                )
-                self.generated_content["species"] = {
-                    "name": custom_species.name,
-                    "description": custom_species.description,
-                    "traits": custom_species.innate_traits,
-                    "creature_type": custom_species.creature_type,
-                    "size": custom_species.size,
-                    "speed": custom_species.speed
-                }
-                print(f"✅ Species: {custom_species.name}")
-                print(f"   Description: {custom_species.description[:100]}...")
+            print("   ⏳ Sending request to LLM...")
+            response = await self.llm_service.generate_content(prompt)
+            print("   ⚙️  Processing response...")
+            species_classes = self.parse_json_response(response)
             
-            # Generate custom class with rich LLM description
-            if class_hint:
-                print(f"⚔️ Creating custom class: {class_hint}")
-                custom_class = await self.content_registry.create_class_with_llm(
-                    class_hint, self.character_concept
-                )
-                self.generated_content["primary_class"] = {
-                    "name": custom_class.name,
-                    "description": custom_class.description,
-                    "hit_die": custom_class.hit_die,
-                    "level": 3,
-                    "primary_ability": custom_class.primary_ability
-                }
-                print(f"✅ Class: {custom_class.name}")
-                print(f"   Description: {custom_class.description[:100]}...")
-            
-            # Generate balanced ability scores
-            self.generate_balanced_abilities()
-            
+            if species_classes:
+                self.generated_content["species"] = species_classes.get("species")
+                self.generated_content["primary_class"] = species_classes.get("primary_class")
+                self.generated_content["secondary_class"] = species_classes.get("secondary_class")
+                
+                print(f"✅ Species: {species_classes.get('species', {}).get('name', 'Unknown')}")
+                print(f"✅ Class: {species_classes.get('primary_class', {}).get('name', 'Unknown')}")
+            else:
+                print("⚠️  Using fallback species and class")
+                self.use_fallback_species_class()
         except Exception as e:
             print(f"⚠️  Error generating species/class: {e}")
-            await self.use_fallback_species_class()
-    
-    def extract_species_class_hints(self, concept: str) -> Tuple[str, str]:
-        """Extract species and class hints from the character concept."""
-        concept_lower = concept.lower()
-        
-        # Common species patterns
-        species_patterns = {
-            "crystal": "Crystalkin",
-            "shadow": "Shadowborn", 
-            "void": "Voidtouched",
-            "dragon": "Dragonkin",
-            "time": "Chronarch",
-            "star": "Starborn",
-            "dream": "Dreamwalker",
-            "storm": "Stormcaller",
-            "flame": "Flameborn",
-            "ice": "Frostkin"
-        }
-        
-        # Common class patterns
-        class_patterns = {
-            "artificer": "Artificer",
-            "dancer": "Shadow Dancer",
-            "monk": "Monk",
-            "healer": "Divine Healer", 
-            "druid": "Druid",
-            "time": "Chronomancer",
-            "void": "Void Walker",
-            "crystal": "Crystal Mage",
-            "shadow": "Shadowblade",
-            "dragon": "Dragon Knight"
-        }
-        
-        species_hint = None
-        class_hint = None
-        
-        # Find species hint
-        for pattern, species in species_patterns.items():
-            if pattern in concept_lower:
-                species_hint = species
-                break
-        
-        # Find class hint
-        for pattern, class_name in class_patterns.items():
-            if pattern in concept_lower:
-                class_hint = class_name
-                break
-        
-        # Generate defaults if no hints found
-        if not species_hint:
-            species_hint = "Mystical Being"
-        if not class_hint:
-            class_hint = "Arcane Warrior"
-        
-        return species_hint, class_hint
-    
-    async def use_fallback_species_class(self):
-        """Use fallback species and class generation."""
-        print("🎲 Using fallback species and class generation...")
-        
-        # Create simple custom species
-        try:
-            fallback_species = await self.content_registry.create_species_with_llm(
-                "Wanderer", "A mysterious traveler with unknown origins"
-            )
-            self.generated_content["species"] = {
-                "name": fallback_species.name,
-                "description": fallback_species.description
-            }
-        except Exception:
-            self.generated_content["species"] = {
-                "name": "Human",
-                "description": "A versatile and adaptable species."
-            }
-        
-        # Create simple custom class
-        try:
-            fallback_class = await self.content_registry.create_class_with_llm(
-                "Adventurer", "A versatile hero skilled in many arts"
-            )
-            self.generated_content["primary_class"] = {
-                "name": fallback_class.name,
-                "description": fallback_class.description,
-                "level": 3
-            }
-        except Exception:
-            self.generated_content["primary_class"] = {
-                "name": "Fighter",
-                "description": "A master of martial combat.",
-                "level": 3
-            }
-    
-    def generate_balanced_abilities(self):
-        """Generate balanced ability scores."""
-        # Create a balanced spread that totals around 75-80
-        abilities = {
-            "strength": 13,
-            "dexterity": 14,
-            "constitution": 13,
-            "intelligence": 12,
-            "wisdom": 10,
-            "charisma": 14
-        }
-        
-        # Adjust based on class
-        class_name = self.generated_content.get("primary_class", {}).get("name", "").lower()
-        
-        if any(word in class_name for word in ["mage", "wizard", "scholar"]):
-            abilities["intelligence"] = 16
-            abilities["strength"] = 10
-        elif any(word in class_name for word in ["dancer", "rogue", "ranger"]):
-            abilities["dexterity"] = 16
-            abilities["strength"] = 10
-        elif any(word in class_name for word in ["healer", "priest", "druid"]):
-            abilities["wisdom"] = 16
-            abilities["intelligence"] = 10
-        elif any(word in class_name for word in ["warrior", "knight", "fighter"]):
-            abilities["strength"] = 16
-            abilities["intelligence"] = 10
-        
-        self.generated_content["abilities"] = abilities
+            self.use_fallback_species_class()
     
     async def generate_abilities(self):
         """Generate ability scores based on character concept."""
@@ -382,7 +306,7 @@ class AICharacterCreator:
     
     async def generate_skills_and_background(self):
         """Generate skills and background."""
-        print("🎯 Generating skills and background...")
+        print("🎯 Generating skills and background... (this may take a few minutes)")
         
         prompt = f"""
         For this character: "{self.character_concept}"
@@ -404,7 +328,9 @@ class AICharacterCreator:
         """
         
         try:
-            response = await self.llm_service.generate_text(prompt)
+            print("   ⏳ Sending request to LLM...")
+            response = await self.llm_service.generate_content(prompt)
+            print("   ⚙️  Processing response...")
             skills_bg = self.parse_json_response(response)
             
             if skills_bg:
@@ -421,7 +347,7 @@ class AICharacterCreator:
     
     async def generate_equipment(self):
         """Generate starting equipment."""
-        print("⚔️ Generating equipment...")
+        print("⚔️ Generating equipment... (this may take a few minutes)")
         
         prompt = f"""
         For this character concept: "{self.character_concept}"
@@ -440,7 +366,9 @@ class AICharacterCreator:
         """
         
         try:
-            response = await self.llm_service.generate_text(prompt)
+            print("   ⏳ Sending request to LLM...")
+            response = await self.llm_service.generate_content(prompt)
+            print("   ⚙️  Processing response...")
             equipment = self.parse_json_response(response)
             
             if equipment:
@@ -454,7 +382,7 @@ class AICharacterCreator:
     
     async def generate_custom_content(self):
         """Generate custom feats, spells, and items."""
-        print("✨ Generating custom content...")
+        print("✨ Generating custom content... (this may take a few minutes)")
         
         prompt = f"""
         For this character concept: "{self.character_concept}"
@@ -489,7 +417,9 @@ class AICharacterCreator:
         """
         
         try:
-            response = await self.llm_service.generate_text(prompt)
+            print("   ⏳ Sending request to LLM...")
+            response = await self.llm_service.generate_content(prompt)
+            print("   ⚙️  Processing response...")
             custom_content = self.parse_json_response(response)
             
             if custom_content:
@@ -508,7 +438,7 @@ class AICharacterCreator:
     
     async def generate_personality(self):
         """Generate personality traits and backstory."""
-        print("🎭 Generating personality and backstory...")
+        print("🎭 Generating personality and backstory... (this may take a few minutes)")
         
         prompt = f"""
         For this character concept: "{self.character_concept}"
@@ -527,7 +457,9 @@ class AICharacterCreator:
         """
         
         try:
-            response = await self.llm_service.generate_text(prompt)
+            print("   ⏳ Sending request to LLM...")
+            response = await self.llm_service.generate_content(prompt)
+            print("   ⚙️  Processing response...")
             personality = self.parse_json_response(response)
             
             if personality:
@@ -540,24 +472,126 @@ class AICharacterCreator:
             self.use_fallback_personality()
     
     def parse_json_response(self, response: str) -> Optional[Dict[str, Any]]:
-        """Parse JSON from LLM response."""
+        """Parse JSON from LLM response with robust extraction."""
+        if self.debug_mode:
+            print(f"🔍 DEBUG - Raw LLM Response:")
+            print(f"   Length: {len(response)} characters")
+            print(f"   Preview: {response[:300]}...")
+            print(f"   Ending: ...{response[-100:]}")
+        
         try:
-            # Try to find JSON in the response
+            # First, try to find JSON in the response
             start = response.find('{')
             end = response.rfind('}') + 1
             
             if start != -1 and end > start:
                 json_str = response[start:end]
-                return json.loads(json_str)
+                
+                if self.debug_mode:
+                    print(f"🔍 DEBUG - Extracted JSON string:")
+                    print(f"   {json_str}")
+                
+                # Try parsing the extracted JSON
+                try:
+                    return json.loads(json_str)
+                except json.JSONDecodeError as e:
+                    print(f"⚠️  JSON parsing error: {e}")
+                    print(f"   Raw JSON attempt: {json_str[:200]}...")
+                    
+                    # Try JSON5 if available
+                    if HAS_JSON5:
+                        try:
+                            result = json5.loads(json_str)
+                            print("✅ Recovered JSON using JSON5 parser")
+                            return result
+                        except Exception as json5_error:
+                            print(f"   JSON5 also failed: {json5_error}")
+                    
+                    # Try to find and extract multiple JSON objects
+                    json_objects = []
+                    brace_count = 0
+                    current_json = ""
+                    
+                    for char in response[start:]:
+                        current_json += char
+                        if char == '{':
+                            brace_count += 1
+                        elif char == '}':
+                            brace_count -= 1
+                            if brace_count == 0:
+                                try:
+                                    obj = json.loads(current_json)
+                                    json_objects.append(obj)
+                                    break
+                                except:
+                                    continue
+                    
+                    if json_objects:
+                        print("✅ Recovered JSON using alternative parsing")
+                        return json_objects[0]
+                    
+                    # Last resort: try to clean common issues
+                    cleaned_json = self._clean_json_string(json_str)
+                    if self.debug_mode:
+                        print(f"🔍 DEBUG - Cleaned JSON: {cleaned_json}")
+                    try:
+                        result = json.loads(cleaned_json)
+                        print("✅ Recovered JSON after cleaning")
+                        return result
+                    except Exception as clean_error:
+                        # Try JSON5 on the cleaned version too
+                        if HAS_JSON5:
+                            try:
+                                result = json5.loads(cleaned_json)
+                                print("✅ Recovered JSON using JSON5 after cleaning")
+                                return result
+                            except Exception as json5_clean_error:
+                                print(f"   JSON5 on cleaned JSON also failed: {json5_clean_error}")
+                        
+                        print(f"❌ All JSON parsing attempts failed")
+                        print(f"   Original error: {e}")
+                        print(f"   Cleaning error: {clean_error}")
+                        if self.debug_mode:
+                            print(f"   Full response: {response}")
+                        return None
             else:
                 print("⚠️  No JSON found in response")
+                print(f"   Response preview: {response[:200]}...")
                 return None
-        except json.JSONDecodeError as e:
-            print(f"⚠️  JSON parsing error: {e}")
+                
+        except Exception as e:
+            print(f"⚠️  Unexpected error in JSON parsing: {e}")
             return None
     
+    def _clean_json_string(self, json_str: str) -> str:
+        """Clean common JSON formatting issues."""
+        import re
+        
+        # Remove markdown code blocks
+        json_str = json_str.replace('```json', '').replace('```', '')
+        
+        # Fix the specific issue: unescaped quotes in measurements like "6'2""
+        # This handles cases like "6'2"" -> "6'2\""
+        json_str = re.sub(r'(\d+\'?\d*)"([^,\n\}]+)"', r'\1\\"\2\\"', json_str)
+        
+        # Fix height/weight measurements specifically
+        json_str = re.sub(r'"(\d+\'\d*)"([^,\n\}]*)"', r'"\1\\"\2"', json_str)
+        
+        # Remove trailing commas before closing braces/brackets
+        json_str = re.sub(r',(\s*[}\]])', r'\1', json_str)
+        
+        # Fix common quote issues
+        json_str = json_str.replace('"', '"').replace('"', '"')
+        json_str = json_str.replace(''', "'").replace(''', "'")
+        
+        # Fix unescaped quotes in string values more aggressively
+        # Look for patterns like: "key": "value with "quotes" inside"
+        json_str = re.sub(r':\s*"([^"]*)"([^"]*)"([^"]*)"', r': "\1\\"\2\\"\3"', json_str)
+        
+        return json_str.strip()
+    
     def create_character_object(self):
-        """Create the CharacterCore object from generated content with custom content linking."""
+        """Create the CharacterCore object from generated content."""
         print("\n🏗️ Building character object...")
         
         name = self.generated_content.get("name", "AI Hero")
@@ -569,8 +603,7 @@ class AICharacterCreator:
         
         # Set species
         species_info = self.generated_content.get("species", {})
-        species_name = species_info.get("name", "Custom Species")
-        self.character.species = species_name
+        self.character.species = species_info.get("name", "Custom Species")
         
         # Set background
         background_info = self.generated_content.get("background", {})
@@ -608,24 +641,7 @@ class AICharacterCreator:
         self.character.flaws = personality.get("flaws", [])
         self.character.backstory = personality.get("backstory", "")
         
-        # Link custom content to character
-        custom_content_names = []
-        if species_info.get("name") and species_info["name"] not in ["Human", "Elf", "Dwarf", "Halfling", "Dragonborn", "Gnome", "Half-Elf", "Half-Orc", "Tiefling"]:
-            custom_content_names.append(f"Species: {species_info['name']}")
-        
-        if primary_class.get("name") and primary_class["name"] not in ["Fighter", "Wizard", "Rogue", "Cleric", "Ranger", "Paladin", "Barbarian", "Bard", "Druid", "Monk", "Sorcerer", "Warlock"]:
-            custom_content_names.append(f"Class: {primary_class['name']}")
-        
-        if secondary_class.get("name"):
-            custom_content_names.append(f"Multiclass: {secondary_class['name']}")
-        
-        # Link to content registry
-        if custom_content_names:
-            character_id = f"{name}_{hash(name) % 10000}"  # Simple character ID
-            self.content_registry.link_content_to_character(character_id, custom_content_names)
-            print(f"🔗 Linked {len(custom_content_names)} custom content items to character")
-        
-        print("✅ Character object created with custom content links!")
+        print("✅ Character object created!")
     
     def display_final_character(self):
         """Display the complete AI-generated character."""
@@ -720,6 +736,17 @@ class AICharacterCreator:
         print("=" * 80)
     
     # Fallback methods for when AI generation fails
+    def use_fallback_species_class(self):
+        self.generated_content["species"] = {
+            "name": "Variant Human",
+            "abilities": {"strength": 13, "dexterity": 14, "constitution": 15, 
+                         "intelligence": 12, "wisdom": 10, "charisma": 16}
+        }
+        self.generated_content["primary_class"] = {
+            "name": "Custom Adventurer",
+            "level": 3
+        }
+    
     def use_fallback_skills_background(self):
         self.generated_content["background"] = {"name": "Wanderer"}
         self.generated_content["skills"] = ["Perception", "Insight", "Athletics", "Investigation"]
@@ -744,7 +771,12 @@ class AICharacterCreator:
 async def main():
     """Main function for AI character creation."""
     try:
-        creator = AICharacterCreator()
+        # Enable debug mode if requested
+        debug_mode = "--debug" in sys.argv or "-d" in sys.argv
+        if debug_mode:
+            print("🔍 DEBUG MODE ENABLED - Will show raw LLM responses")
+        
+        creator = AICharacterCreator(debug_mode=debug_mode)
         await creator.start_creation()
     except KeyboardInterrupt:
         print("\n\nCharacter creation cancelled. Goodbye!")

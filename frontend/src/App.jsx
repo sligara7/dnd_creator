@@ -1,6 +1,238 @@
-// needs to interface with the backend api to fetch data. 
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
+import { characterAPI, apiUtils } from './services/api';
+import CharacterCreator from './components/Character/CharacterCreator';
+import CharacterList from './components/Character/CharacterList';
+import DMDashboard from './components/DM/DMDashboard';
+import './App.css';
 
-// here are the backend details:
+/**
+ * Main D&D Character Creator Application
+ * 
+ * Features:
+ * - AI-driven character creation with LLM integration
+ * - Character management (CRUD operations)
+ * - DM tools for NPCs, creatures, and content approval
+ * - Journal system for character progression
+ * - Level up and multiclass functionality
+ * - Backend API integration at http://localhost:8000
+ */
+
+function App() {
+  const [isBackendConnected, setIsBackendConnected] = useState(false);
+  const [characters, setCharacters] = useState([]);
+  const [currentUser, setCurrentUser] = useState('Player1'); // TODO: Implement proper auth
+
+  // Test backend connection on app load
+  useEffect(() => {
+    const checkBackendConnection = async () => {
+      try {
+        const result = await apiUtils.testConnection();
+        setIsBackendConnected(result.connected);
+        console.log('Backend status:', result.message);
+      } catch (error) {
+        console.error('Failed to connect to backend:', error);
+        setIsBackendConnected(false);
+      }
+    };
+
+    checkBackendConnection();
+  }, []);
+
+  // Load characters on app start
+  useEffect(() => {
+    if (isBackendConnected) {
+      loadCharacters();
+    }
+  }, [isBackendConnected]);
+
+  const loadCharacters = async () => {
+    try {
+      const response = await characterAPI.getAll();
+      setCharacters(response.data);
+    } catch (error) {
+      console.error('Failed to load characters:', error);
+    }
+  };
+
+  return (
+    <div className="App">
+      <Router>
+        <div className="min-h-screen bg-gray-900 text-white">
+          {/* Header Navigation */}
+          <header className="bg-gray-800 shadow-lg">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div className="flex justify-between items-center py-6">
+                <div className="flex items-center">
+                  <h1 className="text-3xl font-bold text-red-500">
+                    🐉 D&D Character Creator
+                  </h1>
+                </div>
+                
+                {/* Backend Status Indicator */}
+                <div className="flex items-center space-x-4">
+                  <div className={`flex items-center space-x-2 px-3 py-1 rounded-full text-sm ${
+                    isBackendConnected 
+                      ? 'bg-green-100 text-green-800' 
+                      : 'bg-red-100 text-red-800'
+                  }`}>
+                    <div className={`w-2 h-2 rounded-full ${
+                      isBackendConnected ? 'bg-green-500' : 'bg-red-500'
+                    }`} />
+                    <span>
+                      {isBackendConnected ? 'Backend Connected' : 'Backend Offline'}
+                    </span>
+                  </div>
+                  <span className="text-gray-300">User: {currentUser}</span>
+                </div>
+              </div>
+              
+              {/* Navigation Menu */}
+              <nav className="flex space-x-8 pb-4">
+                <Link 
+                  to="/" 
+                  className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium"
+                >
+                  Home
+                </Link>
+                <Link 
+                  to="/create" 
+                  className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium"
+                >
+                  Create Character
+                </Link>
+                <Link 
+                  to="/characters" 
+                  className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium"
+                >
+                  My Characters
+                </Link>
+                <Link 
+                  to="/dm" 
+                  className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium"
+                >
+                  DM Tools
+                </Link>
+              </nav>
+            </div>
+          </header>
+
+          {/* Main Content */}
+          <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+            {!isBackendConnected && (
+              <div className="bg-red-50 border border-red-200 rounded-md p-4 mb-6">
+                <div className="flex">
+                  <div className="ml-3">
+                    <h3 className="text-sm font-medium text-red-800">
+                      Backend Connection Error
+                    </h3>
+                    <div className="mt-2 text-sm text-red-700">
+                      <p>
+                        Cannot connect to the backend API at http://localhost:8000. 
+                        Please ensure the backend is running:
+                      </p>
+                      <pre className="mt-2 bg-gray-100 p-2 rounded text-xs">
+                        cd backend && python main.py
+                      </pre>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <Routes>
+              <Route path="/" element={<HomePage />} />
+              <Route 
+                path="/create" 
+                element={
+                  <CharacterCreator 
+                    onCharacterCreated={loadCharacters}
+                    isBackendConnected={isBackendConnected}
+                  />
+                } 
+              />
+              <Route 
+                path="/characters" 
+                element={
+                  <CharacterList 
+                    characters={characters}
+                    onCharacterUpdated={loadCharacters}
+                    isBackendConnected={isBackendConnected}
+                  />
+                } 
+              />
+              <Route 
+                path="/dm" 
+                element={
+                  <DMDashboard 
+                    isBackendConnected={isBackendConnected}
+                  />
+                } 
+              />
+            </Routes>
+          </main>
+        </div>
+      </Router>
+    </div>
+  );
+}
+
+// Home Page Component
+function HomePage() {
+  return (
+    <div className="text-center">
+      <div className="max-w-3xl mx-auto">
+        <h2 className="text-4xl font-extrabold text-white sm:text-5xl">
+          Welcome to D&D Character Creator
+        </h2>
+        <p className="mt-6 text-xl text-gray-300">
+          Create amazing D&D 5e characters with AI assistance, manage your character roster, 
+          and access powerful DM tools for NPCs and creatures.
+        </p>
+        
+        <div className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-3">
+          <FeatureCard
+            icon="🎭"
+            title="AI Character Creation"
+            description="Let our LLM help you create unique characters with rich backstories and balanced abilities."
+          />
+          <FeatureCard
+            icon="📊"
+            title="Character Management"
+            description="Track character progression, level up, multiclass, and maintain detailed journals."
+          />
+          <FeatureCard
+            icon="🎲"
+            title="DM Tools"
+            description="Create NPCs, monsters, and custom content. Approve player characters and manage campaigns."
+          />
+        </div>
+        
+        <div className="mt-10">
+          <Link
+            to="/create"
+            className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
+          >
+            Start Creating Characters
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Feature Card Component
+function FeatureCard({ icon, title, description }) {
+  return (
+    <div className="bg-gray-800 rounded-lg p-6">
+      <div className="text-4xl mb-4">{icon}</div>
+      <h3 className="text-lg font-semibold text-white mb-2">{title}</h3>
+      <p className="text-gray-400 text-sm">{description}</p>
+    </div>
+  );
+}
+
+export default App;
 // # Build container
 // podman build -t dnd-backend .
 
@@ -30,10 +262,29 @@
 // ├── generators.py            # Content generators ✅
 // └── PRODUCTION_READY.md      # Documentation ✅
 
+// ### 4. Container Configuration ✅
+// - Dockerfile optimized for production
+// - Requirements.txt contains all necessary dependencies
+// - Proper entry point: `uvicorn main:app --host 0.0.0.0 --port 8000`
+// - Health check configured for container monitoring
+
+// ### 5. API Endpoints ✅
+// All creation modules are production-ready with proper API integration:
+// - Character management: `/api/v1/characters/`
+// - Item creation: `/api/v1/items/`
+// - NPC creation: `/api/v1/npcs/`
+// - Creature creation: `/api/v1/creatures/`
+// - Content generation: `/api/v1/generate/`
+
+// Reference /dnd_char_creator/backend/PRODUCTION_READY.md for detailed documentation on the backend structure, API endpoints, and usage examples.
+// Reference /dnd_char_creator/backend/app.py for the main fastapi and endpoints for implementation
+
 // # TODO: check importing an existing character from JSON and updating it (at the current character level), or leveling it up to the next level, or doing a multi-class change (at level up)
 // # TODO: this is supposed to be interative - the LLM is supposed to provide an initial character concept, then offer the user the opportunity to modify it (and what they'd like to modify), the LLM should then ingest the previous concept and modify per the user requests.
 // # TODO: added ability to create NPCs, creatures (beasts, monsters, fey, and new species), and individual items (weapons, armor, spells).  
 
+
+// below is the python version of the first thing I want to test the backend with:
 // #!/usr/bin/env python3
 // """
 // AI-Driven Character Creator - Creative Character Generation

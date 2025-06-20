@@ -1595,3 +1595,62 @@ class CharacterIterationCache:
 # - Long rest mechanics with exhaustion recovery
 # - Character evolution analysis based on play history
 # ============================================================================
+
+# ============================================================================
+# SIMPLE WRAPPER CLASSES FOR COMPATIBILITY
+# ============================================================================
+
+class CharacterStats:
+    """Simple character statistics calculator."""
+    
+    def __init__(self, character_core: CharacterCore, character_state: CharacterState):
+        self.character_core = character_core
+        self.character_state = character_state
+        
+    @property
+    def armor_class(self) -> int:
+        """Calculate AC based on armor and dexterity."""
+        base_ac = 10 + self.character_core.dexterity.modifier
+        # Add armor bonuses if implemented
+        return base_ac
+    
+    @property
+    def max_hit_points(self) -> int:
+        """Calculate maximum hit points."""
+        total_level = sum(self.character_core.character_classes.values()) or 1
+        con_bonus = self.character_core.constitution.modifier * total_level
+        return total_level * 6 + con_bonus  # Simple average for all classes
+    
+    @property
+    def proficiency_bonus(self) -> int:
+        """Calculate proficiency bonus based on total level."""
+        total_level = sum(self.character_core.character_classes.values()) or 1
+        return 2 + ((total_level - 1) // 4)
+
+class CharacterSheet:
+    """Simple character sheet combining core and state."""
+    
+    def __init__(self, name: str = ""):
+        self.core = CharacterCore(name)
+        self.state = CharacterState()
+        self.stats = CharacterStats(self.core, self.state)
+    
+    @property
+    def name(self) -> str:
+        return self.core.name
+    
+    @name.setter
+    def name(self, value: str):
+        self.core.name = value
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary representation."""
+        return {
+            "core": self.core.__dict__,
+            "state": self.state.__dict__,
+            "stats": {
+                "armor_class": self.stats.armor_class,
+                "max_hit_points": self.stats.max_hit_points,
+                "proficiency_bonus": self.stats.proficiency_bonus
+            }
+        }

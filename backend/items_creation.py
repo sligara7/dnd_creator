@@ -49,7 +49,7 @@ from character_models import CharacterCore, CharacterState, CharacterSheet, Char
 from core_models import AbilityScore, ASIManager, MagicItemManager, CharacterLevelManager, ProficiencyLevel, AbilityScoreSource
 from custom_content_models import ContentRegistry, FeatManager
 from ability_management import AdvancedAbilityManager, CustomContentAbilityManager
-from llm_service_new import create_llm_service, LLMService
+from llm_service import create_llm_service, LLMService
 from generators import BackstoryGenerator, CustomContentGenerator
 
 # Configure logging
@@ -1334,7 +1334,7 @@ class ItemCreator:
         item_type: 'weapon', 'armor', 'spell', 'equipment', etc.
         properties: dict of item-specific fields (damage, AC, etc.)
         """
-        from database_models_new import CustomContent
+        from database_models import CustomContent
         from sqlalchemy.orm import Session
         from sqlalchemy.exc import SQLAlchemyError
         import traceback

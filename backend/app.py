@@ -169,24 +169,66 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent))
 
 # Import configuration and services
-from config_new import settings
-from llm_service_new import create_llm_service
+from config import settings
+from llm_service import create_llm_service
 
 # Import database models and operations
-from database_models_new import CharacterDB, CharacterSessionDB, Character, CharacterSession, init_database, get_db
-from database_models_new import (
+from database_models import CharacterDB, CharacterSessionDB, Character, CharacterSession, init_database, get_db
+from database_models import (
     CharacterRepository, CharacterBranch, CharacterCommit, CharacterTag,
     CharacterRepositoryManager, CharacterVersioningAPI
 )
 from character_models import CharacterCore, DnDCondition
 from items_creation import ItemCreator
-from database_models_new import register_custom_item
+from database_models import register_custom_item
 from npc_creation import NPCCreator
-from database_models_new import register_custom_npc
+from database_models import register_custom_npc
 from creature_creation import CreatureCreator
-from database_models_new import register_custom_creature
+from database_models import register_custom_creature
 
 logger = logging.getLogger(__name__)
+
+# ============================================================================
+# FASTAPI APP INITIALIZATION
+# ============================================================================
+
+# Initialize FastAPI app
+app = FastAPI(
+    title="D&D Character Creator API",
+    description="Comprehensive D&D 5e Character Management System",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Configure this properly for production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Initialize database on startup
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database and services on startup."""
+    try:
+        init_database()
+        logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {e}")
+        raise
+
+# ============================================================================
+# HEALTH CHECK ENDPOINT
+# ============================================================================
+
+@app.get("/health", tags=["health"])
+async def health_check():
+    """Health check endpoint for container monitoring."""
+    return {"status": "healthy", "service": "dnd-character-creator-api"}
 
 # ============================================================================
 # PYDANTIC MODELS FOR REQUEST/RESPONSE VALIDATION

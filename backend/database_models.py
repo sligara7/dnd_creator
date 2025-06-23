@@ -289,6 +289,10 @@ class Character(Base):
     backstory = Column(Text, nullable=True)
     notes = Column(Text, nullable=True)
     
+    # Approval state: 'pending', 'approved', 'rejected'
+    approval_state = Column(String(20), default='pending', nullable=False)
+    approval_notes = Column(Text, nullable=True)
+    
     def to_dict(self) -> Dict[str, Any]:
         """Convert character to dictionary format."""
         return {

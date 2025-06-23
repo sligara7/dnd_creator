@@ -1,40 +1,128 @@
-place to design new characters, NPCs, and monsters/beasts/creatures for Dungeon & Dragons
+import React, { useState } from 'react';
+// import { createCharacter, updateCharacter, commitCharacter } from '../../services/api'; // Example API functions
 
-host as service on server (use a docker container)
+const CharacterCreator = () => {
+  const [step, setStep] = useState(1);
+  const [description, setDescription] = useState('');
+  const [level, setLevel] = useState(1);
+  const [generateBackstory, setGenerateBackstory] = useState(true);
+  const [includeCustomContent, setIncludeCustomContent] = useState(false);
+  const [addInitialJournal, setAddInitialJournal] = useState(true);
+  const [character, setCharacter] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [iteration, setIteration] = useState(0);
+  const [committed, setCommitted] = useState(false);
 
-backend/core directory has: ability_scores, alignment, character, classes, equipment, feats, personality_and_backstory, skills, species, and spells;
-each subdirectory has a abstract class that every new character created must adhere to
+  // Step 1: User inputs
+  const handleCreate = async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      // Replace with real API call
+      // const result = await createCharacter({ description, level, generateBackstory, includeCustomContent, addInitialJournal });
+      const result = { success: true, data: { core: { name: 'Example', species: 'Human', character_classes: { Fighter: 1 } }, sheet: {}, backstory: 'A mysterious past...', custom_content: {}, journal: { entries: [], summary: '' }, managers: {} } };
+      if (result.success) {
+        setCharacter(result.data);
+        setStep(2);
+        setIteration(iteration + 1);
+      } else {
+        setError(result.error || 'Character creation failed.');
+      }
+    } catch (e) {
+      setError('Error creating character.');
+    }
+    setIsLoading(false);
+  };
 
-link to or embed free LLM to aid/populate new character creation;
+  // Step 2: User tweaks and iterates
+  const handleIterate = async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      // Replace with real API call for update/tweak
+      // const result = await updateCharacter(character);
+      const result = { success: true, data: { ...character, core: { ...character.core, name: character.core.name + ' (Tweaked)' } } };
+      if (result.success) {
+        setCharacter(result.data);
+        setIteration(iteration + 1);
+      } else {
+        setError(result.error || 'Character update failed.');
+      }
+    } catch (e) {
+      setError('Error updating character.');
+    }
+    setIsLoading(false);
+  };
 
-idea would be, player goes to webpage, provides answers to a series of questions like:
+  // Step 3: Commit character
+  const handleCommit = async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      // Replace with real API call for commit
+      // const result = await commitCharacter(character);
+      const result = { success: true };
+      if (result.success) {
+        setCommitted(true);
+      } else {
+        setError(result.error || 'Commit failed.');
+      }
+    } catch (e) {
+      setError('Error committing character.');
+    }
+    setIsLoading(false);
+  };
 
-prompt 1: describe your new character?
-prompt 2: what is the sex of your new character?
-prompt 3: tell me some things about your personality_and_backstory
-prompt 4: what are some characteristics (powers, abilities, etc) that you would like your character to have?
-prompt N: final prompt necessary to fully create your character
+  return (
+    <div className="container mx-auto p-4">
+      <h1 className="text-2xl font-bold mb-4">Create a New Character</h1>
+      {error && <div className="bg-red-200 text-red-800 p-2 mb-4 rounded">{error}</div>}
+      {step === 1 && (
+        <div className="space-y-4">
+          <div>
+            <label className="block font-semibold">Character Description</label>
+            <textarea className="w-full p-2 rounded bg-gray-800 text-white" value={description} onChange={e => setDescription(e.target.value)} rows={3} />
+          </div>
+          <div>
+            <label className="block font-semibold">Level</label>
+            <input type="number" min={1} max={20} className="w-24 p-2 rounded bg-gray-800 text-white" value={level} onChange={e => setLevel(Number(e.target.value))} />
+          </div>
+          <div className="flex gap-4">
+            <label><input type="checkbox" checked={generateBackstory} onChange={e => setGenerateBackstory(e.target.checked)} /> Generate Backstory</label>
+            <label><input type="checkbox" checked={includeCustomContent} onChange={e => setIncludeCustomContent(e.target.checked)} /> Include Custom Content</label>
+            <label><input type="checkbox" checked={addInitialJournal} onChange={e => setAddInitialJournal(e.target.checked)} /> Add Initial Journal</label>
+          </div>
+          <button className="bg-blue-600 px-4 py-2 rounded text-white" onClick={handleCreate} disabled={isLoading}>
+            {isLoading ? 'Creating...' : 'Create Character'}
+          </button>
+        </div>
+      )}
+      {step === 2 && character && (
+        <div className="space-y-4">
+          <h2 className="text-xl font-semibold">Review & Tweak Character (Iteration {iteration})</h2>
+          <div className="bg-gray-800 p-4 rounded">
+            <p><strong>Name:</strong> {character.core.name}</p>
+            <p><strong>Species:</strong> {character.core.species}</p>
+            <p><strong>Classes:</strong> {Object.entries(character.core.character_classes).map(([cls, lvl]) => `${cls} (Level ${lvl})`).join(', ')}</p>
+            <p><strong>Backstory:</strong> {character.backstory}</p>
+            {/* Add more fields and allow user to tweak as needed */}
+          </div>
+          <button className="bg-yellow-600 px-4 py-2 rounded text-white mr-2" onClick={handleIterate} disabled={isLoading}>
+            {isLoading ? 'Updating...' : 'Tweak & Iterate'}
+          </button>
+          <button className="bg-green-600 px-4 py-2 rounded text-white" onClick={handleCommit} disabled={isLoading}>
+            {isLoading ? 'Committing...' : 'Commit Character'}
+          </button>
+        </div>
+      )}
+      {committed && (
+        <div className="bg-green-200 text-green-900 p-4 mt-4 rounded">
+          Character committed to the database! You can now view it in your character list.
+        </div>
+      )}
+    </div>
+  );
+};
 
-with each prompt, the LLM auto-populates one of the abstract classes (or portions of)
-
-LLM should moderate the character creation so that every character created is roughly equal in terms of abilities and skills
-For instance, if a player creates "Bob, the plummer" and another creates "Pheonix, the Sun God", they would roughly progress equivalently as they level up
-the idea is not to be able to create a god-like character that cannot be defeated and no other character can compete with
-
-frontend would allow for a DM to go to the webpage and approve a new character creation as well as create NPCs, monsters, beasts, and other creatures (also utilizing the LLM)
-
-frontend would also allow players to view their characters and level them up as they progress
-
-should have some backend to save created characters
-
-Basically, everything should be modifiable as long as it adheres to a abstract classes for character creation, whether that be spells or weapons or species... all are customizable
-
-Players and DMs should also be able to go into their character and create a journal and notes as appropriate
-
-Another feature would be to create "way points" that track or save a player's evolution as they level up (should be included in the journal)
-
-cool feature would be for LLM to review and summarize events for the DM to keep a master journal of all characters and other significant events in game-player
-
-another cool feature would be at the end of a player creation, the LLM would automatically generate a series of images that best describe the character created
-
-should adhere as much as possible to DnD rules 5e (2024 edition)
+export default CharacterCreator;

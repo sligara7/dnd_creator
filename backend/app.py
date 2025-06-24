@@ -179,7 +179,7 @@ from database_models import (
     CharacterRepository, CharacterBranch, CharacterCommit, CharacterTag,
     CharacterRepositoryManager, CharacterVersioningAPI
 )
-from character_models import CharacterCore, DnDCondition
+from character_models import CharacterCore, CharacterSheet, DnDCondition
 from core_models import AbilityScore
 
 # Import refactored creation modules
@@ -527,15 +527,15 @@ async def create_character(character_data: CharacterCreateRequest, db = Depends(
                 if hasattr(character_data, key):
                     setattr(character_data, key, val)
         
-        # Create CharacterCore from request data
-        character_sheet = CharacterCore(character_data.name)
+        # Create CharacterSheet from request data
+        character_sheet = CharacterSheet(character_data.name)
         
         # Set core character properties
-        character_sheet.species = character_data.species
-        character_sheet.background = character_data.background
-        character_sheet.alignment = character_data.alignment
-        character_sheet.character_classes = character_data.character_classes
-        character_sheet.backstory = character_data.backstory
+        character_sheet.core.species = character_data.species
+        character_sheet.core.background = character_data.background
+        character_sheet.core.alignment = character_data.alignment
+        character_sheet.core.character_classes = character_data.character_classes
+        character_sheet.core.backstory = character_data.backstory
         
         # Set ability scores (ensure all six are present and valid)
         required_abilities = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]
@@ -545,7 +545,7 @@ async def create_character(character_data: CharacterCreateRequest, db = Depends(
             score = abilities.get(ability, default_scores[ability])
             if not isinstance(score, int) or score < 1 or score > 20:
                 score = default_scores[ability]
-            setattr(character_sheet, ability, AbilityScore(score))
+            setattr(character_sheet.core, ability, AbilityScore(score))
         
         # Set equipment if provided
         if character_data.equipment:
@@ -553,8 +553,49 @@ async def create_character(character_data: CharacterCreateRequest, db = Depends(
             character_sheet.state.armor = character_data.equipment.get("armor", "")
             character_sheet.state.weapons = character_data.equipment.get("weapons", [])
         
-        # Save to database using the defined operation flow
-        db_character = CharacterDB.save_character_sheet(db, character_sheet)
+        # Calculate all derived stats (AC, HP, skills, saves, etc.)
+        character_sheet.calculate_all_derived_stats()
+        
+        # Prepare character data for database save by flattening the structure
+        character_dict = character_sheet.to_dict()
+        
+        # Create flattened data structure for database
+        db_character_data = {
+            # Core character data
+            "name": character_sheet.core.name,
+            "species": character_sheet.core.species,
+            "background": character_sheet.core.background,
+            "alignment": " ".join(character_sheet.core.alignment) if isinstance(character_sheet.core.alignment, list) else character_sheet.core.alignment,
+            "level": character_sheet.core.level,
+            "character_classes": character_sheet.core.character_classes,
+            "backstory": character_sheet.core.backstory,
+            
+            # Ability scores - get from core
+            "abilities": {
+                "strength": character_sheet.core.strength.total_score,
+                "dexterity": character_sheet.core.dexterity.total_score,
+                "constitution": character_sheet.core.constitution.total_score,
+                "intelligence": character_sheet.core.intelligence.total_score,
+                "wisdom": character_sheet.core.wisdom.total_score,
+                "charisma": character_sheet.core.charisma.total_score
+            },
+            
+            # Calculated stats
+            "armor_class": character_sheet.stats.armor_class,
+            "hit_points": character_sheet.stats.max_hit_points,
+            "proficiency_bonus": character_sheet.stats.proficiency_bonus,
+            "skills": character_sheet.stats.skills,
+            
+            # Equipment from state
+            "equipment": {
+                "items": character_sheet.state.equipment,
+                "armor": character_sheet.state.armor,
+                "weapons": character_sheet.state.weapons
+            }
+        }
+        
+        # Save to database using the flattened data
+        db_character = CharacterDB.create_character(db, db_character_data)
         
         # Add player_name if provided
         if character_data.player_name:

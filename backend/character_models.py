@@ -1110,6 +1110,11 @@ class CharacterState:
         self.inventory: List[Dict[str, Any]] = []
         self.attuned_items: List[str] = []  # Max 3 items
         
+        # Simple equipment lists (for compatibility with character creation)
+        self.equipment: List[str] = []  # General equipment list
+        self.armor: str = ""  # Currently equipped armor
+        self.weapons: List[str] = []  # Weapon list
+        
         # Spell Slots and Resources
         self.spell_slots_remaining: Dict[int, int] = {}  # spell_level -> remaining_slots
         self.spell_slots_max: Dict[int, int] = {}
@@ -1550,72 +1555,60 @@ class CharacterState:
             "new_currency": self.currency.copy()
         }
     
-    # ============================================================================
-    # GETTER METHODS FOR STATE DATA
-    # ============================================================================
-    
-    def get_experience_points(self) -> int:
-        """Get current experience points."""
-        return self.experience_points
-    
-    def get_level_info(self) -> Dict[str, Any]:
-        """Get comprehensive level and XP information."""
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert CharacterState to dictionary representation."""
         return {
-            "current_level": self.get_level_for_xp(self.experience_points),
+            # Hit Points and Health
+            "current_hit_points": self.current_hit_points,
+            "max_hit_points": self.max_hit_points,
+            "temporary_hit_points": self.temporary_hit_points,
+            "hit_dice_remaining": self.hit_dice_remaining.copy(),
+            
+            # Experience and Leveling
             "experience_points": self.experience_points,
-            "xp_progress": self.get_xp_to_next_level(),
-            "pending_level_ups": len(self.pending_level_ups),
-            "xp_history_count": len(self.xp_history)
+            "milestone_progress": self.milestone_progress,
+            
+            # Equipment
+            "equipment": self.equipment.copy(),
+            "armor": self.armor,
+            "weapons": self.weapons.copy(),
+            "equipped_items": self.equipped_items.copy(),
+            "attunement_slots_used": self.attunement_slots_used,
+            
+            # Currency
+            "copper_pieces": self.copper_pieces,
+            "silver_pieces": self.silver_pieces,
+            "electrum_pieces": self.electrum_pieces,
+            "gold_pieces": self.gold_pieces,
+            "platinum_pieces": self.platinum_pieces,
+            
+            # Conditions and Effects
+            "conditions": self.conditions.copy(),
+            "exhaustion_level": self.exhaustion_level,
+            "inspiration": self.inspiration,
+            "custom_conditions": self.custom_conditions.copy(),
+            
+            # Combat State
+            "death_save_successes": self.death_save_successes,
+            "death_save_failures": self.death_save_failures,
+            
+            # Spellcasting
+            "spell_slots_used": self.spell_slots_used.copy(),
+            "spells_known": self.spells_known.copy(),
+            "warlock_pact_slots_used": self.warlock_pact_slots_used,
+            
+            # Class Resources
+            "class_resources": self.class_resources.copy(),
+            
+            # Journal and Evolution
+            "journal_entries": [entry.copy() for entry in self.journal_entries],
+            "character_evolution_notes": self.character_evolution_notes.copy(),
+            "session_count": self.session_count,
+            "creation_iterations": self.creation_iterations,
+            "user_feedback": self.user_feedback.copy(),
+            "modification_history": self.modification_history.copy()
         }
     
-    def get_hit_points(self) -> Dict[str, int]:
-        """Get hit point information."""
-        return {
-            "current": self.current_hit_points,
-            "maximum": self.max_hit_points,
-            "temporary": self.temporary_hit_points
-        }
-    
-    def get_conditions(self) -> List[str]:
-        """Get list of active conditions."""
-        return [condition.value for condition in self.conditions]
-    
-    def get_exhaustion_level(self) -> int:
-        """Get current exhaustion level."""
-        return self.exhaustion_level
-    
-    def get_currency(self) -> Dict[str, int]:
-        """Get currency amounts."""
-        return self.currency.copy()
-    
-    def get_character_state_summary(self) -> Dict[str, Any]:
-        """Get comprehensive character state summary."""
-        return {
-            "level_info": self.get_level_info(),
-            "hit_points": self.get_hit_points(),
-            "conditions": {
-                "active": self.get_conditions(),
-                "exhaustion_level": self.exhaustion_level,
-                "exhaustion_effects": ExhaustionLevel.get_effects(self.exhaustion_level)
-            },
-            "currency": self.get_currency(),
-            "equipment": {
-                "inventory_items": len(self.inventory),
-                "attuned_items": len(self.attuned_items),
-                "equipped_items": len(self.equipped_items)
-            },
-            "resources": {
-                "spell_slots": self.spell_slots_remaining,
-                "class_resources": self.class_resources
-            },
-            "journal": {
-                "session_notes": len(self.session_notes),
-                "campaign_entries": len(self.campaign_journal),
-                "character_goals": len(self.character_goals)
-            },
-            "last_updated": datetime.now().isoformat()
-        }
-
 
 # ============================================================================
 # CHARACTER ITERATION CACHE
@@ -1704,38 +1697,60 @@ class CharacterIterationCache:
 # ============================================================================
 
 class CharacterStats:
-    """Simple character statistics calculator."""
+    """Comprehensive character statistics storage and calculation."""
     
     def __init__(self, character_core: CharacterCore, character_state: CharacterState):
         self.character_core = character_core
         self.character_state = character_state
         
-    @property
-    def armor_class(self) -> int:
-        """Calculate AC based on armor and dexterity."""
-        base_ac = 10 + self.character_core.dexterity.modifier
-        # Add armor bonuses if implemented
-        return base_ac
-    
-    @property
-    def max_hit_points(self) -> int:
-        """Calculate maximum hit points."""
-        total_level = sum(self.character_core.character_classes.values()) or 1
-        con_bonus = self.character_core.constitution.modifier * total_level
-        return total_level * 6 + con_bonus  # Simple average for all classes
-    
-    @property
-    def proficiency_bonus(self) -> int:
-        """Calculate proficiency bonus based on total level."""
-        total_level = sum(self.character_core.character_classes.values()) or 1
-        return 2 + ((total_level - 1) // 4)
+        # Core stats
+        self.armor_class: int = 10
+        self.max_hit_points: int = 1
+        self.proficiency_bonus: int = 2
+        self.initiative: int = 0
+        
+        # Saving throws
+        self.saving_throws: Dict[str, int] = {
+            "strength": 0, "dexterity": 0, "constitution": 0,
+            "intelligence": 0, "wisdom": 0, "charisma": 0
+        }
+        
+        # Skills
+        self.skills: Dict[str, int] = {}
+        
+        # Spellcasting
+        self.spell_save_dc: int = 8
+        self.spell_attack_bonus: int = 0
+        self.spellcasting_ability: Optional[str] = None
+        
+        # Movement and other stats
+        self.movement_speed: int = 30
+        self.carrying_capacity: int = 0
+        self.passive_perception: int = 10
+        
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert stats to dictionary for API responses."""
+        return {
+            "armor_class": self.armor_class,
+            "max_hit_points": self.max_hit_points,
+            "proficiency_bonus": self.proficiency_bonus,
+            "initiative": self.initiative,
+            "saving_throws": self.saving_throws.copy(),
+            "skills": self.skills.copy(),
+            "spell_save_dc": self.spell_save_dc,
+            "spell_attack_bonus": self.spell_attack_bonus,
+            "spellcasting_ability": self.spellcasting_ability,
+            "movement_speed": self.movement_speed,
+            "carrying_capacity": self.carrying_capacity,
+            "passive_perception": self.passive_perception
+        }
 
 class CharacterSheet:
     """Simple character sheet combining core and state."""
     
     def __init__(self, name: str = ""):
         self.core = CharacterCore(name)
-        self.state = CharacterState()
+        self.state = CharacterState(self.core)
         self.stats = CharacterStats(self.core, self.state)
     
     @property
@@ -1749,11 +1764,301 @@ class CharacterSheet:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary representation."""
         return {
-            "core": self.core.__dict__,
-            "state": self.state.__dict__,
-            "stats": {
-                "armor_class": self.stats.armor_class,
-                "max_hit_points": self.stats.max_hit_points,
-                "proficiency_bonus": self.stats.proficiency_bonus
-            }
+            "core": self.core.to_dict(),
+            "state": self.state.to_dict(),
+            "stats": self.stats.to_dict()
+        }
+    
+    def calculate_all_derived_stats(self):
+        """
+        Calculate all derived statistics for the character based on D&D 5e 2024 rules.
+        This includes AC, HP, saving throws, skills, and other derived values.
+        """
+        logger.info(f"Calculating all derived stats for {self.core.name}")
+        
+        # Reset state to ensure clean calculation
+        self._reset_calculated_values()
+        
+        # 1. Calculate Ability Modifiers (these are properties, so always current)
+        self._calculate_ability_modifiers()
+        
+        # 2. Calculate Proficiency Bonus
+        self.stats.proficiency_bonus = self._calculate_proficiency_bonus()
+        
+        # 3. Calculate Armor Class
+        self.stats.armor_class = self._calculate_armor_class()
+        
+        # 4. Calculate Hit Points
+        self.stats.max_hit_points = self._calculate_hit_points()
+        
+        # 5. Calculate Saving Throw Bonuses
+        self._calculate_saving_throws()
+        
+        # 6. Calculate Skill Bonuses
+        self._calculate_skill_bonuses()
+        
+        # 7. Calculate Initiative
+        self.stats.initiative = self.core.dexterity.modifier
+        
+        # 8. Calculate Spell Save DC and Spell Attack Bonus (if applicable)
+        self._calculate_spellcasting_stats()
+        
+        # 9. Calculate Movement Speed
+        self._calculate_movement_speed()
+        
+        # 10. Calculate Carrying Capacity
+        self._calculate_carrying_capacity()
+        
+        # 11. Calculate Passive Perception
+        self._calculate_passive_perception()
+        
+        # 12. Update state values
+        if self.state.current_hit_points <= 0:
+            self.state.current_hit_points = self.stats.max_hit_points
+        
+        logger.info(f"Derived stats calculated: AC={self.stats.armor_class}, HP={self.stats.max_hit_points}, Prof={self.stats.proficiency_bonus}")
+    
+    def _reset_calculated_values(self):
+        """Reset all calculated values to ensure clean recalculation."""
+        # Initialize stats dict if it doesn't exist
+        if not hasattr(self.stats, '__dict__'):
+            self.stats.__dict__ = {}
+        
+        # Reset saving throws
+        self.stats.saving_throws = {
+            "strength": 0, "dexterity": 0, "constitution": 0,
+            "intelligence": 0, "wisdom": 0, "charisma": 0
+        }
+        
+        # Reset skills
+        self.stats.skills = {}
+        
+        # Reset spellcasting
+        self.stats.spell_save_dc = 8
+        self.stats.spell_attack_bonus = 0
+        self.stats.spellcasting_ability = None
+        
+        # Reset movement and other stats
+        self.stats.movement_speed = 30  # Default for most species
+        self.stats.carrying_capacity = 0
+        self.stats.passive_perception = 10
+    
+    def _calculate_ability_modifiers(self):
+        """Calculate ability modifiers (these are properties on AbilityScore objects)."""
+        # Modifiers are calculated automatically by AbilityScore.modifier property
+        pass
+    
+    def _calculate_proficiency_bonus(self) -> int:
+        """Calculate proficiency bonus based on total character level."""
+        total_level = sum(self.core.character_classes.values()) or 1
+        return 2 + ((total_level - 1) // 4)
+    
+    def _calculate_armor_class(self) -> int:
+        """
+        Calculate Armor Class based on equipment and class features.
+        Base calculation: 10 + Dex modifier + armor bonus + shield bonus + other bonuses
+        """
+        base_ac = 10
+        dex_modifier = self.core.dexterity.modifier
+        armor_bonus = 0
+        shield_bonus = 0
+        natural_armor = 0
+        other_bonuses = 0
+        
+        # Check for armor from equipment (if implemented)
+        # This is a simplified version - real implementation would check equipped armor
+        if hasattr(self.state, 'equipped_armor') and self.state.equipped_armor:
+            armor = self.state.equipped_armor
+            if isinstance(armor, dict):
+                armor_bonus = armor.get('ac_bonus', 0)
+                max_dex = armor.get('max_dex_bonus', 10)  # 10 = no limit
+                dex_modifier = min(dex_modifier, max_dex)
+        
+        # Check for shield
+        if hasattr(self.state, 'equipped_shield') and self.state.equipped_shield:
+            shield_bonus = 2  # Standard shield bonus
+        
+        # Check for natural armor (some species/classes)
+        # This would be implemented based on species traits
+        
+        # Check for class-specific AC calculations
+        ac_calculation = self._get_class_ac_calculation()
+        if ac_calculation:
+            return ac_calculation
+        
+        total_ac = base_ac + dex_modifier + armor_bonus + shield_bonus + natural_armor + other_bonuses
+        return max(total_ac, 10)  # Minimum AC is 10
+    
+    def _get_class_ac_calculation(self) -> Optional[int]:
+        """Get class-specific AC calculations (Monk, Barbarian, etc.)."""
+        # Monk: 10 + Dex + Wis (if unarmored)
+        if "Monk" in self.core.character_classes:
+            if not hasattr(self.state, 'equipped_armor') or not self.state.equipped_armor:
+                return 10 + self.core.dexterity.modifier + self.core.wisdom.modifier
+        
+        # Barbarian: 10 + Dex + Con (if unarmored)
+        if "Barbarian" in self.core.character_classes:
+            if not hasattr(self.state, 'equipped_armor') or not self.state.equipped_armor:
+                return 10 + self.core.dexterity.modifier + self.core.constitution.modifier
+        
+        # Sorcerer/Warlock with Draconic Bloodline: 13 + Dex
+        # (This would require checking subclass features)
+        
+        return None
+    
+    def _calculate_hit_points(self) -> int:
+        """
+        Calculate maximum hit points based on class hit dice and Constitution.
+        Uses average HP calculation: (Hit Die average + 1) + Con modifier per level
+        """
+        total_hp = 0
+        
+        # Hit die averages for each class
+        class_hit_dice = {
+            "Barbarian": 12, "Fighter": 10, "Paladin": 10, "Ranger": 10,
+            "Bard": 8, "Cleric": 8, "Druid": 8, "Monk": 8, "Rogue": 8, "Warlock": 8,
+            "Artificer": 8, "Sorcerer": 6, "Wizard": 6
+        }
+        
+        con_modifier = self.core.constitution.modifier
+        
+        for class_name, class_level in self.core.character_classes.items():
+            hit_die = class_hit_dice.get(class_name, 8)  # Default to d8
+            
+            # First level: max hit die + con modifier
+            if class_level >= 1:
+                total_hp += hit_die + con_modifier
+            
+            # Additional levels: average of hit die + 1 + con modifier
+            if class_level > 1:
+                additional_levels = class_level - 1
+                avg_hp_per_level = (hit_die // 2) + 1 + con_modifier
+                total_hp += additional_levels * avg_hp_per_level
+        
+        # Add any bonuses from feats, magic items, etc.
+        # (This would be implemented with proper bonus tracking)
+        
+        return max(total_hp, 1)  # Minimum 1 HP
+    
+    def _calculate_saving_throws(self):
+        """Calculate saving throw bonuses."""
+        abilities = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]
+        
+        for ability in abilities:
+            ability_obj = self.core.get_ability_score(ability)
+            base_bonus = ability_obj.modifier if ability_obj else 0
+            
+            # Add proficiency bonus if proficient
+            proficiency_bonus = 0
+            if ability in self.core.saving_throw_proficiencies:
+                prof_level = self.core.saving_throw_proficiencies[ability]
+                if prof_level == ProficiencyLevel.PROFICIENT:
+                    proficiency_bonus = self.stats.proficiency_bonus
+                elif prof_level == ProficiencyLevel.EXPERT:
+                    proficiency_bonus = self.stats.proficiency_bonus * 2
+            
+            self.stats.saving_throws[ability] = base_bonus + proficiency_bonus
+    
+    def _calculate_skill_bonuses(self):
+        """Calculate skill bonuses based on ability modifiers and proficiencies."""
+        # D&D 5e skill to ability mapping
+        skill_abilities = {
+            "Acrobatics": "dexterity", "Animal Handling": "wisdom", "Arcana": "intelligence",
+            "Athletics": "strength", "Deception": "charisma", "History": "intelligence",
+            "Insight": "wisdom", "Intimidation": "charisma", "Investigation": "intelligence",
+            "Medicine": "wisdom", "Nature": "intelligence", "Perception": "wisdom",
+            "Performance": "charisma", "Persuasion": "charisma", "Religion": "intelligence",
+            "Sleight of Hand": "dexterity", "Stealth": "dexterity", "Survival": "wisdom"
+        }
+        
+        for skill, ability in skill_abilities.items():
+            ability_obj = self.core.get_ability_score(ability)
+            base_bonus = ability_obj.modifier if ability_obj else 0
+            
+            # Add proficiency bonus if proficient
+            proficiency_bonus = 0
+            skill_key = skill.lower().replace(" ", "_")
+            
+            if skill_key in self.core.skill_proficiencies:
+                prof_level = self.core.skill_proficiencies[skill_key]
+                if prof_level == ProficiencyLevel.PROFICIENT:
+                    proficiency_bonus = self.stats.proficiency_bonus
+                elif prof_level == ProficiencyLevel.EXPERT:
+                    proficiency_bonus = self.stats.proficiency_bonus * 2
+            
+            self.stats.skills[skill] = base_bonus + proficiency_bonus
+    
+    def _calculate_spellcasting_stats(self):
+        """Calculate spell save DC and spell attack bonus if character is a spellcaster."""
+        spellcasting_info = self.core.get_spellcasting_info()
+        
+        if not spellcasting_info.get("is_spellcaster", False):
+            return
+        
+        # Determine primary spellcasting ability
+        spellcasting_ability = spellcasting_info.get("primary_ability", "intelligence")
+        self.stats.spellcasting_ability = spellcasting_ability
+        
+        # Get ability modifier
+        ability_obj = self.core.get_ability_score(spellcasting_ability)
+        ability_modifier = ability_obj.modifier if ability_obj else 0
+        
+        # Calculate spell save DC: 8 + proficiency bonus + ability modifier
+        self.stats.spell_save_dc = 8 + self.stats.proficiency_bonus + ability_modifier
+        
+        # Calculate spell attack bonus: proficiency bonus + ability modifier
+        self.stats.spell_attack_bonus = self.stats.proficiency_bonus + ability_modifier
+    
+    def _calculate_movement_speed(self):
+        """Calculate movement speed based on species and class features."""
+        # Default speed for most species
+        base_speed = 30
+        
+        # Species-specific speeds (simplified)
+        species_speeds = {
+            "Elf": 30, "Human": 30, "Dwarf": 25, "Halfling": 25,
+            "Dragonborn": 30, "Gnome": 25, "Half-Elf": 30, "Half-Orc": 30,
+            "Tiefling": 30, "Aarakocra": 25, "Tabaxi": 30, "Wood Elf": 35
+        }
+        
+        base_speed = species_speeds.get(self.core.species, 30)
+        
+        # Class modifications
+        # Monk gets faster movement at higher levels
+        if "Monk" in self.core.character_classes:
+            monk_level = self.core.character_classes["Monk"]
+            if monk_level >= 2:
+                bonus_speed = ((monk_level - 2) // 4 + 1) * 5
+                base_speed += bonus_speed
+        
+        # Barbarian fast movement
+        if "Barbarian" in self.core.character_classes:
+            barb_level = self.core.character_classes["Barbarian"]
+            if barb_level >= 5:
+                base_speed += 10
+        
+        # Apply armor penalties (if wearing heavy armor without proficiency)
+        # This would be more complex in full implementation
+        
+        self.stats.movement_speed = base_speed
+    
+    def _calculate_carrying_capacity(self):
+        """Calculate carrying capacity based on Strength score."""
+        strength_score = self.core.strength.total_score
+        self.stats.carrying_capacity = strength_score * 15  # pounds
+    
+    def _calculate_passive_perception(self):
+        """Calculate passive Perception score."""
+        perception_bonus = self.stats.skills.get("Perception", self.core.wisdom.modifier)
+        self.stats.passive_perception = 10 + perception_bonus
+    
+    def get_ability_modifiers(self) -> Dict[str, int]:
+        """Get all ability modifiers as a dictionary."""
+        return {
+            "strength": self.core.strength.modifier,
+            "dexterity": self.core.dexterity.modifier,
+            "constitution": self.core.constitution.modifier,
+            "intelligence": self.core.intelligence.modifier,
+            "wisdom": self.core.wisdom.modifier,
+            "charisma": self.core.charisma.modifier
         }

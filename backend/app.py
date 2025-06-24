@@ -180,6 +180,7 @@ from database_models import (
     CharacterRepositoryManager, CharacterVersioningAPI
 )
 from character_models import CharacterCore, DnDCondition
+from core_models import AbilityScore
 
 # Import refactored creation modules
 from character_creation import CharacterCreator, create_character_from_prompt
@@ -219,8 +220,14 @@ app.add_middleware(
 async def startup_event():
     """Initialize database and services on startup."""
     try:
-        init_database(settings.database_url)
-        logger.info("Database initialized successfully")
+        # Use the effective database URL which handles SQLite/PostgreSQL selection
+        database_url = settings.effective_database_url
+        init_database(database_url)
+        
+        if settings.is_sqlite:
+            logger.info(f"Database initialized successfully using SQLite: {settings.sqlite_path}")
+        else:
+            logger.info(f"Database initialized successfully using PostgreSQL: {settings.database_url}")
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
         raise
@@ -279,7 +286,7 @@ class CharacterStateUpdateRequest(BaseModel):
 
 class CharacterResponse(BaseModel):
     """Response model for character data."""
-    id: int
+    id: str
     name: str
     player_name: Optional[str]
     species: str
@@ -339,7 +346,7 @@ class CharacterTagCreateRequest(BaseModel):
 
 class CharacterRepositoryResponse(BaseModel):
     """Response model for character repository data."""
-    id: int
+    id: str
     repository_id: str
     name: str
     description: Optional[str]
@@ -355,8 +362,8 @@ class CharacterRepositoryResponse(BaseModel):
 
 class CharacterBranchResponse(BaseModel):
     """Response model for character branch data."""
-    id: int
-    repository_id: int
+    id: str
+    repository_id: str
     branch_name: str
     description: Optional[str]
     branch_type: str
@@ -372,9 +379,9 @@ class CharacterBranchResponse(BaseModel):
 
 class CharacterCommitResponse(BaseModel):
     """Response model for character commit data."""
-    id: int
-    repository_id: int
-    branch_id: int
+    id: str
+    repository_id: str
+    branch_id: str
     commit_hash: str
     short_hash: str
     commit_message: str
@@ -395,8 +402,8 @@ class CharacterCommitResponse(BaseModel):
 
 class CharacterTagResponse(BaseModel):
     """Response model for character tag data."""
-    id: int
-    repository_id: int
+    id: str
+    repository_id: str
     tag_name: str
     tag_type: str
     description: Optional[str]
@@ -528,7 +535,7 @@ async def create_character(character_data: CharacterCreateRequest, db = Depends(
         character_sheet.background = character_data.background
         character_sheet.alignment = character_data.alignment
         character_sheet.character_classes = character_data.character_classes
-        character_sheet.core.backstory = character_data.backstory
+        character_sheet.backstory = character_data.backstory
         
         # Set ability scores (ensure all six are present and valid)
         required_abilities = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]
@@ -538,16 +545,13 @@ async def create_character(character_data: CharacterCreateRequest, db = Depends(
             score = abilities.get(ability, default_scores[ability])
             if not isinstance(score, int) or score < 1 or score > 20:
                 score = default_scores[ability]
-            character_sheet.core.set_ability_score(ability, score)
+            setattr(character_sheet, ability, AbilityScore(score))
         
         # Set equipment if provided
         if character_data.equipment:
             character_sheet.state.equipment = character_data.equipment.get("items", [])
             character_sheet.state.armor = character_data.equipment.get("armor", "")
             character_sheet.state.weapons = character_data.equipment.get("weapons", [])
-        
-        # Calculate derived stats
-        character_sheet.calculate_all_derived_stats()
         
         # Save to database using the defined operation flow
         db_character = CharacterDB.save_character_sheet(db, character_sheet)
@@ -566,7 +570,7 @@ async def create_character(character_data: CharacterCreateRequest, db = Depends(
 
 
 @app.get("/api/v1/characters/{character_id}", response_model=CharacterResponse, tags=["characters"])
-async def get_character(character_id: int, db = Depends(get_db)):
+async def get_character(character_id: str, db = Depends(get_db)):
     """
     Get a specific character by ID.
     
@@ -587,7 +591,7 @@ async def get_character(character_id: int, db = Depends(get_db)):
 
 
 @app.put("/api/v1/characters/{character_id}", response_model=CharacterResponse, tags=["characters"])
-async def update_character(character_id: int, character_data: CharacterUpdateRequest, db = Depends(get_db)):
+async def update_character(character_id: str, character_data: CharacterUpdateRequest, db = Depends(get_db)):
     """
     Update an existing character.
     
@@ -674,8 +678,8 @@ async def update_character(character_id: int, character_data: CharacterUpdateReq
             character_sheet.state.armor = character_data.equipment.get("armor", "")
             character_sheet.state.weapons = character_data.equipment.get("weapons", [])
         
-        # Recalculate derived stats
-        character_sheet.calculate_all_derived_stats()
+        # Note: Derived stats calculation would happen here if the method existed
+        # For now, skipping to allow basic character creation
         
         # Save back to database
         db_character = CharacterDB.save_character_sheet(db, character_sheet, character_id)
@@ -696,7 +700,7 @@ async def update_character(character_id: int, character_data: CharacterUpdateReq
 
 
 @app.delete("/api/v1/characters/{character_id}", tags=["characters"])
-async def delete_character(character_id: int, db = Depends(get_db)):
+async def delete_character(character_id: str, db = Depends(get_db)):
     """
     Delete a character (soft delete - marks as inactive).
     
@@ -722,7 +726,7 @@ async def delete_character(character_id: int, db = Depends(get_db)):
 # ============================================================================
 
 @app.put("/api/v1/characters/{character_id}/state", tags=["gameplay"])
-async def update_character_state(character_id: int, state_updates: CharacterStateUpdateRequest, db = Depends(get_db)):
+async def update_character_state(character_id: str, state_updates: CharacterStateUpdateRequest, db = Depends(get_db)):
     """
     Update character state for in-game play using real-time update methods.
     
@@ -777,7 +781,7 @@ async def update_character_state(character_id: int, state_updates: CharacterStat
 
 
 @app.get("/api/v1/characters/{character_id}/state", tags=["gameplay"])
-async def get_character_state(character_id: int, db = Depends(get_db)):
+async def get_character_state(character_id: str, db = Depends(get_db)):
     """
     Get real-time character state snapshot for in-game play.
     
@@ -798,7 +802,7 @@ async def get_character_state(character_id: int, db = Depends(get_db)):
 
 
 @app.post("/api/v1/characters/{character_id}/combat", tags=["gameplay"])
-async def apply_combat_effects(character_id: int, combat_data: Dict[str, Any], db = Depends(get_db)):
+async def apply_combat_effects(character_id: str, combat_data: Dict[str, Any], db = Depends(get_db)):
     """
     Apply combat round effects to character.
     
@@ -831,7 +835,7 @@ async def apply_combat_effects(character_id: int, combat_data: Dict[str, Any], d
 
 
 @app.post("/api/v1/characters/{character_id}/rest", tags=["gameplay"])
-async def apply_rest_effects(character_id: int, rest_type: str = "long", db = Depends(get_db)):
+async def apply_rest_effects(character_id: str, rest_type: str = "long", db = Depends(get_db)):
     """
     Apply rest effects to character.
     
@@ -868,7 +872,7 @@ async def apply_rest_effects(character_id: int, rest_type: str = "long", db = De
 # ============================================================================
 
 @app.get("/api/v1/characters/{character_id}/sheet", tags=["character_sheet"])
-async def get_character_sheet(character_id: int, db = Depends(get_db)):
+async def get_character_sheet(character_id: str, db = Depends(get_db)):
     """
     Get complete character sheet with all details.
     
@@ -1046,7 +1050,7 @@ async def validate_character(character_data: CharacterCreateRequest):
 
 
 @app.get("/api/v1/characters/{character_id}/validate", tags=["validation"])
-async def validate_existing_character(character_id: int, db = Depends(get_db)):
+async def validate_existing_character(character_id: str, db = Depends(get_db)):
     """
     Validate an existing character from the database.
     
@@ -1108,7 +1112,7 @@ async def create_character_repository(
 
 
 @app.get("/api/v1/character-repositories/{repository_id}", response_model=CharacterRepositoryResponse, tags=["character-versioning"])
-async def get_character_repository(repository_id: int, db = Depends(get_db)):
+async def get_character_repository(repository_id: str, db = Depends(get_db)):
     """
     Get character repository information.
     
@@ -1129,7 +1133,7 @@ async def get_character_repository(repository_id: int, db = Depends(get_db)):
 
 
 @app.get("/api/v1/character-repositories/{repository_id}/timeline", response_model=CharacterTimelineResponse, tags=["character-versioning"])
-async def get_character_timeline(repository_id: int, db = Depends(get_db)):
+async def get_character_timeline(repository_id: str, db = Depends(get_db)):
     """
     Get character timeline data for frontend visualization.
     
@@ -1153,7 +1157,7 @@ async def get_character_timeline(repository_id: int, db = Depends(get_db)):
 
 
 @app.get("/api/v1/character-repositories/{repository_id}/visualization", response_model=CharacterVisualizationResponse, tags=["character-versioning"])
-async def get_character_visualization(repository_id: int, db = Depends(get_db)):
+async def get_character_visualization(repository_id: str, db = Depends(get_db)):
     """
     Get character visualization data formatted for graph libraries.
     
@@ -1212,7 +1216,7 @@ async def get_character_visualization(repository_id: int, db = Depends(get_db)):
 
 @app.post("/api/v1/character-repositories/{repository_id}/branches", response_model=CharacterBranchResponse, tags=["character-versioning"])
 async def create_character_branch(
-    repository_id: int, 
+    repository_id: str, 
     branch_data: CharacterBranchCreateRequest, 
     db = Depends(get_db)
 ):
@@ -1241,7 +1245,7 @@ async def create_character_branch(
 
 
 @app.get("/api/v1/character-repositories/{repository_id}/branches", response_model=List[CharacterBranchResponse], tags=["character-versioning"])
-async def list_character_branches(repository_id: int, db = Depends(get_db)):
+async def list_character_branches(repository_id: str, db = Depends(get_db)):
     """
     List all branches in a character repository.
     
@@ -1261,7 +1265,7 @@ async def list_character_branches(repository_id: int, db = Depends(get_db)):
 
 @app.post("/api/v1/character-repositories/{repository_id}/commits", response_model=CharacterCommitResponse, tags=["character-versioning"])
 async def create_character_commit(
-    repository_id: int, 
+    repository_id: str, 
     commit_data: CharacterCommitCreateRequest, 
     db = Depends(get_db)
 ):
@@ -1296,7 +1300,7 @@ async def create_character_commit(
 
 @app.get("/api/v1/character-repositories/{repository_id}/commits", response_model=List[CharacterCommitResponse], tags=["character-versioning"])
 async def get_character_commits(
-    repository_id: int, 
+    repository_id: str, 
     branch_name: Optional[str] = None, 
     limit: int = 50,
     db = Depends(get_db)
@@ -1353,7 +1357,7 @@ async def get_character_at_commit(commit_hash: str, db = Depends(get_db)):
 
 @app.post("/api/v1/character-repositories/{repository_id}/level-up", tags=["character-versioning"])
 async def level_up_character(
-    repository_id: int, 
+    repository_id: str, 
     level_up_data: CharacterLevelUpRequest, 
     db = Depends(get_db)
 ):
@@ -1387,7 +1391,7 @@ async def level_up_character(
 
 @app.post("/api/v1/character-repositories/{repository_id}/tags", response_model=CharacterTagResponse, tags=["character-versioning"])
 async def create_character_tag(
-    repository_id: int, 
+    repository_id: str, 
     tag_data: CharacterTagCreateRequest, 
     db = Depends(get_db)
 ):

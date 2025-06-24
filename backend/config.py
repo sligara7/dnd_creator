@@ -19,9 +19,24 @@ class Settings(BaseSettings):
     debug: bool = False
     
     # Database Configuration
-    database_url: str = "sqlite:///./characters.db"  # Default to SQLite for development
+    database_url: Optional[str] = None  # Set to use PostgreSQL, leave None for SQLite
     database_echo: bool = False  # Set to True for SQL query logging
     db_password: Optional[str] = None  # Additional database password field
+    
+    # SQLite Configuration (used when database_url is None)
+    sqlite_path: str = "dnd_characters.db"  # Path to SQLite database file
+    
+    @property
+    def is_sqlite(self) -> bool:
+        """Check if using SQLite database."""
+        return self.database_url is None
+    
+    @property
+    def effective_database_url(self) -> str:
+        """Get the effective database URL for SQLAlchemy."""
+        if self.database_url:
+            return self.database_url
+        return f"sqlite:///{self.sqlite_path}"
     
     # External LLM Service Configuration
     llm_provider: str = "openai"  # "openai", "anthropic", "cohere", etc.

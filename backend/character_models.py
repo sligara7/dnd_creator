@@ -373,7 +373,7 @@ class CharacterCore:
             "level": self.level,
             "classes": self.character_classes,
             "background": self.background,
-            "alignment": self.alignment,
+            "alignment": " ".join(self.alignment) if isinstance(self.alignment, list) else self.alignment,
             "ability_scores": {
                 "strength": self.strength.total_score,
                 "dexterity": self.dexterity.total_score,

@@ -6,8 +6,44 @@ from typing import Dict, Any, Optional, List
 import hashlib
 import uuid
 from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean, JSON, ForeignKey, create_engine
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.types import TypeDecorator, CHAR
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, Session, sessionmaker
+
+
+# Custom UUID type that works with SQLite
+class GUID(TypeDecorator):
+    """Platform-independent GUID type.
+    Uses PostgreSQL's UUID type, otherwise uses CHAR(32) storing as stringified hex values.
+    """
+    impl = CHAR
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == 'postgresql':
+            return dialect.type_descriptor(UUID())
+        else:
+            return dialect.type_descriptor(CHAR(36))
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return value
+        elif dialect.name == 'postgresql':
+            return str(value)
+        else:
+            if not isinstance(value, uuid.UUID):
+                return str(uuid.UUID(value))
+            else:
+                return str(value)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return value
+        else:
+            if not isinstance(value, uuid.UUID):
+                return uuid.UUID(value)
+            return value
 
 Base = declarative_base()
 
@@ -22,7 +58,14 @@ class CharacterRepository(Base):
     """
     __tablename__ = "character_repositories"
     
-    id = Column(Integer, primary_key=True, index=True)
+class CharacterRepository(Base):
+    """
+    Represents a character's complete version history - like a Git repository.
+    This is the root container for all versions/branches of a single character concept.
+    """
+    __tablename__ = "character_repositories"
+    
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4, index=True)
     repository_id = Column(String(36), unique=True, index=True, default=lambda: str(uuid.uuid4()))
     
     # Repository metadata
@@ -71,8 +114,8 @@ class CharacterBranch(Base):
     """
     __tablename__ = "character_branches"
     
-    id = Column(Integer, primary_key=True, index=True)
-    repository_id = Column(Integer, ForeignKey("character_repositories.id"), nullable=False)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4, index=True)
+    repository_id = Column(GUID(), ForeignKey("character_repositories.id"), nullable=False)
     
     # Branch metadata
     branch_name = Column(String(50), nullable=False, index=True)  # "main", "multiclass-path", etc.
@@ -123,9 +166,9 @@ class CharacterCommit(Base):
     """
     __tablename__ = "character_commits"
     
-    id = Column(Integer, primary_key=True, index=True)
-    repository_id = Column(Integer, ForeignKey("character_repositories.id"), nullable=False)
-    branch_id = Column(Integer, ForeignKey("character_branches.id"), nullable=False)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4, index=True)
+    repository_id = Column(GUID(), ForeignKey("character_repositories.id"), nullable=False)
+    branch_id = Column(GUID(), ForeignKey("character_branches.id"), nullable=False)
     
     # Commit identification
     commit_hash = Column(String(64), unique=True, nullable=False, index=True)  # SHA-256 hash
@@ -202,8 +245,8 @@ class CharacterTag(Base):
     """
     __tablename__ = "character_tags"
     
-    id = Column(Integer, primary_key=True, index=True)
-    repository_id = Column(Integer, ForeignKey("character_repositories.id"), nullable=False)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4, index=True)
+    repository_id = Column(GUID(), ForeignKey("character_repositories.id"), nullable=False)
     
     # Tag information
     tag_name = Column(String(50), nullable=False, index=True)  # "v1.0", "death-by-dragon", "epic-level"
@@ -236,16 +279,16 @@ class CharacterTag(Base):
 
 class Character(Base):
     """
-    Legacy database model for D&D characters.
-    This is kept for backwards compatibility and simple use cases.
-    New characters should use the CharacterRepository system.
+    Database model for D&D characters with UUID support.
+    Uses UUIDs for better scalability and security.
+    Also supports the CharacterRepository versioning system.
     """
     __tablename__ = "characters"
     
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4, index=True)
     
     # Link to new versioning system (optional)
-    repository_id = Column(Integer, ForeignKey("character_repositories.id"), nullable=True)
+    repository_id = Column(GUID(), ForeignKey("character_repositories.id"), nullable=True)
     commit_hash = Column(String(64), nullable=True)  # Which commit this represents
     
     # Original character fields
@@ -331,9 +374,9 @@ class CharacterSession(Base):
     """Database model for character creation sessions."""
     __tablename__ = "character_sessions"
     
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4, index=True)
     session_id = Column(String(36), unique=True, index=True)  # UUID
-    character_id = Column(Integer, nullable=True)  # Links to Character if saved
+    character_id = Column(GUID(), nullable=True)  # Links to Character if saved
     
     # Session data
     current_step = Column(String(50), default="basic_info")
@@ -350,7 +393,7 @@ class CustomContent(Base):
     """Database model for user-created custom content."""
     __tablename__ = "custom_content"
     
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4, index=True)
     name = Column(String(100), nullable=False, index=True)
     content_type = Column(String(50), nullable=False)  # "species", "class", "spell", etc.
     
@@ -535,9 +578,18 @@ class CharacterDB:
         return db_character
     
     @staticmethod
-    def get_character(db: Session, character_id: int) -> Optional[Character]:
+    def get_character(db: Session, character_id: str) -> Optional[Character]:
         """Retrieve a character from the database."""
-        return db.query(Character).filter(Character.id == character_id, Character.is_active == True).first()
+        try:
+            # Convert string to UUID if needed
+            if isinstance(character_id, str):
+                uuid_id = uuid.UUID(character_id)
+            else:
+                uuid_id = character_id
+            return db.query(Character).filter(Character.id == uuid_id, Character.is_active == True).first()
+        except ValueError:
+            # Invalid UUID format
+            return None
     
     @staticmethod
     def get_character_by_name(db: Session, name: str, player_name: str = None) -> Optional[Character]:
@@ -548,7 +600,7 @@ class CharacterDB:
         return query.first()
     
     @staticmethod
-    def update_character(db: Session, character_id: int, updates: Dict[str, Any]) -> Optional[Character]:
+    def update_character(db: Session, character_id: str, updates: Dict[str, Any]) -> Optional[Character]:
         """Update an existing character in the database."""
         db_character = CharacterDB.get_character(db, character_id)
         if not db_character:
@@ -564,7 +616,7 @@ class CharacterDB:
         return db_character
     
     @staticmethod
-    def delete_character(db: Session, character_id: int) -> bool:
+    def delete_character(db: Session, character_id: str) -> bool:
         """Soft delete a character (set is_active = False)."""
         db_character = CharacterDB.get_character(db, character_id)
         if not db_character:
@@ -599,7 +651,7 @@ class CharacterDB:
             return CharacterDB.create_character(db, character_data)
     
     @staticmethod
-    def load_character_sheet(db: Session, character_id: int):
+    def load_character_sheet(db: Session, character_id: str):
         """
         Load a character from database and convert to CharacterSheet object.
         Returns None if character not found.
@@ -755,7 +807,7 @@ class CharacterRepositoryManager:
         return repo
     
     @staticmethod
-    def create_branch(db: Session, repository_id: int, branch_name: str, 
+    def create_branch(db: Session, repository_id: str, branch_name: str, 
                      description: str = None, parent_branch: str = "main",
                      branch_point_hash: str = None) -> CharacterBranch:
         """
@@ -772,9 +824,15 @@ class CharacterRepositoryManager:
         Returns:
             CharacterBranch: Created branch
         """
+        # Convert string to UUID if needed
+        if isinstance(repository_id, str):
+            uuid_repo_id = uuid.UUID(repository_id)
+        else:
+            uuid_repo_id = repository_id
+            
         # Get parent branch info
         parent = db.query(CharacterBranch).filter(
-            CharacterBranch.repository_id == repository_id,
+            CharacterBranch.repository_id == uuid_repo_id,
             CharacterBranch.branch_name == parent_branch
         ).first()
         
@@ -787,7 +845,7 @@ class CharacterRepositoryManager:
         
         # Create new branch
         branch = CharacterBranch(
-            repository_id=repository_id,
+            repository_id=uuid_repo_id,
             branch_name=branch_name,
             description=description,
             parent_branch=parent_branch,
@@ -800,7 +858,7 @@ class CharacterRepositoryManager:
         return branch
     
     @staticmethod
-    def create_commit(db: Session, repository_id: int, branch_name: str,
+    def create_commit(db: Session, repository_id: str, branch_name: str,
                      commit_message: str, character_data: Dict[str, Any],
                      character_level: int, commit_type: str = "update",
                      milestone_name: str = None, session_date: datetime = None,
@@ -824,9 +882,15 @@ class CharacterRepositoryManager:
         Returns:
             CharacterCommit: Created commit
         """
+        # Convert string to UUID if needed
+        if isinstance(repository_id, str):
+            uuid_repo_id = uuid.UUID(repository_id)
+        else:
+            uuid_repo_id = repository_id
+            
         # Get branch
         branch = db.query(CharacterBranch).filter(
-            CharacterBranch.repository_id == repository_id,
+            CharacterBranch.repository_id == uuid_repo_id,
             CharacterBranch.branch_name == branch_name
         ).first()
         
@@ -841,7 +905,7 @@ class CharacterRepositoryManager:
         
         # Create commit
         commit = CharacterCommit(
-            repository_id=repository_id,
+            repository_id=uuid_repo_id,
             branch_id=branch.id,
             commit_hash=commit_hash,
             short_hash=short_hash,

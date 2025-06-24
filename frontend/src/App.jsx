@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import { characterAPI, apiUtils } from './services/api';
-import CharacterCreator from './components/Character/CharacterCreator';
+import CharacterCreator from './components/pages/CharacterCreator';
 import CharacterList from './components/Character/CharacterList';
 import DMDashboard from './components/DM/DMDashboard';
 import CreateCharacterPage from './components/pages/CreateCharacterPage';

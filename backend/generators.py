@@ -168,15 +168,23 @@ class CustomContentGenerator:
                     created_content["species"].append(species.name)
             
             # Generate custom class if needed
+            custom_class = None
             if self._should_create_custom_class(character_data, user_description):
                 custom_class = self._generate_custom_class(character_data, user_description)
                 if custom_class:
                     self.content_registry.register_class(custom_class)
                     created_content["classes"].append(custom_class.name)
             
-            # Generate custom spells for spellcasters
-            if self._character_is_spellcaster(character_data):
-                spells = self._generate_custom_spells(character_data, user_description, count=2)
+            # Generate custom spells - enhanced logic for custom spellcaster classes
+            should_create_spells = (
+                self._character_is_spellcaster(character_data) or  # Existing spellcaster
+                self._is_custom_spellcaster_class(custom_class, user_description)  # New custom spellcaster
+            )
+            
+            if should_create_spells:
+                # Determine spell count and themes based on class type
+                spell_count = self._calculate_appropriate_spell_count(character_data, custom_class, user_description)
+                spells = self._generate_custom_spells(character_data, user_description, count=spell_count, custom_class=custom_class)
                 for spell in spells:
                     if spell:
                         self.content_registry.register_spell(spell)
@@ -232,6 +240,60 @@ class CustomContentGenerator:
                 return True
         
         return False
+    
+    def _is_custom_spellcaster_class(self, custom_class: Optional[Any], user_description: str) -> bool:
+        """Check if a custom class should be a spellcaster based on description."""
+        if not custom_class:
+            return False
+        
+        description_lower = user_description.lower()
+        spellcaster_keywords = [
+            "magic", "spell", "wizard", "sorcerer", "mage", "warlock", "cleric", 
+            "druid", "bard", "paladin", "arcane", "divine", "mystical", "enchanter",
+            "necromancer", "elementalist", "conjurer", "invoker", "ritualist",
+            "spellcaster", "magical", "enchanted", "mystical", "occult"
+        ]
+        
+        # Check description for spellcasting themes
+        has_magic_theme = any(keyword in description_lower for keyword in spellcaster_keywords)
+        
+        # Check if class name suggests spellcasting
+        class_name_lower = custom_class.name.lower() if hasattr(custom_class, 'name') else ""
+        class_suggests_magic = any(keyword in class_name_lower for keyword in spellcaster_keywords)
+        
+        return has_magic_theme or class_suggests_magic
+    
+    def _calculate_appropriate_spell_count(self, character_data: Dict[str, Any], 
+                                         custom_class: Optional[Any], user_description: str) -> int:
+        """Calculate appropriate number of spells to generate for a character."""
+        character_level = character_data.get('level', 1)
+        
+        # Base spell count based on level
+        if character_level <= 2:
+            base_count = 3  # Starter spells
+        elif character_level <= 5:
+            base_count = 5  # Early levels
+        elif character_level <= 10:
+            base_count = 7  # Mid levels
+        elif character_level <= 15:
+            base_count = 9  # High levels
+        else:
+            base_count = 12  # Epic levels
+        
+        # Adjust based on class type if it's a custom spellcaster
+        if custom_class and self._is_custom_spellcaster_class(custom_class, user_description):
+            description_lower = user_description.lower()
+            
+            # Full caster types get more spells
+            if any(word in description_lower for word in ["wizard", "sorcerer", "powerful", "archmage"]):
+                base_count = int(base_count * 1.5)  # 50% more spells
+            
+            # Half caster types get fewer spells
+            elif any(word in description_lower for word in ["paladin", "ranger", "warrior-mage", "spell-sword"]):
+                base_count = int(base_count * 0.6)  # 40% fewer spells
+        
+        # Ensure reasonable bounds
+        return max(2, min(base_count, 15))
     
     def _generate_custom_species(self, character_data: Dict[str, Any], 
                                user_description: str) -> Optional[CustomSpecies]:
@@ -294,43 +356,54 @@ Return ONLY this JSON:
             return None
     
     def _generate_custom_spells(self, character_data: Dict[str, Any], 
-                              user_description: str, count: int = 3) -> List[CustomSpell]:
-        """Generate custom spells with thematic consistency."""
+                              user_description: str, count: int = 3, custom_class: Optional[Any] = None) -> List[CustomSpell]:
+        """Generate custom spells with thematic consistency and appropriate spellcasting mechanics."""
         spells = []
         try:
             name = character_data.get('name', 'Unknown')
             character_level = character_data.get('level', 1)
             
-            # Extract themes from description (simplified approach)
+            # Extract themes from description
             themes = self._extract_simple_themes(user_description)
             theme_desc = f" with {themes[0]} theme" if themes else ""
             
-            # Determine appropriate spell level based on character level
-            max_spell_level = self._calculate_max_spell_level(character_level)
-            suggested_level = min(max_spell_level, 2)  # Conservative approach for custom spells
+            # Determine spellcasting type and mechanics for the class
+            spellcasting_info = self._determine_custom_spellcasting_type(custom_class, user_description)
+            
+            # Determine appropriate spell level distribution
+            spell_levels = self._calculate_spell_level_distribution(character_level, count, spellcasting_info)
+            
+            # Create spell generation prompt with spellcasting mechanics context
+            mechanics_context = self._build_spellcasting_mechanics_context(spellcasting_info)
             
             prompt = f"""Create {count} unique D&D spells for {name}{theme_desc}.
-Character Level: {character_level} (max spell level: {max_spell_level})
+Character Level: {character_level}
+Spellcasting Type: {spellcasting_info['type']}
+{mechanics_context}
 Description: {user_description}
 
-Make spells thematically consistent with the character concept and appropriate for level {character_level}.
+Generate spells at these levels: {spell_levels}
+Make spells thematically consistent with the character concept and spellcasting style.
 Include rich lore and backstory for each spell.
 
 Return ONLY this JSON array:
-[{{"name":"Spell Name","level":{suggested_level},"school":"Evocation","casting_time":"1 action","range":"60 feet","components":["V","S"],"duration":"Instantaneous","description":"Spell mechanical effect","origin_story":"How this spell was discovered or created","creator_name":"Who created this spell","casting_flavor":"Visual and sensory description when cast"}}]"""
+[{{"name":"Spell Name","level":1,"school":"Evocation","casting_time":"1 action","range":"60 feet","components":["V","S"],"duration":"Instantaneous","description":"Spell mechanical effect","ritual":false,"origin_story":"How this spell was discovered or created","creator_name":"Who created this spell","casting_flavor":"Visual and sensory description when cast"}}]"""
             
-            response = self.llm_service.generate(prompt, timeout_seconds=25)
+            response = self.llm_service.generate(prompt, timeout_seconds=30)
             data = json.loads(self._clean_json_response(response))
             
-            for spell_data in data[:count]:
+            for i, spell_data in enumerate(data[:count]):
+                # Assign appropriate spell level from our distribution
+                assigned_level = spell_levels[i] if i < len(spell_levels) else 1
+                
                 spell = CustomSpell(
                     name=spell_data["name"],
-                    level=spell_data["level"],
-                    school=spell_data["school"],
-                    casting_time=spell_data["casting_time"],
-                    range=spell_data["range"],
-                    components=spell_data["components"],
-                    duration=spell_data["duration"],
+                    level=assigned_level,
+                    school=spell_data.get("school", "Evocation"),
+                    casting_time=spell_data.get("casting_time", "1 action"),
+                    range=spell_data.get("range", "60 feet"),
+                    components=spell_data.get("components", ["V", "S"]),
+                    duration=spell_data.get("duration", "Instantaneous"),
                     description=spell_data["description"]
                 )
                 spells.append(spell)
@@ -552,3 +625,309 @@ class ItemGenerator:
         if start == -1 or end == -1:
             raise ValueError("No JSON found in response")
         return response[start:end+1]
+
+# ============================================================================
+# CHARACTER GENERATOR
+# ============================================================================
+
+class CharacterGenerator:
+    """Comprehensive generator for full D&D characters (PCs)."""
+    def __init__(self, llm_service: LLMService, content_registry: ContentRegistry):
+        self.llm_service = llm_service
+        self.content_registry = content_registry
+        self.custom_content_generator = CustomContentGenerator(llm_service, content_registry)
+        self.backstory_generator = BackstoryGenerator(llm_service)
+
+    def generate_character(self, character_concept: Dict[str, Any], user_description: str) -> Dict[str, Any]:
+        """
+        Generate a complete character including stats, levels, class, species, equipment, spells, and backstory.
+        Returns a dictionary representing the full character.
+        """
+        # 1. Generate ability scores (using standard array for now)
+        ability_scores = self._generate_ability_scores()
+
+        # 2. Assign level (default to 1 if not provided)
+        level = character_concept.get('level', 1)
+
+        # 3. Generate custom content (species, class, spells, etc.)
+        custom_content = self.custom_content_generator.generate_custom_content_for_character(
+            character_concept, user_description
+        )
+
+        # 4. Assign species and class (use custom if generated, else fallback to concept)
+        species = custom_content['species'][0] if custom_content['species'] else character_concept.get('species', 'Human')
+        classes = custom_content['classes'] if custom_content['classes'] else list(character_concept.get('classes', {}).keys() or ['Fighter'])
+
+        # 5. Assign spells (if any)
+        spells = custom_content['spells']
+
+        # 6. Assign equipment (basic package + custom weapons/armor)
+        equipment = self._generate_equipment(level, custom_content, character_concept)
+
+        # 7. Generate backstory
+        backstory = self.backstory_generator.generate_backstory({
+            'name': character_concept.get('name', 'Unknown'),
+            'species': species,
+            'classes': {cls: level for cls in classes},
+            'level': level
+        }, user_description)
+
+        # 8. Assemble character
+        character = {
+            'name': character_concept.get('name', 'Unknown'),
+            'species': species,
+            'classes': {cls: level for cls in classes},
+            'level': level,
+            'ability_scores': ability_scores,
+            'equipment': equipment,
+            'spells': spells,
+            'backstory': backstory,
+            'custom_content': custom_content
+        }
+        return character
+
+    def _generate_ability_scores(self) -> Dict[str, int]:
+        # Standard array for D&D 5e
+        return {
+            'Strength': 15,
+            'Dexterity': 14,
+            'Constitution': 13,
+            'Intelligence': 12,
+            'Wisdom': 10,
+            'Charisma': 8
+        }
+
+    def _generate_equipment(self, level: int, custom_content: Dict[str, List[str]], character_concept: Dict[str, Any]) -> List[str]:
+        # Basic equipment package + custom weapons/armor
+        equipment = []
+        # Add custom weapons
+        equipment.extend(custom_content.get('weapons', []))
+        # Add custom armor
+        equipment.extend(custom_content.get('armor', []))
+        # Add basic adventuring gear (placeholder)
+        if level <= 4:
+            equipment.append('Backpack')
+            equipment.append('Rations (5 days)')
+            equipment.append('Waterskin')
+        else:
+            equipment.append('Explorer\'s Pack')
+        # Add any concept-specified items
+        equipment.extend(character_concept.get('equipment', []))
+        return equipment
+
+    def update_character(self, existing_character: Dict[str, Any], user_description: str = "", update_fields: Optional[List[str]] = None) -> Dict[str, Any]:
+        """
+        Hybrid workflow: Supplement or update an existing character with new generated content.
+        Only generates/updates fields specified in update_fields (if provided), otherwise fills any missing fields.
+        """
+        character = existing_character.copy()
+        update_fields = update_fields or []
+
+        # Update or fill ability scores
+        if ('ability_scores' in update_fields or ('ability_scores' not in character)):
+            character['ability_scores'] = self._generate_ability_scores()
+
+        # Update or fill level
+        if ('level' in update_fields or ('level' not in character)):
+            character['level'] = character.get('level', 1)
+        level = character['level']
+
+        # Update or supplement custom content
+        if ('custom_content' in update_fields or ('custom_content' not in character)):
+            custom_content = self.custom_content_generator.generate_custom_content_for_character(character, user_description)
+            character['custom_content'] = custom_content
+        else:
+            custom_content = character.get('custom_content', {})
+
+        # Update or fill species
+        if ('species' in update_fields or ('species' not in character or not character['species'])):
+            species = custom_content['species'][0] if custom_content.get('species') else character.get('species', 'Human')
+            character['species'] = species
+
+        # Update or fill classes
+        if ('classes' in update_fields or ('classes' not in character or not character['classes'])):
+            classes = custom_content['classes'] if custom_content.get('classes') else list(character.get('classes', {}).keys() or ['Fighter'])
+            character['classes'] = {cls: level for cls in classes}
+
+        # Update or fill spells
+        if ('spells' in update_fields or ('spells' not in character)):
+            character['spells'] = custom_content.get('spells', [])
+
+        # Update or fill equipment
+        if ('equipment' in update_fields or ('equipment' not in character)):
+            character['equipment'] = self._generate_equipment(level, custom_content, character)
+
+        # Update or fill backstory
+        if ('backstory' in update_fields or ('backstory' not in character or not character['backstory'])):
+            character['backstory'] = self.backstory_generator.generate_backstory({
+                'name': character.get('name', 'Unknown'),
+                'species': character.get('species', 'Human'),
+                'classes': character.get('classes', {}),
+                'level': level
+            }, user_description)
+
+        return character
+
+    def update_backstory(self, existing_character: Dict[str, Any], user_description: str = "") -> Dict[str, Any]:
+        """
+        Use the generator pipeline to update an existing character's backstory only.
+        """
+        character = existing_character.copy()
+        level = character.get('level', 1)
+        character['backstory'] = self.backstory_generator.generate_backstory({
+            'name': character.get('name', 'Unknown'),
+            'species': character.get('species', 'Human'),
+            'classes': character.get('classes', {}),
+            'level': level
+        }, user_description)
+        return character
+
+class NPCGenerator:
+    """Generator for non-player characters (NPCs) with appropriate gear and spells."""
+    def __init__(self, llm_service: LLMService, content_registry: ContentRegistry):
+        self.llm_service = llm_service
+        self.content_registry = content_registry
+        self.custom_content_generator = CustomContentGenerator(llm_service, content_registry)
+
+    def generate_npc(self, npc_role: str, user_description: str = "") -> Dict[str, Any]:
+        """
+        Generate an NPC for a specific role (e.g., merchant, guard, villain), with gear and spells.
+        Returns a dictionary representing the NPC.
+        """
+        # 1. Generate base stats (simplified for NPCs)
+        stats = self._generate_npc_stats(npc_role)
+        # 2. Generate custom content if needed
+        custom_content = self.custom_content_generator.generate_custom_content_for_character({'name': npc_role, 'classes': {npc_role: 1}}, user_description)
+        # 3. Assign equipment and spells
+        equipment = self._generate_npc_equipment(npc_role, custom_content)
+        spells = custom_content.get('spells', [])
+        # 4. Assemble NPC
+        npc = {
+            'role': npc_role,
+            'stats': stats,
+            'equipment': equipment,
+            'spells': spells,
+            'custom_content': custom_content
+        }
+        return npc
+
+    def _generate_npc_stats(self, npc_role: str) -> Dict[str, int]:
+        # Simple stat block by role
+        base_stats = {
+            'Strength': 10,
+            'Dexterity': 10,
+            'Constitution': 10,
+            'Intelligence': 10,
+            'Wisdom': 10,
+            'Charisma': 10
+        }
+        if npc_role.lower() in ['guard', 'soldier', 'warrior']:
+            base_stats['Strength'] += 2
+            base_stats['Constitution'] += 2
+        elif npc_role.lower() in ['mage', 'wizard', 'sorcerer']:
+            base_stats['Intelligence'] += 3
+        elif npc_role.lower() in ['priest', 'cleric']:
+            base_stats['Wisdom'] += 3
+        elif npc_role.lower() in ['merchant', 'noble']:
+            base_stats['Charisma'] += 3
+        return base_stats
+
+    def _generate_npc_equipment(self, npc_role: str, custom_content: Dict[str, List[str]]) -> List[str]:
+        equipment = []
+        equipment.extend(custom_content.get('weapons', []))
+        equipment.extend(custom_content.get('armor', []))
+        if npc_role.lower() in ['merchant']:
+            equipment.append('Trade Goods')
+        elif npc_role.lower() in ['guard', 'soldier', 'warrior']:
+            equipment.append('Shield')
+        elif npc_role.lower() in ['mage', 'wizard', 'sorcerer']:
+            equipment.append('Spellbook')
+        return equipment
+
+class CreatureGenerator:
+    """Generator for monsters, beasts, and other non-PC creatures."""
+    def __init__(self, llm_service: LLMService, content_registry: ContentRegistry):
+        self.llm_service = llm_service
+        self.content_registry = content_registry
+
+    def generate_creature(self, creature_type: str, user_description: str = "") -> Dict[str, Any]:
+        """
+        Generate a creature (monster, beast, etc.) with stats, abilities, and traits.
+        Returns a dictionary representing the creature.
+        """
+        # 1. Generate base stats by type
+        stats = self._generate_creature_stats(creature_type)
+        # 2. Generate abilities/traits (placeholder, could use LLM)
+        abilities = self._generate_creature_abilities(creature_type, user_description)
+        # 3. Assemble creature
+        creature = {
+            'type': creature_type,
+            'stats': stats,
+            'abilities': abilities,
+            'description': user_description
+        }
+        return creature
+
+    def _generate_creature_stats(self, creature_type: str) -> Dict[str, int]:
+        # Simple stat block by type
+        base_stats = {
+            'Strength': 12,
+            'Dexterity': 12,
+            'Constitution': 12,
+            'Intelligence': 2,
+            'Wisdom': 10,
+            'Charisma': 6
+        }
+        if creature_type.lower() in ['dragon']:
+            base_stats['Strength'] = 20
+            base_stats['Constitution'] = 18
+            base_stats['Intelligence'] = 14
+            base_stats['Charisma'] = 16
+        elif creature_type.lower() in ['beast', 'animal']:
+            base_stats['Intelligence'] = 2
+            base_stats['Wisdom'] = 12
+        elif creature_type.lower() in ['undead']:
+            base_stats['Constitution'] = 16
+            base_stats['Charisma'] = 12
+        return base_stats
+
+    def _generate_creature_abilities(self, creature_type: str, user_description: str) -> List[str]:
+        # Placeholder: could use LLM for richer abilities
+        abilities = []
+        if creature_type.lower() == 'dragon':
+            abilities.append('Breath Weapon')
+            abilities.append('Flight')
+        elif creature_type.lower() == 'undead':
+            abilities.append('Undead Fortitude')
+        elif creature_type.lower() == 'beast':
+            abilities.append('Keen Senses')
+        if user_description:
+            abilities.append(f"Special: {user_description}")
+        return abilities
+
+def detect_spellcasting_type(custom_class: Optional[Any], user_description: str = "") -> str:
+    """
+    Analyze a custom class and/or user description to determine spellcasting type.
+    Returns one of: 'full', 'half', 'pact', 'none'.
+    """
+    # Analyze class name and description for spellcasting cues
+    if not custom_class and not user_description:
+        return 'none'
+    name = getattr(custom_class, 'name', '').lower() if custom_class else ''
+    desc = user_description.lower() if user_description else ''
+    # Full casters
+    full_keywords = ['wizard', 'sorcerer', 'mage', 'druid', 'cleric', 'full caster', 'archmage']
+    # Half casters
+    half_keywords = ['paladin', 'ranger', 'spell-sword', 'warrior-mage', 'half caster']
+    # Pact casters
+    pact_keywords = ['warlock', 'pact', 'fiend', 'patron']
+    if any(k in name or k in desc for k in full_keywords):
+        return 'full'
+    if any(k in name or k in desc for k in half_keywords):
+        return 'half'
+    if any(k in name or k in desc for k in pact_keywords):
+        return 'pact'
+    # If description mentions magic or spells, default to full
+    if 'magic' in name or 'magic' in desc or 'spell' in name or 'spell' in desc:
+        return 'full'
+    return 'none'

@@ -65,7 +65,7 @@ class CharacterRepository(Base):
     """
     __tablename__ = "character_repositories"
     
-    id = Column(GUID(), primary_key=True, default=uuid.uuid4, index=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
     repository_id = Column(String(36), unique=True, index=True, default=lambda: str(uuid.uuid4()))
     
     # Repository metadata
@@ -114,8 +114,8 @@ class CharacterBranch(Base):
     """
     __tablename__ = "character_branches"
     
-    id = Column(GUID(), primary_key=True, default=uuid.uuid4, index=True)
-    repository_id = Column(GUID(), ForeignKey("character_repositories.id"), nullable=False)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    repository_id = Column(String(36), ForeignKey("character_repositories.id"), nullable=False)
     
     # Branch metadata
     branch_name = Column(String(50), nullable=False, index=True)  # "main", "multiclass-path", etc.
@@ -166,9 +166,9 @@ class CharacterCommit(Base):
     """
     __tablename__ = "character_commits"
     
-    id = Column(GUID(), primary_key=True, default=uuid.uuid4, index=True)
-    repository_id = Column(GUID(), ForeignKey("character_repositories.id"), nullable=False)
-    branch_id = Column(GUID(), ForeignKey("character_branches.id"), nullable=False)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    repository_id = Column(String(36), ForeignKey("character_repositories.id"), nullable=False)
+    branch_id = Column(String(36), ForeignKey("character_branches.id"), nullable=False)
     
     # Commit identification
     commit_hash = Column(String(64), unique=True, nullable=False, index=True)  # SHA-256 hash
@@ -245,8 +245,8 @@ class CharacterTag(Base):
     """
     __tablename__ = "character_tags"
     
-    id = Column(GUID(), primary_key=True, default=uuid.uuid4, index=True)
-    repository_id = Column(GUID(), ForeignKey("character_repositories.id"), nullable=False)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    repository_id = Column(String(36), ForeignKey("character_repositories.id"), nullable=False)
     
     # Tag information
     tag_name = Column(String(50), nullable=False, index=True)  # "v1.0", "death-by-dragon", "epic-level"
@@ -285,10 +285,10 @@ class Character(Base):
     """
     __tablename__ = "characters"
     
-    id = Column(GUID(), primary_key=True, default=uuid.uuid4, index=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
     
     # Link to new versioning system (optional)
-    repository_id = Column(GUID(), ForeignKey("character_repositories.id"), nullable=True)
+    repository_id = Column(String(36), ForeignKey("character_repositories.id"), nullable=True)
     commit_hash = Column(String(64), nullable=True)  # Which commit this represents
     
     # Original character fields
@@ -374,9 +374,9 @@ class CharacterSession(Base):
     """Database model for character creation sessions."""
     __tablename__ = "character_sessions"
     
-    id = Column(GUID(), primary_key=True, default=uuid.uuid4, index=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
     session_id = Column(String(36), unique=True, index=True)  # UUID
-    character_id = Column(GUID(), nullable=True)  # Links to Character if saved
+    character_id = Column(String(36), nullable=True)  # Links to Character if saved
     
     # Session data
     current_step = Column(String(50), default="basic_info")
@@ -393,7 +393,7 @@ class CustomContent(Base):
     """Database model for user-created custom content."""
     __tablename__ = "custom_content"
     
-    id = Column(GUID(), primary_key=True, default=uuid.uuid4, index=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
     name = Column(String(100), nullable=False, index=True)
     content_type = Column(String(50), nullable=False)  # "species", "class", "spell", etc.
     
@@ -581,14 +581,10 @@ class CharacterDB:
     def get_character(db: Session, character_id: str) -> Optional[Character]:
         """Retrieve a character from the database."""
         try:
-            # Convert string to UUID if needed
-            if isinstance(character_id, str):
-                uuid_id = uuid.UUID(character_id)
-            else:
-                uuid_id = character_id
-            return db.query(Character).filter(Character.id == uuid_id, Character.is_active == True).first()
-        except ValueError:
-            # Invalid UUID format
+            # character_id is now a string UUID, use it directly
+            return db.query(Character).filter(Character.id == character_id, Character.is_active == True).first()
+        except Exception:
+            # Invalid UUID format or other error
             return None
     
     @staticmethod
@@ -824,15 +820,10 @@ class CharacterRepositoryManager:
         Returns:
             CharacterBranch: Created branch
         """
-        # Convert string to UUID if needed
-        if isinstance(repository_id, str):
-            uuid_repo_id = uuid.UUID(repository_id)
-        else:
-            uuid_repo_id = repository_id
-            
+        # character_id is now a string UUID, use it directly
         # Get parent branch info
         parent = db.query(CharacterBranch).filter(
-            CharacterBranch.repository_id == uuid_repo_id,
+            CharacterBranch.repository_id == repository_id,
             CharacterBranch.branch_name == parent_branch
         ).first()
         
@@ -845,7 +836,7 @@ class CharacterRepositoryManager:
         
         # Create new branch
         branch = CharacterBranch(
-            repository_id=uuid_repo_id,
+            repository_id=repository_id,
             branch_name=branch_name,
             description=description,
             parent_branch=parent_branch,
@@ -882,15 +873,10 @@ class CharacterRepositoryManager:
         Returns:
             CharacterCommit: Created commit
         """
-        # Convert string to UUID if needed
-        if isinstance(repository_id, str):
-            uuid_repo_id = uuid.UUID(repository_id)
-        else:
-            uuid_repo_id = repository_id
-            
+        # repository_id is now a string UUID, use it directly
         # Get branch
         branch = db.query(CharacterBranch).filter(
-            CharacterBranch.repository_id == uuid_repo_id,
+            CharacterBranch.repository_id == repository_id,
             CharacterBranch.branch_name == branch_name
         ).first()
         
@@ -905,7 +891,7 @@ class CharacterRepositoryManager:
         
         # Create commit
         commit = CharacterCommit(
-            repository_id=uuid_repo_id,
+            repository_id=repository_id,
             branch_id=branch.id,
             commit_hash=commit_hash,
             short_hash=short_hash,

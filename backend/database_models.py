@@ -58,14 +58,7 @@ class CharacterRepository(Base):
     """
     __tablename__ = "character_repositories"
     
-class CharacterRepository(Base):
-    """
-    Represents a character's complete version history - like a Git repository.
-    This is the root container for all versions/branches of a single character concept.
-    """
-    __tablename__ = "character_repositories"
-    
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    id = Column(String(36), primary_key=True, index=True)
     repository_id = Column(String(36), unique=True, index=True, default=lambda: str(uuid.uuid4()))
     
     # Repository metadata
@@ -114,7 +107,7 @@ class CharacterBranch(Base):
     """
     __tablename__ = "character_branches"
     
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    id = Column(String(36), primary_key=True, index=True)
     repository_id = Column(String(36), ForeignKey("character_repositories.id"), nullable=False)
     
     # Branch metadata
@@ -166,7 +159,7 @@ class CharacterCommit(Base):
     """
     __tablename__ = "character_commits"
     
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    id = Column(String(36), primary_key=True, index=True)
     repository_id = Column(String(36), ForeignKey("character_repositories.id"), nullable=False)
     branch_id = Column(String(36), ForeignKey("character_branches.id"), nullable=False)
     
@@ -245,7 +238,7 @@ class CharacterTag(Base):
     """
     __tablename__ = "character_tags"
     
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    id = Column(String(36), primary_key=True, index=True)
     repository_id = Column(String(36), ForeignKey("character_repositories.id"), nullable=False)
     
     # Tag information
@@ -285,7 +278,7 @@ class Character(Base):
     """
     __tablename__ = "characters"
     
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    id = Column(String(36), primary_key=True, index=True)
     
     # Link to new versioning system (optional)
     repository_id = Column(String(36), ForeignKey("character_repositories.id"), nullable=True)
@@ -374,7 +367,7 @@ class CharacterSession(Base):
     """Database model for character creation sessions."""
     __tablename__ = "character_sessions"
     
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    id = Column(String(36), primary_key=True, index=True)
     session_id = Column(String(36), unique=True, index=True)  # UUID
     character_id = Column(String(36), nullable=True)  # Links to Character if saved
     
@@ -393,7 +386,7 @@ class CustomContent(Base):
     """Database model for user-created custom content."""
     __tablename__ = "custom_content"
     
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    id = Column(String(36), primary_key=True, index=True)
     name = Column(String(100), nullable=False, index=True)
     content_type = Column(String(50), nullable=False)  # "species", "class", "spell", etc.
     
@@ -548,6 +541,7 @@ class CharacterDB:
     def create_character(db: Session, character_data: Dict[str, Any]) -> Character:
         """Create a new character in the database."""
         db_character = Character(
+            id=str(uuid.uuid4()),  # Generate UUID for new character
             name=character_data.get("name", ""),
             player_name=character_data.get("player_name"),
             species=character_data.get("species", ""),
@@ -768,6 +762,7 @@ class CharacterRepositoryManager:
         """
         # Create repository
         repo = CharacterRepository(
+            id=str(uuid.uuid4()),  # Generate UUID for new repository
             name=name,
             description=description,
             player_name=player_name
@@ -777,6 +772,7 @@ class CharacterRepositoryManager:
         
         # Create main branch
         main_branch = CharacterBranch(
+            id=str(uuid.uuid4()),  # Generate UUID for main branch
             repository_id=repo.id,
             branch_name="main",
             description="Main character development branch",
@@ -836,6 +832,7 @@ class CharacterRepositoryManager:
         
         # Create new branch
         branch = CharacterBranch(
+            id=str(uuid.uuid4()),  # Generate UUID for new branch
             repository_id=repository_id,
             branch_name=branch_name,
             description=description,
@@ -891,6 +888,7 @@ class CharacterRepositoryManager:
         
         # Create commit
         commit = CharacterCommit(
+            id=str(uuid.uuid4()),  # Generate UUID for new commit
             repository_id=repository_id,
             branch_id=branch.id,
             commit_hash=commit_hash,

@@ -219,7 +219,7 @@ app.add_middleware(
 async def startup_event():
     """Initialize database and services on startup."""
     try:
-        init_database()
+        init_database(settings.database_url)
         logger.info("Database initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")

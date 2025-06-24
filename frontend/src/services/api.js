@@ -68,6 +68,15 @@ export const characterAPI = {
 
   // Apply rest effects
   applyRest: (id, restData) => api.post(`/api/v1/characters/${id}/rest`, restData),
+
+  // Get character sheet with all calculated stats
+  getSheet: (id) => api.get(`/api/v1/characters/${id}/sheet`),
+
+  // Get character state
+  getState: (id) => api.get(`/api/v1/characters/${id}/state`),
+
+  // Validate character
+  validate: (id) => api.get(`/api/v1/characters/${id}/validate`),
 };
 
 // Content Generation API endpoints
@@ -79,34 +88,82 @@ export const generationAPI = {
   generateEquipment: (characterData) => api.post('/api/v1/generate/equipment', characterData),
 
   // Generate full character (AI-driven creation)
-  generateCharacter: (prompt) => api.post('/api/v1/generate/character', { prompt }),
+  generateCharacter: (generationData) => api.post('/api/v1/characters/generate', generationData),
+
+  // Quick generation endpoints
+  quickCharacter: (params) => api.post('/api/v1/generate/quick-character', params),
+  quickItem: (params) => api.post('/api/v1/generate/quick-item', params),
+  quickNPC: (params) => api.post('/api/v1/generate/quick-npc', params),
+  quickCreature: (params) => api.post('/api/v1/generate/quick-creature', params),
 };
 
 // Item Creation API endpoints
 export const itemAPI = {
   // Create custom item
-  create: (itemData) => api.post('/api/v1/items', itemData),
+  create: (itemData) => api.post('/api/v1/items/create', itemData),
 
-  // Get item templates
+  // Get item templates (if available)
   getTemplates: () => api.get('/api/v1/items/templates'),
 };
 
 // NPC Creation API endpoints
 export const npcAPI = {
   // Create custom NPC
-  create: (npcData) => api.post('/api/v1/npcs', npcData),
+  create: (npcData) => api.post('/api/v1/npcs/create', npcData),
 
-  // Get NPC templates
+  // Get NPC templates (if available)
   getTemplates: () => api.get('/api/v1/npcs/templates'),
 };
 
 // Creature Creation API endpoints
 export const creatureAPI = {
   // Create custom creature
-  create: (creatureData) => api.post('/api/v1/creatures', creatureData),
+  create: (creatureData) => api.post('/api/v1/creatures/create', creatureData),
 
-  // Get creature templates
+  // Get creature templates (if available)
   getTemplates: () => api.get('/api/v1/creatures/templates'),
+};
+
+// Character Versioning API endpoints (Git-like system)
+export const versioningAPI = {
+  // Create character repository
+  createRepository: (repositoryData) => api.post('/api/v1/character-repositories', repositoryData),
+
+  // Get repository info
+  getRepository: (repositoryId) => api.get(`/api/v1/character-repositories/${repositoryId}`),
+
+  // Get character timeline
+  getTimeline: (repositoryId) => api.get(`/api/v1/character-repositories/${repositoryId}/timeline`),
+
+  // Get character visualization data
+  getVisualization: (repositoryId) => api.get(`/api/v1/character-repositories/${repositoryId}/visualization`),
+
+  // Create branch
+  createBranch: (repositoryId, branchData) => api.post(`/api/v1/character-repositories/${repositoryId}/branches`, branchData),
+
+  // Get branches
+  getBranches: (repositoryId) => api.get(`/api/v1/character-repositories/${repositoryId}/branches`),
+
+  // Create commit
+  createCommit: (repositoryId, commitData) => api.post(`/api/v1/character-repositories/${repositoryId}/commits`, commitData),
+
+  // Get commits
+  getCommits: (repositoryId) => api.get(`/api/v1/character-repositories/${repositoryId}/commits`),
+
+  // Get character at specific commit
+  getCharacterAtCommit: (commitHash) => api.get(`/api/v1/character-commits/${commitHash}/character`),
+
+  // Level up character
+  levelUp: (repositoryId, levelUpData) => api.post(`/api/v1/character-repositories/${repositoryId}/level-up`, levelUpData),
+
+  // Tag milestone
+  tagMilestone: (repositoryId, tagData) => api.post(`/api/v1/character-repositories/${repositoryId}/tags`, tagData),
+};
+
+// Validation API endpoints
+export const validationAPI = {
+  // Validate character data
+  validateCharacter: (characterData) => api.post('/api/v1/validate/character', characterData),
 };
 
 // Utility functions

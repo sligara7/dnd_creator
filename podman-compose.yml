@@ -84,7 +84,7 @@ services:
   backend:
     build: 
       context: ./backend
-      dockerfile: Dockerfile.new
+      dockerfile: Dockerfile
     container_name: dnd_character_api
     environment:
       # Database Configuration
@@ -125,7 +125,7 @@ services:
       - openai_api_key
       - anthropic_api_key
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
       timeout: 10s
       retries: 3

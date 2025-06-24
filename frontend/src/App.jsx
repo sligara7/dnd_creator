@@ -12,7 +12,7 @@ import CreateNPCPage from './components/pages/CreateNPCPage';
 import CreateCreaturePage from './components/pages/CreateCreaturePage';
 import CharacterSheetPage from './components/pages/CharacterSheetPage';
 import JournalEditPage from './components/pages/JournalEditPage';
-import CharacterEvolutionPage from './components/pages/CharacterEvolutionPage';
+import CharacterEvolutionPage from './components/pages/CharacterTreePage';
 import './App.css';
 
 /**

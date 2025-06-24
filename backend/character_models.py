@@ -1609,6 +1609,27 @@ class CharacterState:
             "modification_history": self.modification_history.copy()
         }
     
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert CharacterState to dictionary representation."""
+        return {
+            "current_hit_points": self.current_hit_points,
+            "max_hit_points": self.max_hit_points,
+            "temporary_hit_points": self.temporary_hit_points,
+            "experience_points": self.experience_points,
+            "conditions": [condition.name if hasattr(condition, 'name') else str(condition) for condition in self.conditions],
+            "exhaustion_level": self.exhaustion_level,
+            "currency": self.currency.copy(),
+            "equipment": self.equipment.copy(),
+            "armor": self.armor,
+            "weapons": self.weapons.copy(),
+            "equipped_items": self.equipped_items.copy(),
+            "inventory": self.inventory.copy(),
+            "spell_slots_remaining": self.spell_slots_remaining.copy(),
+            "spell_slots_max": self.spell_slots_max.copy(),
+            "death_save_successes": self.death_save_successes,
+            "death_save_failures": self.death_save_failures
+        }
+    
 
 # ============================================================================
 # CHARACTER ITERATION CACHE

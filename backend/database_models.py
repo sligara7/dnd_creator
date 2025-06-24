@@ -627,16 +627,18 @@ class CharacterDB:
         return query.offset(offset).limit(limit).all()
     
     @staticmethod
-    def save_character_sheet(db: Session, character_sheet) -> Character:
+    def save_character_sheet(db: Session, character_sheet, character_id: str = None) -> Character:
         """
         Save a CharacterSheet object to the database.
         This bridges the gap between the new character models and database storage.
         """
         character_data = character_sheet.to_dict()
         
-        # Check if this character has an ID (existing character)
-        if hasattr(character_sheet, 'id') and character_sheet.id:
-            return CharacterDB.update_character(db, character_sheet.id, character_data)
+        # Use provided character_id or try to get from character sheet
+        char_id = character_id or getattr(character_sheet.core, 'id', None)
+        
+        if char_id:
+            return CharacterDB.update_character(db, char_id, character_data)
         else:
             return CharacterDB.create_character(db, character_data)
     
@@ -651,39 +653,37 @@ class CharacterDB:
             return None
         
         # Import here to avoid circular imports
-        from character_models import CharacterCore, CharacterState
+        from character_models import CharacterCore, CharacterState, CharacterSheet
         
-        # Create CharacterCore from database data
-        character_core = CharacterCore(db_character.name)
-        character_core.species = db_character.species
-        character_core.background = db_character.background or ""
-        character_core.alignment = db_character.alignment.split() if db_character.alignment else ["Neutral", "Neutral"]
-        character_core.character_classes = db_character.character_classes or {}
+        # Create CharacterSheet
+        character_sheet = CharacterSheet(db_character.name)
+        
+        # Set core character data
+        character_sheet.core.species = db_character.species
+        character_sheet.core.background = db_character.background or ""
+        character_sheet.core.alignment = db_character.alignment.split() if db_character.alignment else ["Neutral", "Neutral"]
+        character_sheet.core.character_classes = db_character.character_classes or {}
+        character_sheet.core.backstory = db_character.backstory or ""
         
         # Set ability scores
-        character_core.strength.base_score = db_character.strength
-        character_core.dexterity.base_score = db_character.dexterity
-        character_core.constitution.base_score = db_character.constitution
-        character_core.intelligence.base_score = db_character.intelligence
-        character_core.wisdom.base_score = db_character.wisdom
-        character_core.charisma.base_score = db_character.charisma
+        character_sheet.core.strength.base_score = db_character.strength
+        character_sheet.core.dexterity.base_score = db_character.dexterity
+        character_sheet.core.constitution.base_score = db_character.constitution
+        character_sheet.core.intelligence.base_score = db_character.intelligence
+        character_sheet.core.wisdom.base_score = db_character.wisdom
+        character_sheet.core.charisma.base_score = db_character.charisma
         
-        # Set backstory and other data
-        character_core.backstory = db_character.backstory or ""
-        
-        # Create CharacterState
-        character_state = CharacterState(character_core)
-        character_state.max_hit_points = db_character.hit_points
-        character_state.current_hit_points = db_character.hit_points
+        # Set state data
+        character_sheet.state.max_hit_points = db_character.hit_points
+        character_sheet.state.current_hit_points = db_character.hit_points
         
         # Store database ID for future saves
-        character_core.id = db_character.id
+        character_sheet.core.id = db_character.id
         
-        return {
-            "core": character_core,
-            "state": character_state,
-            "db_character": db_character
-        }
+        # Calculate all derived stats to ensure proper state
+        character_sheet.calculate_all_derived_stats()
+        
+        return character_sheet
 
 # ============================================================================
 # CHARACTER SESSION OPERATIONS

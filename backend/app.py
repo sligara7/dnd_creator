@@ -800,18 +800,27 @@ async def update_character_state(character_id: str, state_updates: CharacterStat
         if state_updates.add_weapon is not None:
             updates["add_weapon"] = state_updates.add_weapon
         
-        # Apply real-time updates using comprehensive update method
-        update_result = character_sheet.update_character_state(updates)
+        # Apply real-time updates using state methods
+        if "current_hit_points" in updates:
+            character_sheet.state.current_hit_points = updates["current_hit_points"]
+        if "add_condition" in updates:
+            condition_data = updates["add_condition"]
+            character_sheet.state.add_condition(condition_data["condition"], condition_data.get("duration"))
+        if "remove_condition" in updates:
+            character_sheet.state.remove_condition(updates["remove_condition"])
+        if "add_equipment" in updates:
+            character_sheet.state.equipment.append(updates["add_equipment"])
+        if "add_weapon" in updates:
+            character_sheet.state.weapons.append(updates["add_weapon"])
         
         # Save updated state back to database
         CharacterDB.save_character_sheet(db, character_sheet, character_id)
         
-        logger.info(f"Updated character state for ID {character_id}: {len(update_result['changes'])} changes")
+        logger.info(f"Updated character state for ID {character_id}")
         return {
             "message": "Character state updated successfully",
             "character_id": character_id,
-            "updates_applied": update_result["changes"],
-            "current_state": character_sheet.get_real_time_state_snapshot()
+            "current_state": character_sheet.state.to_dict()
         }
         
     except HTTPException:
@@ -833,7 +842,7 @@ async def get_character_state(character_id: str, db = Depends(get_db)):
         if not character_sheet:
             raise HTTPException(status_code=404, detail="Character not found")
         
-        return character_sheet.get_real_time_state_snapshot()
+        return character_sheet.state.to_dict()
         
     except HTTPException:
         raise
@@ -854,8 +863,17 @@ async def apply_combat_effects(character_id: str, combat_data: Dict[str, Any], d
         if not character_sheet:
             raise HTTPException(status_code=404, detail="Character not found")
         
-        # Apply combat effects using real-time methods
-        combat_result = character_sheet.apply_combat_round_effects(combat_data)
+        # Apply combat effects manually
+        action = combat_data.get("action")
+        if action == "take_damage":
+            damage = combat_data.get("damage", 0)
+            character_sheet.state.current_hit_points = max(0, character_sheet.state.current_hit_points - damage)
+        elif action == "heal":
+            healing = combat_data.get("healing", 0)
+            character_sheet.state.current_hit_points = min(
+                character_sheet.state.max_hit_points, 
+                character_sheet.state.current_hit_points + healing
+            )
         
         # Save updated state
         CharacterDB.save_character_sheet(db, character_sheet, character_id)
@@ -864,8 +882,8 @@ async def apply_combat_effects(character_id: str, combat_data: Dict[str, Any], d
         return {
             "message": "Combat effects applied successfully",
             "character_id": character_id,
-            "combat_result": combat_result,
-            "current_state": character_sheet.get_real_time_state_snapshot()
+            "action_applied": combat_data.get("action", "unknown"),
+            "current_state": character_sheet.state.to_dict()
         }
         
     except HTTPException:
@@ -917,14 +935,14 @@ async def get_character_sheet(character_id: str, db = Depends(get_db)):
     """
     Get complete character sheet with all details.
     
-    Operation Flow: Database -> CharacterDB.load_character_sheet() -> get_character_summary() -> Response
+    Operation Flow: Database -> CharacterDB.load_character_sheet() -> to_dict() -> Response
     """
     try:
         character_sheet = CharacterDB.load_character_sheet(db, character_id)
         if not character_sheet:
             raise HTTPException(status_code=404, detail="Character not found")
         
-        return character_sheet.get_character_summary()
+        return character_sheet.to_dict()
         
     except HTTPException:
         raise

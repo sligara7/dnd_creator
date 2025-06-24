@@ -19,13 +19,11 @@ from shared_character_generation import (
 # Import core D&D components
 from core_models import AbilityScore, ProficiencyLevel, ASIManager
 from character_models import DnDCondition, CharacterCore, CharacterSheet, CharacterState, CharacterStats
-from llm_service_new import create_llm_service, LLMService
+from llm_service import create_llm_service, LLMService
 from database_models import CustomContent
 from ability_management import AdvancedAbilityManager
 from generators import BackstoryGenerator, CustomContentGenerator
 from custom_content_models import ContentRegistry
-from backend.generators import FeatManager  # Adjust path if needed
-from backend.character_models import CharacterLevelManager  # Adjust path if needed
 
 logger = logging.getLogger(__name__)
 
@@ -83,35 +81,8 @@ class NPCClass(Enum):
     ARTIFICER = "artificer"
     CUSTOM = "custom"  # For LLM-generated classes
 
-@dataclass
-class NPCConfig:
-    """Configuration for NPC creation process."""
-    base_timeout: int = 30
-    max_retries: int = 3
-    include_backstory: bool = True
-    include_secrets: bool = True
-    include_gear: bool = True
-    include_tactics: bool = True
-    auto_determine_type: bool = True  # Let LLM decide minor vs major
-    use_llm_generation: bool = True
-
-@dataclass
-class NPCResult:
-    """Result container for NPC creation operations."""
-    
-    def __init__(self, success: bool = False, npc_data: Dict[str, Any] = None, 
-                 error: str = "", warnings: List[str] = None):
-        self.success = success
-        self.npc_data = npc_data or {}
-        self.error = error
-        self.warnings = warnings or []
-        self.creation_time: float = 0.0
-        self.llm_generation_used: bool = False
-        self.npc_type: NPCType = NPCType.MINOR
-    
-    def add_warning(self, warning: str):
-        """Add a warning to the result."""
-        self.warnings.append(warning)
+# NPCConfig and NPCResult have been replaced with shared CreationConfig and CreationResult
+# from shared_character_generation.py to eliminate code duplication
 
 # ============================================================================
 # CONFIGURATION AND RESULT CLASSES

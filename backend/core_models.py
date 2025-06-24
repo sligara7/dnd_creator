@@ -12,6 +12,7 @@ Dependencies: None (pure domain logic)
 
 from typing import Dict, Any, List, Optional, TYPE_CHECKING
 from enum import Enum
+from dataclasses import dataclass
 from datetime import datetime
 import logging
 
@@ -732,4 +733,362 @@ class CharacterLevelManager:
             "pending_choices": self.get_pending_choices(),
             "level_history": self.level_history.copy(),
             "levels_gained": len(self.level_history)
+        }
+
+# ============================================================================
+# D&D 5E SPELLCASTING SYSTEM
+# ============================================================================
+
+class SpellcastingType(Enum):
+    """Types of spellcasting in D&D 5e 2024."""
+    NONE = "none"                    # Non-spellcaster
+    PREPARED = "prepared"            # Can change spells daily (Cleric, Druid, Paladin, Wizard)
+    KNOWN = "known"                  # Fixed list of known spells (Sorcerer, Warlock, Bard, Ranger)
+    RITUAL_ONLY = "ritual_only"      # Only ritual casting (some subclasses)
+    INNATE = "innate"               # Species/trait-based spellcasting
+    HYBRID = "hybrid"               # Mix of prepared and known (some subclasses)
+
+class SpellcastingAbility(Enum):
+    """Primary spellcasting abilities for each class."""
+    INTELLIGENCE = "intelligence"    # Wizard, Artificer, Eldritch Knight, Arcane Trickster
+    WISDOM = "wisdom"               # Cleric, Druid, Ranger
+    CHARISMA = "charisma"           # Sorcerer, Warlock, Paladin, Bard
+
+class RitualCastingType(Enum):
+    """Types of ritual casting available."""
+    NONE = "none"                   # Cannot cast rituals
+    PREPARED_ONLY = "prepared_only"  # Can only cast prepared rituals
+    SPELLBOOK = "spellbook"         # Can cast any ritual from spellbook (Wizard)
+    CLASS_LIST = "class_list"       # Can cast any ritual from class list (some subclasses)
+
+@dataclass
+class SpellcastingProgression:
+    """Spellcasting progression data for a class."""
+    spellcasting_type: SpellcastingType
+    spellcasting_ability: SpellcastingAbility
+    ritual_casting: RitualCastingType
+    spell_slots_per_level: Dict[int, Dict[int, int]]  # character_level -> {spell_level: slots}
+    spells_known_per_level: Dict[int, int]  # character_level -> spells_known (for known casters)
+    spells_prepared_formula: str  # Formula for prepared spells (e.g., "ability_modifier + class_level")
+    cantrips_known_per_level: Dict[int, int]  # character_level -> cantrips_known
+    first_spell_level: int = 1  # Level when spellcasting begins
+    spell_list_name: str = ""  # Name of the spell list used
+
+# ============================================================================
+# SPELLCASTING CLASS DEFINITIONS
+# ============================================================================
+
+class SpellcastingManager:
+    """Manages spellcasting information for D&D 5e 2024 classes."""
+    
+    # Define spellcasting progressions for each class
+    CLASS_SPELLCASTING = {
+        "artificer": SpellcastingProgression(
+            spellcasting_type=SpellcastingType.PREPARED,
+            spellcasting_ability=SpellcastingAbility.INTELLIGENCE,
+            ritual_casting=RitualCastingType.PREPARED_ONLY,
+            spell_slots_per_level={
+                1: {}, 2: {1: 2}, 3: {1: 3}, 4: {1: 3}, 5: {1: 4, 2: 2},
+                6: {1: 4, 2: 2}, 7: {1: 4, 2: 3}, 8: {1: 4, 2: 3}, 9: {1: 4, 2: 3, 3: 2},
+                10: {1: 4, 2: 3, 3: 2}, 11: {1: 4, 2: 3, 3: 3}, 12: {1: 4, 2: 3, 3: 3},
+                13: {1: 4, 2: 3, 3: 3, 4: 1}, 14: {1: 4, 2: 3, 3: 3, 4: 1},
+                15: {1: 4, 2: 3, 3: 3, 4: 2}, 16: {1: 4, 2: 3, 3: 3, 4: 2},
+                17: {1: 4, 2: 3, 3: 3, 4: 3, 5: 1}, 18: {1: 4, 2: 3, 3: 3, 4: 3, 5: 1},
+                19: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2}, 20: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2}
+            },
+            spells_known_per_level={},  # Prepared caster
+            spells_prepared_formula="intelligence_modifier + (artificer_level // 2)",
+            cantrips_known_per_level={1: 2, 10: 3, 14: 4},
+            first_spell_level=2,
+            spell_list_name="Artificer"
+        ),
+        
+        "bard": SpellcastingProgression(
+            spellcasting_type=SpellcastingType.KNOWN,
+            spellcasting_ability=SpellcastingAbility.CHARISMA,
+            ritual_casting=RitualCastingType.PREPARED_ONLY,
+            spell_slots_per_level={
+                1: {1: 2}, 2: {1: 3}, 3: {1: 4, 2: 2}, 4: {1: 4, 2: 3}, 5: {1: 4, 2: 3, 3: 2},
+                6: {1: 4, 2: 3, 3: 3}, 7: {1: 4, 2: 3, 3: 3, 4: 1}, 8: {1: 4, 2: 3, 3: 3, 4: 2},
+                9: {1: 4, 2: 3, 3: 3, 4: 3, 5: 1}, 10: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2},
+                11: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1}, 12: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1},
+                13: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1}, 14: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1},
+                15: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1, 8: 1}, 16: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1, 8: 1},
+                17: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1, 8: 1, 9: 1}, 18: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1, 8: 1, 9: 1},
+                19: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 2, 7: 1, 8: 1, 9: 1}, 20: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 2, 7: 2, 8: 1, 9: 1}
+            },
+            spells_known_per_level={1: 4, 2: 5, 3: 6, 4: 7, 5: 8, 6: 9, 7: 10, 8: 11, 9: 12, 10: 14, 11: 15, 12: 15, 13: 16, 14: 18, 15: 19, 16: 19, 17: 20, 18: 22, 19: 22, 20: 22},
+            spells_prepared_formula="",  # Known caster
+            cantrips_known_per_level={1: 2, 4: 3, 10: 4},
+            first_spell_level=1,
+            spell_list_name="Bard"
+        ),
+        
+        "cleric": SpellcastingProgression(
+            spellcasting_type=SpellcastingType.PREPARED,
+            spellcasting_ability=SpellcastingAbility.WISDOM,
+            ritual_casting=RitualCastingType.PREPARED_ONLY,
+            spell_slots_per_level={
+                1: {1: 2}, 2: {1: 3}, 3: {1: 4, 2: 2}, 4: {1: 4, 2: 3}, 5: {1: 4, 2: 3, 3: 2},
+                6: {1: 4, 2: 3, 3: 3}, 7: {1: 4, 2: 3, 3: 3, 4: 1}, 8: {1: 4, 2: 3, 3: 3, 4: 2},
+                9: {1: 4, 2: 3, 3: 3, 4: 3, 5: 1}, 10: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2},
+                11: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1}, 12: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1},
+                13: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1}, 14: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1},
+                15: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1, 8: 1}, 16: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1, 8: 1},
+                17: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1, 8: 1, 9: 1}, 18: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1, 8: 1, 9: 1},
+                19: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 2, 7: 1, 8: 1, 9: 1}, 20: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 2, 7: 2, 8: 1, 9: 1}
+            },
+            spells_known_per_level={},  # Prepared caster
+            spells_prepared_formula="wisdom_modifier + cleric_level",
+            cantrips_known_per_level={1: 3, 4: 4, 10: 5},
+            first_spell_level=1,
+            spell_list_name="Divine"
+        ),
+        
+        "druid": SpellcastingProgression(
+            spellcasting_type=SpellcastingType.PREPARED,
+            spellcasting_ability=SpellcastingAbility.WISDOM,
+            ritual_casting=RitualCastingType.PREPARED_ONLY,
+            spell_slots_per_level={
+                1: {1: 2}, 2: {1: 3}, 3: {1: 4, 2: 2}, 4: {1: 4, 2: 3}, 5: {1: 4, 2: 3, 3: 2},
+                6: {1: 4, 2: 3, 3: 3}, 7: {1: 4, 2: 3, 3: 3, 4: 1}, 8: {1: 4, 2: 3, 3: 3, 4: 2},
+                9: {1: 4, 2: 3, 3: 3, 4: 3, 5: 1}, 10: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2},
+                11: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1}, 12: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1},
+                13: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1}, 14: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1},
+                15: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1, 8: 1}, 16: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1, 8: 1},
+                17: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1, 8: 1, 9: 1}, 18: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1, 8: 1, 9: 1},
+                19: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 2, 7: 1, 8: 1, 9: 1}, 20: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 2, 7: 2, 8: 1, 9: 1}
+            },
+            spells_known_per_level={},  # Prepared caster
+            spells_prepared_formula="wisdom_modifier + druid_level",
+            cantrips_known_per_level={1: 2, 4: 3, 10: 4},
+            first_spell_level=1,
+            spell_list_name="Primal"
+        ),
+        
+        "paladin": SpellcastingProgression(
+            spellcasting_type=SpellcastingType.PREPARED,
+            spellcasting_ability=SpellcastingAbility.CHARISMA,
+            ritual_casting=RitualCastingType.NONE,
+            spell_slots_per_level={
+                1: {}, 2: {1: 2}, 3: {1: 3}, 4: {1: 3}, 5: {1: 4, 2: 2},
+                6: {1: 4, 2: 2}, 7: {1: 4, 2: 3}, 8: {1: 4, 2: 3}, 9: {1: 4, 2: 3, 3: 2},
+                10: {1: 4, 2: 3, 3: 2}, 11: {1: 4, 2: 3, 3: 3}, 12: {1: 4, 2: 3, 3: 3},
+                13: {1: 4, 2: 3, 3: 3, 4: 1}, 14: {1: 4, 2: 3, 3: 3, 4: 1},
+                15: {1: 4, 2: 3, 3: 3, 4: 2}, 16: {1: 4, 2: 3, 3: 3, 4: 2},
+                17: {1: 4, 2: 3, 3: 3, 4: 3, 5: 1}, 18: {1: 4, 2: 3, 3: 3, 4: 3, 5: 1},
+                19: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2}, 20: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2}
+            },
+            spells_known_per_level={},  # Prepared caster
+            spells_prepared_formula="charisma_modifier + (paladin_level // 2)",
+            cantrips_known_per_level={},  # No cantrips
+            first_spell_level=2,
+            spell_list_name="Divine"
+        ),
+        
+        "ranger": SpellcastingProgression(
+            spellcasting_type=SpellcastingType.KNOWN,
+            spellcasting_ability=SpellcastingAbility.WISDOM,
+            ritual_casting=RitualCastingType.NONE,
+            spell_slots_per_level={
+                1: {}, 2: {1: 2}, 3: {1: 3}, 4: {1: 3}, 5: {1: 4, 2: 2},
+                6: {1: 4, 2: 2}, 7: {1: 4, 2: 3}, 8: {1: 4, 2: 3}, 9: {1: 4, 2: 3, 3: 2},
+                10: {1: 4, 2: 3, 3: 2}, 11: {1: 4, 2: 3, 3: 3}, 12: {1: 4, 2: 3, 3: 3},
+                13: {1: 4, 2: 3, 3: 3, 4: 1}, 14: {1: 4, 2: 3, 3: 3, 4: 1},
+                15: {1: 4, 2: 3, 3: 3, 4: 2}, 16: {1: 4, 2: 3, 3: 3, 4: 2},
+                17: {1: 4, 2: 3, 3: 3, 4: 3, 5: 1}, 18: {1: 4, 2: 3, 3: 3, 4: 3, 5: 1},
+                19: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2}, 20: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2}
+            },
+            spells_known_per_level={2: 2, 3: 3, 5: 4, 7: 5, 9: 6, 11: 7, 13: 8, 15: 9, 17: 10, 19: 11},
+            spells_prepared_formula="",  # Known caster
+            cantrips_known_per_level={},  # No cantrips by default
+            first_spell_level=2,
+            spell_list_name="Primal"
+        ),
+        
+        "sorcerer": SpellcastingProgression(
+            spellcasting_type=SpellcastingType.KNOWN,
+            spellcasting_ability=SpellcastingAbility.CHARISMA,
+            ritual_casting=RitualCastingType.NONE,
+            spell_slots_per_level={
+                1: {1: 2}, 2: {1: 3}, 3: {1: 4, 2: 2}, 4: {1: 4, 2: 3}, 5: {1: 4, 2: 3, 3: 2},
+                6: {1: 4, 2: 3, 3: 3}, 7: {1: 4, 2: 3, 3: 3, 4: 1}, 8: {1: 4, 2: 3, 3: 3, 4: 2},
+                9: {1: 4, 2: 3, 3: 3, 4: 3, 5: 1}, 10: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2},
+                11: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1}, 12: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1},
+                13: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1}, 14: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1},
+                15: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1, 8: 1}, 16: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1, 8: 1},
+                17: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1, 8: 1, 9: 1}, 18: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1, 8: 1, 9: 1},
+                19: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 2, 7: 1, 8: 1, 9: 1}, 20: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 2, 7: 2, 8: 1, 9: 1}
+            },
+            spells_known_per_level={1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7, 7: 8, 8: 9, 9: 10, 10: 11, 11: 12, 12: 12, 13: 13, 14: 13, 15: 14, 16: 14, 17: 15, 18: 15, 19: 15, 20: 15},
+            spells_prepared_formula="",  # Known caster
+            cantrips_known_per_level={1: 4, 4: 5, 10: 6},
+            first_spell_level=1,
+            spell_list_name="Arcane"
+        ),
+        
+        "warlock": SpellcastingProgression(
+            spellcasting_type=SpellcastingType.KNOWN,
+            spellcasting_ability=SpellcastingAbility.CHARISMA,
+            ritual_casting=RitualCastingType.NONE,
+            spell_slots_per_level={
+                1: {1: 1}, 2: {1: 2}, 3: {2: 2}, 4: {2: 2}, 5: {3: 2}, 6: {3: 2},
+                7: {4: 2}, 8: {4: 2}, 9: {5: 2}, 10: {5: 2}, 11: {5: 3}, 12: {5: 3},
+                13: {5: 3}, 14: {5: 3}, 15: {5: 3}, 16: {5: 3}, 17: {5: 4}, 18: {5: 4},
+                19: {5: 4}, 20: {5: 4}
+            },
+            spells_known_per_level={1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7, 7: 8, 8: 9, 9: 10, 10: 10, 11: 11, 12: 11, 13: 12, 14: 12, 15: 13, 16: 13, 17: 14, 18: 14, 19: 15, 20: 15},
+            spells_prepared_formula="",  # Known caster
+            cantrips_known_per_level={1: 2, 4: 3, 10: 4},
+            first_spell_level=1,
+            spell_list_name="Arcane"
+        ),
+        
+        "wizard": SpellcastingProgression(
+            spellcasting_type=SpellcastingType.PREPARED,
+            spellcasting_ability=SpellcastingAbility.INTELLIGENCE,
+            ritual_casting=RitualCastingType.SPELLBOOK,
+            spell_slots_per_level={
+                1: {1: 2}, 2: {1: 3}, 3: {1: 4, 2: 2}, 4: {1: 4, 2: 3}, 5: {1: 4, 2: 3, 3: 2},
+                6: {1: 4, 2: 3, 3: 3}, 7: {1: 4, 2: 3, 3: 3, 4: 1}, 8: {1: 4, 2: 3, 3: 3, 4: 2},
+                9: {1: 4, 2: 3, 3: 3, 4: 3, 5: 1}, 10: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2},
+                11: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1}, 12: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1},
+                13: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1}, 14: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1},
+                15: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1, 8: 1}, 16: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1, 8: 1},
+                17: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1, 8: 1, 9: 1}, 18: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 1, 7: 1, 8: 1, 9: 1},
+                19: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 2, 7: 1, 8: 1, 9: 1}, 20: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2, 6: 2, 7: 2, 8: 1, 9: 1}
+            },
+            spells_known_per_level={},  # Prepared caster
+            spells_prepared_formula="intelligence_modifier + wizard_level",
+            cantrips_known_per_level={1: 3, 4: 4, 10: 5},
+            first_spell_level=1,
+            spell_list_name="Arcane"
+        ),
+        
+        # Subclasses with limited spellcasting
+        "eldritch_knight": SpellcastingProgression(
+            spellcasting_type=SpellcastingType.KNOWN,
+            spellcasting_ability=SpellcastingAbility.INTELLIGENCE,
+            ritual_casting=RitualCastingType.NONE,
+            spell_slots_per_level={
+                3: {1: 2}, 4: {1: 3}, 7: {1: 4, 2: 2}, 8: {1: 4, 2: 2}, 10: {1: 4, 2: 3},
+                11: {1: 4, 2: 3}, 13: {1: 4, 2: 3, 3: 2}, 14: {1: 4, 2: 3, 3: 2},
+                16: {1: 4, 2: 3, 3: 3}, 17: {1: 4, 2: 3, 3: 3}, 19: {1: 4, 2: 3, 3: 3, 4: 1},
+                20: {1: 4, 2: 3, 3: 3, 4: 1}
+            },
+            spells_known_per_level={3: 3, 4: 4, 7: 5, 8: 6, 10: 7, 11: 8, 13: 9, 14: 10, 16: 11, 19: 12, 20: 13},
+            spells_prepared_formula="",  # Known caster
+            cantrips_known_per_level={3: 2, 10: 3},
+            first_spell_level=3,
+            spell_list_name="Arcane"
+        ),
+        
+        "arcane_trickster": SpellcastingProgression(
+            spellcasting_type=SpellcastingType.KNOWN,
+            spellcasting_ability=SpellcastingAbility.INTELLIGENCE,
+            ritual_casting=RitualCastingType.NONE,
+            spell_slots_per_level={
+                3: {1: 2}, 4: {1: 3}, 7: {1: 4, 2: 2}, 8: {1: 4, 2: 2}, 10: {1: 4, 2: 3},
+                11: {1: 4, 2: 3}, 13: {1: 4, 2: 3, 3: 2}, 14: {1: 4, 2: 3, 3: 2},
+                16: {1: 4, 2: 3, 3: 3}, 17: {1: 4, 2: 3, 3: 3}, 19: {1: 4, 2: 3, 3: 3, 4: 1},
+                20: {1: 4, 2: 3, 3: 3, 4: 1}
+            },
+            spells_known_per_level={3: 3, 4: 4, 7: 5, 8: 6, 10: 7, 11: 8, 13: 9, 14: 10, 16: 11, 19: 12, 20: 13},
+            spells_prepared_formula="",  # Known caster
+            cantrips_known_per_level={3: 3, 10: 4},
+            first_spell_level=3,
+            spell_list_name="Arcane"
+        )
+    }
+    
+    @classmethod
+    def get_spellcasting_info(cls, class_name: str, class_level: int) -> Optional[Dict[str, Any]]:
+        """Get spellcasting information for a class at a specific level."""
+        class_lower = class_name.lower()
+        
+        if class_lower not in cls.CLASS_SPELLCASTING:
+            return None
+        
+        progression = cls.CLASS_SPELLCASTING[class_lower]
+        
+        # Check if spellcasting has started
+        if class_level < progression.first_spell_level:
+            return None
+        
+        # Calculate current spellcasting information
+        spell_slots = progression.spell_slots_per_level.get(class_level, {})
+        spells_known = progression.spells_known_per_level.get(class_level, 0)
+        cantrips_known = progression.cantrips_known_per_level.get(class_level, 0)
+        
+        # Calculate spells prepared (for prepared casters)
+        spells_prepared = 0
+        if progression.spellcasting_type == SpellcastingType.PREPARED:
+            # This would need to be calculated based on the character's ability scores
+            # For now, return the formula
+            spells_prepared = progression.spells_prepared_formula
+        
+        return {
+            "spellcasting_type": progression.spellcasting_type.value,
+            "spellcasting_ability": progression.spellcasting_ability.value,
+            "ritual_casting": progression.ritual_casting.value,
+            "spell_slots": spell_slots,
+            "spells_known": spells_known,
+            "spells_prepared_formula": spells_prepared,
+            "cantrips_known": cantrips_known,
+            "spell_list_name": progression.spell_list_name,
+            "can_swap_spells_on_rest": progression.spellcasting_type == SpellcastingType.PREPARED,
+            "can_cast_rituals": progression.ritual_casting != RitualCastingType.NONE,
+            "ritual_casting_type": progression.ritual_casting.value
+        }
+    
+    @classmethod
+    def is_spellcaster(cls, class_name: str, class_level: int = 1) -> bool:
+        """Check if a class is a spellcaster at the given level."""
+        return cls.get_spellcasting_info(class_name, class_level) is not None
+    
+    @classmethod
+    def get_combined_spellcasting(cls, character_classes: Dict[str, int]) -> Dict[str, Any]:
+        """Get combined spellcasting information for multiclass characters."""
+        spellcasting_classes = []
+        total_caster_levels = 0
+        
+        # Collect spellcasting classes and calculate caster levels
+        for class_name, class_level in character_classes.items():
+            spellcasting_info = cls.get_spellcasting_info(class_name, class_level)
+            if spellcasting_info:
+                spellcasting_classes.append({
+                    "class": class_name,
+                    "level": class_level,
+                    "info": spellcasting_info
+                })
+                
+                # Calculate multiclass spellcaster level
+                if class_name.lower() in ["artificer", "paladin", "ranger"]:
+                    # Half casters
+                    total_caster_levels += max(1, class_level // 2)
+                elif class_name.lower() in ["eldritch_knight", "arcane_trickster"]:
+                    # Third casters
+                    total_caster_levels += max(1, class_level // 3)
+                else:
+                    # Full casters
+                    total_caster_levels += class_level
+        
+        if not spellcasting_classes:
+            return {"is_spellcaster": False}
+        
+        # For multiclass, use full caster spell slot progression
+        if len(spellcasting_classes) > 1:
+            multiclass_slots = cls.CLASS_SPELLCASTING["wizard"].spell_slots_per_level.get(
+                min(total_caster_levels, 20), {}
+            )
+        else:
+            multiclass_slots = spellcasting_classes[0]["info"]["spell_slots"]
+        
+        return {
+            "is_spellcaster": True,
+            "spellcasting_classes": spellcasting_classes,
+            "total_caster_level": total_caster_levels,
+            "multiclass_spell_slots": multiclass_slots,
+            "primary_spellcasting_class": spellcasting_classes[0]["class"] if spellcasting_classes else None,
+            "has_multiple_spellcasting_abilities": len(set(sc["info"]["spellcasting_ability"] for sc in spellcasting_classes)) > 1
         }

@@ -20,7 +20,8 @@ from core_models import (
     AbilityScore,
     ASIManager,
     CharacterLevelManager,
-    MagicItemManager
+    MagicItemManager,
+    SpellcastingManager
 )
 
 # ============================================================================
@@ -117,6 +118,10 @@ class CharacterCore:
         # Enhanced backstory elements
         self.detailed_backstory: Dict[str, str] = {}
         self.custom_content_used: List[str] = []
+        
+        # Spellcasting information (NEW)
+        self.spellcasting_info: Dict[str, Any] = {}
+        self._update_spellcasting_info()
     
     @property
     def total_level(self) -> int:
@@ -171,6 +176,100 @@ class CharacterCore:
         self.detailed_backstory = backstory_elements
         # Set main backstory for compatibility
         self.backstory = backstory_elements.get("main_backstory", "")
+    
+    def _update_spellcasting_info(self):
+        """Update spellcasting information based on current classes."""
+        self.spellcasting_info = SpellcastingManager.get_combined_spellcasting(self.character_classes)
+    
+    def get_spellcasting_info(self) -> Dict[str, Any]:
+        """Get current spellcasting information."""
+        # Refresh spellcasting info in case classes have changed
+        self._update_spellcasting_info()
+        return self.spellcasting_info.copy()
+    
+    def is_spellcaster(self) -> bool:
+        """Check if character is a spellcaster."""
+        return self.get_spellcasting_info().get("is_spellcaster", False)
+    
+    def can_swap_spells_on_rest(self) -> bool:
+        """Check if character can swap spells after a long rest."""
+        spellcasting_info = self.get_spellcasting_info()
+        if not spellcasting_info.get("is_spellcaster", False):
+            return False
+        
+        # Check if any spellcasting class allows spell swapping
+        for class_info in spellcasting_info.get("spellcasting_classes", []):
+            if class_info["info"].get("can_swap_spells_on_rest", False):
+                return True
+        return False
+    
+    def can_cast_rituals(self) -> bool:
+        """Check if character can cast ritual spells."""
+        spellcasting_info = self.get_spellcasting_info()
+        if not spellcasting_info.get("is_spellcaster", False):
+            return False
+        
+        # Check if any spellcasting class allows ritual casting
+        for class_info in spellcasting_info.get("spellcasting_classes", []):
+            if class_info["info"].get("can_cast_rituals", False):
+                return True
+        return False
+    
+    def get_spellcasting_abilities(self) -> List[str]:
+        """Get list of spellcasting abilities used by this character."""
+        spellcasting_info = self.get_spellcasting_info()
+        if not spellcasting_info.get("is_spellcaster", False):
+            return []
+        
+        abilities = set()
+        for class_info in spellcasting_info.get("spellcasting_classes", []):
+            abilities.add(class_info["info"]["spellcasting_ability"])
+        
+        return list(abilities)
+    
+    def get_spell_save_dc(self, spellcasting_ability: str = None) -> int:
+        """Calculate spell save DC for a given spellcasting ability."""
+        if not self.is_spellcaster():
+            return 8  # Default, though character can't cast spells
+        
+        # If no ability specified, use primary spellcasting ability
+        if not spellcasting_ability:
+            abilities = self.get_spellcasting_abilities()
+            if not abilities:
+                return 8
+            spellcasting_ability = abilities[0]  # Use first (primary) ability
+        
+        # Get ability modifier
+        ability_obj = self.get_ability_score(spellcasting_ability)
+        if not ability_obj:
+            return 8
+        
+        # Calculate proficiency bonus (simplified - should use level manager)
+        proficiency_bonus = 2 + ((self.level - 1) // 4)
+        
+        return 8 + proficiency_bonus + ability_obj.modifier
+    
+    def get_spell_attack_bonus(self, spellcasting_ability: str = None) -> int:
+        """Calculate spell attack bonus for a given spellcasting ability."""
+        if not self.is_spellcaster():
+            return 0
+        
+        # If no ability specified, use primary spellcasting ability
+        if not spellcasting_ability:
+            abilities = self.get_spellcasting_abilities()
+            if not abilities:
+                return 0
+            spellcasting_ability = abilities[0]
+        
+        # Get ability modifier
+        ability_obj = self.get_ability_score(spellcasting_ability)
+        if not ability_obj:
+            return 0
+        
+        # Calculate proficiency bonus (simplified - should use level manager)
+        proficiency_bonus = 2 + ((self.level - 1) // 4)
+        
+        return proficiency_bonus + ability_obj.modifier
     
     # ============================================================================
     # GETTER METHODS FOR API ACCESS
@@ -296,7 +395,8 @@ class CharacterCore:
                 "weapons": self.weapon_proficiency,
                 "tools": self.tool_proficiency,
                 "languages": self.languages
-            }
+            },
+            "spellcasting": self.get_spellcasting_info()
         }
     
     # ============================================================================
@@ -383,6 +483,9 @@ class CharacterCore:
         
         old_classes = self.character_classes.copy()
         self.character_classes = character_classes.copy()
+        
+        # Update spellcasting information when classes change
+        self._update_spellcasting_info()
         
         logger.info(f"Character classes changed from {old_classes} to {character_classes}")
         return {"success": True, "old_value": old_classes, "new_value": character_classes}

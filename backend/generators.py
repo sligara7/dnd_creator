@@ -12,6 +12,7 @@ from custom_content_models import (
     ContentRegistry, CustomSpecies, CustomClass, CustomSpell, 
     CustomWeapon, CustomArmor, CustomFeat, CustomItem
 )
+from core_models import SpellcastingManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -220,10 +221,17 @@ class CustomContentGenerator:
         return any(keyword in description_lower for keyword in custom_keywords)
     
     def _character_is_spellcaster(self, character_data: Dict[str, Any]) -> bool:
-        """Check if character is a spellcaster."""
-        spellcasting_classes = ["wizard", "sorcerer", "warlock", "bard", "cleric", "druid", "ranger", "paladin"]
-        classes = [cls.lower() for cls in character_data.get('classes', {}).keys()]
-        return any(cls in spellcasting_classes for cls in classes)
+        """Check if character is a spellcaster using the comprehensive spellcasting system."""
+        character_classes = character_data.get('classes', {})
+        if not character_classes:
+            return False
+        
+        # Use the SpellcastingManager to check if any class is a spellcaster
+        for class_name, class_level in character_classes.items():
+            if SpellcastingManager.is_spellcaster(class_name, class_level):
+                return True
+        
+        return False
     
     def _generate_custom_species(self, character_data: Dict[str, Any], 
                                user_description: str) -> Optional[CustomSpecies]:
@@ -293,13 +301,12 @@ Return ONLY this JSON:
             name = character_data.get('name', 'Unknown')
             character_level = character_data.get('level', 1)
             
-            # Extract themes for consistent spell generation
-            from character_creation import ConceptualValidator, LevelValidator
-            themes = ConceptualValidator.extract_themes(user_description)
+            # Extract themes from description (simplified approach)
+            themes = self._extract_simple_themes(user_description)
             theme_desc = f" with {themes[0]} theme" if themes else ""
             
-            # Determine appropriate spell level
-            max_spell_level = LevelValidator.MAX_SPELL_LEVEL_BY_CHARACTER_LEVEL.get(character_level, 1)
+            # Determine appropriate spell level based on character level
+            max_spell_level = self._calculate_max_spell_level(character_level)
             suggested_level = min(max_spell_level, 2)  # Conservative approach for custom spells
             
             prompt = f"""Create {count} unique D&D spells for {name}{theme_desc}.
@@ -341,8 +348,7 @@ Return ONLY this JSON array:
             character_level = character_data.get('level', 1)
             
             # Extract themes for consistent weapon generation
-            from character_creation import ConceptualValidator
-            themes = ConceptualValidator.extract_themes(user_description)
+            themes = self._extract_simple_themes(user_description)
             theme_desc = f" with {themes[0]} theme" if themes else ""
             
             # Determine appropriate weapon tier
@@ -461,6 +467,55 @@ Return ONLY this JSON:
                                user_description: str) -> Optional[Any]:
         """Generate custom species - public interface."""
         return self._generate_custom_species(character_data, user_description)
+    
+    def _extract_simple_themes(self, description: str) -> List[str]:
+        """Extract simple themes from description text."""
+        themes = []
+        description_lower = description.lower()
+        
+        # Simple keyword-based theme extraction
+        theme_keywords = {
+            "fire": ["fire", "flame", "burning", "heat", "inferno"],
+            "ice": ["ice", "cold", "frost", "frozen", "winter"],
+            "shadow": ["shadow", "dark", "darkness", "stealth", "hidden"],
+            "light": ["light", "bright", "radiant", "holy", "divine"],
+            "nature": ["nature", "forest", "tree", "plant", "green"],
+            "water": ["water", "ocean", "sea", "wave", "aquatic"],
+            "storm": ["storm", "lightning", "thunder", "wind", "tempest"],
+            "death": ["death", "undead", "necromancy", "grave", "bone"],
+            "magic": ["magic", "arcane", "mystical", "enchanted", "spell"],
+            "battle": ["battle", "war", "combat", "weapon", "sword"]
+        }
+        
+        for theme, keywords in theme_keywords.items():
+            if any(keyword in description_lower for keyword in keywords):
+                themes.append(theme)
+        
+        return themes if themes else ["general"]
+    
+    def _calculate_max_spell_level(self, character_level: int) -> int:
+        """Calculate maximum spell level for character level."""
+        # Standard D&D 5e spell level progression
+        if character_level < 1:
+            return 0
+        elif character_level < 3:
+            return 1
+        elif character_level < 5:
+            return 2
+        elif character_level < 7:
+            return 3
+        elif character_level < 9:
+            return 4
+        elif character_level < 11:
+            return 5
+        elif character_level < 13:
+            return 6
+        elif character_level < 15:
+            return 7
+        elif character_level < 17:
+            return 8
+        else:
+            return 9
 
 # ============================================================================
 # ITEM GENERATOR

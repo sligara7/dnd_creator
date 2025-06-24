@@ -30,7 +30,7 @@ from shared_character_generation import (
 # Import core D&D components
 from core_models import AbilityScore, MagicItemManager, ProficiencyLevel
 from character_models import DnDCondition
-from llm_service_new import create_llm_service, LLMService
+from llm_service import create_llm_service, LLMService
 from database_models import CustomContent
 from custom_content_models import ContentRegistry
 from generators import CustomContentGenerator

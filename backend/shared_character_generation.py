@@ -26,7 +26,7 @@ from character_models import CharacterCore, CharacterState, CharacterSheet, Char
 from core_models import AbilityScore, ASIManager, MagicItemManager, CharacterLevelManager, ProficiencyLevel
 from custom_content_models import ContentRegistry, FeatManager
 from ability_management import AdvancedAbilityManager
-from llm_service_new import create_llm_service, LLMService
+from llm_service import create_llm_service, LLMService
 from generators import BackstoryGenerator, CustomContentGenerator
 
 logger = logging.getLogger(__name__)

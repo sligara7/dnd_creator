@@ -163,6 +163,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import logging
 import sys
+import re
 from pathlib import Path
 
 # Add the app directory to Python path
@@ -179,12 +180,15 @@ from database_models import (
     CharacterRepositoryManager, CharacterVersioningAPI
 )
 from character_models import CharacterCore, DnDCondition
-from items_creation import ItemCreator
-from database_models import register_custom_item
-from npc_creation import NPCCreator
-from database_models import register_custom_npc
-from creature_creation import CreatureCreator
-from database_models import register_custom_creature
+
+# Import refactored creation modules
+from character_creation import CharacterCreator, create_character_from_prompt
+from items_creation import ItemCreator, ItemType, ItemRarity, create_item_from_prompt
+from npc_creation import NPCCreator, NPCType, NPCRole, create_npc_from_prompt
+from creature_creation import CreatureCreator, CreatureType, CreatureSize, create_creature_from_prompt
+
+# Import shared components
+from shared_character_generation import CreationConfig, CreationResult
 
 logger = logging.getLogger(__name__)
 
@@ -1413,50 +1417,300 @@ async def create_character_tag(
         raise HTTPException(status_code=500, detail=f"Tag creation failed: {str(e)}")
 
 
-@app.post("/api/v1/items/create")
-def create_item(item: ItemCreateRequest, db=Depends(get_db)):
-    """Create and register a new custom item for DM use."""
-    creator = ItemCreator(db_session=db, created_by=item.created_by)
-    result = creator.create_and_register_item(
-        name=item.name,
-        item_type=item.item_type,
-        description=item.description,
-        properties=item.properties,
-        is_public=item.is_public
-    )
-    if not result.get("success"):
-        raise HTTPException(status_code=400, detail=result.get("error", "Failed to create item."))
-    return result["item"]
+# ============================================================================
+# CONTENT CREATION ENDPOINTS - USING REFACTORED MODULES
+# ============================================================================
+
+@app.post("/api/v1/characters/generate", tags=["character-generation"])
+async def generate_character(prompt: str, db = Depends(get_db)):
+    """
+    Generate a new character using the refactored CharacterCreator with LLM integration.
+    
+    This endpoint uses the new shared components architecture for character generation.
+    """
+    try:
+        # Create LLM service
+        llm_service = create_llm_service()
+        
+        # Create character using refactored module
+        creator = CharacterCreator(llm_service)
+        result = creator.create_character(prompt)
+        
+        if result.success:
+            # Save the generated character to database
+            character_data = result.data.get("raw_data", {})
+            
+            # Convert to CharacterCreateRequest format for existing save logic
+            character_request = CharacterCreateRequest(
+                name=character_data.get("name", "Generated Character"),
+                species=character_data.get("species", ""),
+                background=character_data.get("background", ""),
+                alignment=character_data.get("alignment", ["Neutral", "Neutral"]),
+                character_classes=character_data.get("classes", {}),
+                abilities=character_data.get("ability_scores", {}),
+                backstory=character_data.get("backstory", ""),
+                equipment=character_data.get("equipment", {})
+            )
+            
+            # Use existing character creation endpoint logic to save
+            saved_character = await create_character(character_request, db)
+            
+            return {
+                "success": True,
+                "generation_time": result.creation_time,
+                "warnings": result.warnings,
+                "character": saved_character,
+                "generation_metadata": result.data.get("creation_metadata", {})
+            }
+        else:
+            raise HTTPException(status_code=500, detail=f"Character generation failed: {result.error}")
+            
+    except Exception as e:
+        logger.error(f"Character generation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Character generation failed: {str(e)}")
 
 
-@app.post("/api/v1/npcs/create")
-def create_npc(npc: NPCCreateRequest, db=Depends(get_db)):
-    """Create and register a new custom NPC for DM use."""
-    creator = NPCCreator(db_session=db, created_by=npc.created_by)
-    # Pass challenge_rating to creator and DB
-    result = creator.create_and_register_npc(
-        name=npc.name,
-        npc_type=npc.npc_type,
-        description=npc.description,
-        stats=npc.stats,
-        challenge_rating=npc.challenge_rating,
-        is_public=npc.is_public
-    )
+@app.post("/api/v1/items/create", tags=["content-creation"])
+async def create_item(item: ItemCreateRequest, db = Depends(get_db)):
+    """
+    Create a new item using the refactored ItemCreator.
+    
+    This endpoint uses the new shared components architecture for item creation.
+    """
+    try:
+        # Create LLM service
+        llm_service = create_llm_service()
+        
+        # Create item using refactored module
+        creator = ItemCreator(llm_service)
+        
+        # Map item_type string to enum
+        item_type_mapping = {
+            "weapon": ItemType.WEAPON,
+            "armor": ItemType.ARMOR,
+            "shield": ItemType.SHIELD,
+            "spell": ItemType.SPELL,
+            "magic_item": ItemType.MAGIC_ITEM,
+            "potion": ItemType.POTION,
+            "scroll": ItemType.SCROLL,
+            "tool": ItemType.TOOL,
+            "adventuring_gear": ItemType.ADVENTURING_GEAR
+        }
+        
+        item_type_enum = item_type_mapping.get(item.item_type.lower(), ItemType.MAGIC_ITEM)
+        
+        # Create item
+        result = creator.create_item(item.description, item_type_enum, character_level=1)
+        
+        if result.success:
+            # TODO: Save to database if needed
+            return {
+                "success": True,
+                "creation_time": result.creation_time,
+                "warnings": result.warnings,
+                "item": result.data
+            }
+        else:
+            raise HTTPException(status_code=500, detail=f"Item creation failed: {result.error}")
+            
+    except Exception as e:
+        logger.error(f"Item creation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Item creation failed: {str(e)}")
 
-@app.post("/api/v1/creatures/create")
-def create_creature(creature: CreatureCreateRequest, db=Depends(get_db)):
-    """Create and register a new custom creature for DM use."""
-    creator = CreatureCreator(db_session=db, created_by=creature.created_by)
-    result = creator.create_and_register_creature(
-        name=creature.name,
-        creature_type=creature.creature_type,
-        description=creature.description,
-        stat_block=creature.stat_block,
-        is_public=creature.is_public
-    )
-    if not result.get("success"):
-        raise HTTPException(status_code=400, detail=result.get("error", "Failed to create creature."))
-    return result["creature"]
+
+@app.post("/api/v1/npcs/create", tags=["content-creation"])
+async def create_npc(npc: NPCCreateRequest, db = Depends(get_db)):
+    """
+    Create a new NPC using the refactored NPCCreator.
+    
+    This endpoint uses the new shared components architecture for NPC creation.
+    """
+    try:
+        # Create LLM service
+        llm_service = create_llm_service()
+        
+        # Create NPC using refactored module
+        creator = NPCCreator(llm_service)
+        
+        # Map npc_type string to enum
+        npc_type_enum = NPCType.MINOR if npc.npc_type.lower() == "minor" else NPCType.MAJOR
+        
+        # Map to role enum (default to civilian)
+        npc_role_enum = NPCRole.CIVILIAN
+        role_mapping = {
+            "merchant": NPCRole.MERCHANT,
+            "guard": NPCRole.GUARD,
+            "noble": NPCRole.NOBLE,
+            "scholar": NPCRole.SCHOLAR,
+            "artisan": NPCRole.ARTISAN,
+            "criminal": NPCRole.CRIMINAL,
+            "soldier": NPCRole.SOLDIER
+        }
+        
+        # Try to infer role from description or npc_type
+        for role_name, role_enum in role_mapping.items():
+            if role_name in npc.description.lower() or role_name in npc.npc_type.lower():
+                npc_role_enum = role_enum
+                break
+        
+        # Create NPC
+        result = creator.create_npc(npc.description, npc_type_enum, npc_role_enum)
+        
+        if result.success:
+            # TODO: Save to database if needed
+            return {
+                "success": True,
+                "creation_time": result.creation_time,
+                "warnings": result.warnings,
+                "npc": result.data
+            }
+        else:
+            raise HTTPException(status_code=500, detail=f"NPC creation failed: {result.error}")
+            
+    except Exception as e:
+        logger.error(f"NPC creation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"NPC creation failed: {str(e)}")
+
+
+@app.post("/api/v1/creatures/create", tags=["content-creation"])
+async def create_creature(creature: CreatureCreateRequest, db = Depends(get_db)):
+    """
+    Create a new creature using the refactored CreatureCreator.
+    
+    This endpoint uses the new shared components architecture for creature creation.
+    """
+    try:
+        # Create LLM service
+        llm_service = create_llm_service()
+        
+        # Create creature using refactored module
+        creator = CreatureCreator(llm_service)
+        
+        # Map creature_type string to enum
+        creature_type_mapping = {
+            "aberration": CreatureType.ABERRATION,
+            "beast": CreatureType.BEAST,
+            "celestial": CreatureType.CELESTIAL,
+            "construct": CreatureType.CONSTRUCT,
+            "dragon": CreatureType.DRAGON,
+            "elemental": CreatureType.ELEMENTAL,
+            "fey": CreatureType.FEY,
+            "fiend": CreatureType.FIEND,
+            "giant": CreatureType.GIANT,
+            "humanoid": CreatureType.HUMANOID,
+            "monstrosity": CreatureType.MONSTROSITY,
+            "ooze": CreatureType.OOZE,
+            "plant": CreatureType.PLANT,
+            "undead": CreatureType.UNDEAD
+        }
+        
+        creature_type_enum = creature_type_mapping.get(creature.creature_type.lower(), CreatureType.BEAST)
+        
+        # Create creature
+        result = creator.create_creature(
+            creature.description, 
+            challenge_rating=creature.challenge_rating or 1.0,
+            creature_type=creature_type_enum.value
+        )
+        
+        if result.success:
+            # TODO: Save to database if needed
+            return {
+                "success": True,
+                "creation_time": result.creation_time,
+                "warnings": result.warnings,
+                "creature": result.data
+            }
+        else:
+            raise HTTPException(status_code=500, detail=f"Creature creation failed: {result.error}")
+            
+    except Exception as e:
+        logger.error(f"Creature creation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Creature creation failed: {str(e)}")
+
+
+# ============================================================================
+# QUICK GENERATION ENDPOINTS - CONVENIENCE FUNCTIONS
+# ============================================================================
+
+@app.post("/api/v1/generate/quick-character", tags=["quick-generation"])
+async def quick_generate_character(concept: str, db = Depends(get_db)):
+    """Quick character generation using shared components."""
+    try:
+        result = create_character_from_prompt(concept)
+        
+        if result.success:
+            return {
+                "success": True,
+                "generation_time": result.creation_time,
+                "character_concept": result.data
+            }
+        else:
+            raise HTTPException(status_code=500, detail=result.error)
+            
+    except Exception as e:
+        logger.error(f"Quick character generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/generate/quick-item", tags=["quick-generation"])
+async def quick_generate_item(concept: str, item_type: str = "magic_item", level: int = 1):
+    """Quick item generation using shared components."""
+    try:
+        result = create_item_from_prompt(concept, ItemType.MAGIC_ITEM, level)
+        
+        if result.success:
+            return {
+                "success": True,
+                "generation_time": result.creation_time,
+                "item": result.data
+            }
+        else:
+            raise HTTPException(status_code=500, detail=result.error)
+            
+    except Exception as e:
+        logger.error(f"Quick item generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/generate/quick-npc", tags=["quick-generation"])
+async def quick_generate_npc(concept: str, role: str = "civilian"):
+    """Quick NPC generation using shared components."""
+    try:
+        result = create_npc_from_prompt(concept, NPCType.MINOR)
+        
+        if result.success:
+            return {
+                "success": True,
+                "generation_time": result.creation_time,
+                "npc": result.data
+            }
+        else:
+            raise HTTPException(status_code=500, detail=result.error)
+            
+    except Exception as e:
+        logger.error(f"Quick NPC generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/generate/quick-creature", tags=["quick-generation"])
+async def quick_generate_creature(concept: str, cr: float = 1.0, creature_type: str = "beast"):
+    """Quick creature generation using shared components."""
+    try:
+        result = create_creature_from_prompt(concept, cr)
+        
+        if result.success:
+            return {
+                "success": True,
+                "generation_time": result.creation_time,
+                "creature": result.data
+            }
+        else:
+            raise HTTPException(status_code=500, detail=result.error)
+            
+    except Exception as e:
+        logger.error(f"Quick creature generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # Helper functions for visualization

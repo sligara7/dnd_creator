@@ -42,4 +42,4 @@ aiosqlite==0.19.0
 prometheus-client==0.19.0
 
 # Optional: CORS support for web frontend
-python-cors==1.7.0
+# Note: CORS is handled by FastAPI built-in middleware, no additional package needed

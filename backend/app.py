@@ -228,6 +228,12 @@ async def startup_event():
             logger.info(f"Database initialized successfully using SQLite: {settings.sqlite_path}")
         else:
             logger.info(f"Database initialized successfully using PostgreSQL: {settings.database_url}")
+            
+        # Initialize LLM service for direct endpoint usage with increased timeout for slower machines
+        # Using tinyllama for faster development testing
+        app.state.llm_service = create_llm_service("ollama", model="tinyllama:latest", timeout=300)
+        logger.info("LLM service initialized successfully with tinyllama model and 5-minute timeout")
+        
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
         raise
@@ -1649,12 +1655,13 @@ async def generate_character(prompt: str, db = Depends(get_db)):
     This endpoint uses the new shared components architecture for character generation.
     """
     try:
-        # Create LLM service
-        llm_service = create_llm_service()
+        # Create LLM service with increased timeout for slower machines
+        # Using tinyllama for faster development testing
+        llm_service = create_llm_service("ollama", model="tinyllama:latest", timeout=300)
         
         # Create character using refactored module
         creator = CharacterCreator(llm_service)
-        result = creator.create_character(prompt)
+        result = await creator.create_character(prompt)
         
         if result.success:
             # Save the generated character to database
@@ -1698,8 +1705,9 @@ async def create_item(item: ItemCreateRequest, db = Depends(get_db)):
     This endpoint uses the new shared components architecture for item creation.
     """
     try:
-        # Create LLM service
-        llm_service = create_llm_service()
+        # Create LLM service with increased timeout for slower machines
+        # Using tinyllama for faster development testing
+        llm_service = create_llm_service("ollama", model="tinyllama:latest", timeout=300)
         
         # Create item using refactored module
         creator = ItemCreator(llm_service)
@@ -1720,7 +1728,7 @@ async def create_item(item: ItemCreateRequest, db = Depends(get_db)):
         item_type_enum = item_type_mapping.get(item.item_type.lower(), ItemType.MAGIC_ITEM)
         
         # Create item
-        result = creator.create_item(item.description, item_type_enum, character_level=1)
+        result = await creator.create_item(item.description, item_type_enum, character_level=1)
         
         if result.success:
             # TODO: Save to database if needed
@@ -1746,8 +1754,9 @@ async def create_npc(npc: NPCCreateRequest, db = Depends(get_db)):
     This endpoint uses the new shared components architecture for NPC creation.
     """
     try:
-        # Create LLM service
-        llm_service = create_llm_service()
+        # Create LLM service with increased timeout for slower machines
+        # Using tinyllama for faster development testing
+        llm_service = create_llm_service("ollama", model="tinyllama:latest", timeout=300)
         
         # Create NPC using refactored module
         creator = NPCCreator(llm_service)
@@ -1774,7 +1783,7 @@ async def create_npc(npc: NPCCreateRequest, db = Depends(get_db)):
                 break
         
         # Create NPC
-        result = creator.create_npc(npc.description, npc_type_enum, npc_role_enum)
+        result = await creator.create_npc(npc.description, npc_type_enum, npc_role_enum)
         
         if result.success:
             # TODO: Save to database if needed
@@ -1800,8 +1809,9 @@ async def create_creature(creature: CreatureCreateRequest, db = Depends(get_db))
     This endpoint uses the new shared components architecture for creature creation.
     """
     try:
-        # Create LLM service
-        llm_service = create_llm_service()
+        # Create LLM service with increased timeout for slower machines
+        # Using tinyllama for faster development testing
+        llm_service = create_llm_service("ollama", model="tinyllama:latest", timeout=300)
         
         # Create creature using refactored module
         creator = CreatureCreator(llm_service)
@@ -1857,7 +1867,7 @@ async def create_creature(creature: CreatureCreateRequest, db = Depends(get_db))
 async def quick_generate_character(concept: str, db = Depends(get_db)):
     """Quick character generation using shared components."""
     try:
-        result = create_character_from_prompt(concept)
+        result = await create_character_from_prompt(concept)
         
         if result.success:
             return {
@@ -1877,7 +1887,7 @@ async def quick_generate_character(concept: str, db = Depends(get_db)):
 async def quick_generate_item(concept: str, item_type: str = "magic_item", level: int = 1):
     """Quick item generation using shared components."""
     try:
-        result = create_item_from_prompt(concept, ItemType.MAGIC_ITEM, level)
+        result = await create_item_from_prompt(concept, ItemType.MAGIC_ITEM, level)
         
         if result.success:
             return {
@@ -1897,7 +1907,7 @@ async def quick_generate_item(concept: str, item_type: str = "magic_item", level
 async def quick_generate_npc(concept: str, role: str = "civilian"):
     """Quick NPC generation using shared components."""
     try:
-        result = create_npc_from_prompt(concept, NPCType.MINOR)
+        result = await create_npc_from_prompt(concept, NPCType.MINOR)
         
         if result.success:
             return {

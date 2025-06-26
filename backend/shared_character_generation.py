@@ -151,7 +151,7 @@ class CharacterDataGenerator:
         self.config = config
         self.validator = CharacterValidator()
     
-    def generate_character_data(self, description: str, level: int) -> CreationResult:
+    async def generate_character_data(self, description: str, level: int) -> CreationResult:
         """Generate core character data with retry logic."""
         start_time = time.time()
         
@@ -166,7 +166,7 @@ class CharacterDataGenerator:
                 logger.info(f"Character generation attempt {attempt + 1}/{self.config.max_retries}")
                 
                 timeout = max(self.config.base_timeout - (attempt * 5), 10)
-                response = self.llm_service.generate(prompt, timeout_seconds=timeout)
+                response = await self.llm_service.generate_content(prompt)
                 
                 # Clean and parse response
                 cleaned_response = self._clean_json_response(response)

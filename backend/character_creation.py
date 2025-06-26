@@ -50,14 +50,14 @@ class CharacterCreator:
         self.journal_evolution = JournalBasedEvolution(self.llm_service)
         
         # Initialize D&D-specific managers
-        self.ability_manager = AdvancedAbilityManager()
+        # Note: AdvancedAbilityManager requires character_core, will create when needed
         self.backstory_generator = BackstoryGenerator(self.llm_service)
-        self.custom_content_generator = CustomContentGenerator(self.llm_service)
         self.content_registry = ContentRegistry()
+        self.custom_content_generator = CustomContentGenerator(self.llm_service, self.content_registry)
         
         logger.info("CharacterCreator initialized with shared components")
     
-    def create_character(self, prompt: str, user_preferences: Optional[Dict[str, Any]] = None, import_existing: Optional[Dict[str, Any]] = None) -> CreationResult:
+    async def create_character(self, prompt: str, user_preferences: Optional[Dict[str, Any]] = None, import_existing: Optional[Dict[str, Any]] = None) -> CreationResult:
         """
         Create a complete D&D 5e 2024 character from a text prompt or import an existing character.
         If import_existing is provided, use it as the base and evolve using the journal.
@@ -88,7 +88,7 @@ class CharacterCreator:
             # ...existing code for new character creation...
             logger.info(f"Starting character creation with prompt: {prompt[:100]}...")
             # Step 1: Generate base character data using shared generator
-            base_result = self.data_generator.generate_character_data(prompt, user_preferences)
+            base_result = await self.data_generator.generate_character_data(prompt, user_preferences)
             if not base_result.success:
                 return base_result
             # Step 2: Validate the generated data
@@ -468,10 +468,10 @@ class CharacterCreator:
 # UTILITY FUNCTIONS FOR BACKWARDS COMPATIBILITY
 # ============================================================================
 
-def create_character_from_prompt(prompt: str, llm_service: Optional[LLMService] = None) -> CreationResult:
+async def create_character_from_prompt(prompt: str, llm_service: Optional[LLMService] = None) -> CreationResult:
     """Utility function for simple character creation."""
     creator = CharacterCreator(llm_service)
-    return creator.create_character(prompt)
+    return await creator.create_character(prompt)
 
 def quick_character_creation(concept: str) -> CreationResult:
     """Quick character creation utility."""

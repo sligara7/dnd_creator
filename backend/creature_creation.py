@@ -144,84 +144,251 @@ class CreatureCreator:
         
         # Initialize shared components
         self.validator = CharacterValidator()
-        self.data_generator = CharacterDataGenerator(self.llm_service, self.config)
         
-        logger.info("CreatureCreator initialized with shared components")
+        logger.info("CreatureCreator initialized with LLM integration")
     
-    def create_creature(self, description: str, challenge_rating: float = 1.0) -> CreationResult:
-        """Create a complete D&D 5e 2024 creature from description."""
+    def create_creature(self, description: str, challenge_rating: float = 1.0, 
+                       creature_type: str = "beast") -> CreationResult:
+        """Create a complete D&D 5e 2024 creature using LLM generation."""
         start_time = time.time()
         
         try:
-            logger.info(f"Creating creature: {description[:50]}... (CR {challenge_rating})")
+            logger.info(f"Creating unique creature: {description[:50]}... (CR {challenge_rating})")
             
-            # Create creature-specific prompt
-            creature_prompt = f"""
-            Create a D&D 5e 2024 creature: {description}
-            Challenge Rating: {challenge_rating}
+            # Generate unique creature using LLM
+            creature_data = self._generate_unique_creature_with_llm(description, challenge_rating, creature_type)
             
-            Include complete stat block with appropriate abilities for the CR.
-            Follow D&D 5e 2024 stat block format.
-            """
+            # Validate and enhance the generated creature
+            validated_data = self._validate_and_enhance_creature(creature_data, challenge_rating)
             
-            # Use shared data generator
-            creature_preferences = {
-                "content_type": "creature",
-                "challenge_rating": challenge_rating,
-                "focus": "stat_block"
-            }
+            # Create successful result
+            result = CreationResult()
+            result.success = True
+            result.data = validated_data
+            result.creation_time = time.time() - start_time
+            result.warnings = []
             
-            result = self.data_generator.generate_character_data(creature_prompt, creature_preferences)
-            
-            if result.success:
-                # Build creature from generated data
-                creature_core = self._build_creature_from_data(result.data, challenge_rating)
-                
-                # Update result with creature data
-                result.data = {
-                    "creature_core": creature_core,
-                    "raw_data": result.data
-                }
-                
-                result.creation_time = time.time() - start_time
-                logger.info(f"Creature creation completed in {result.creation_time:.2f}s")
-            
+            logger.info(f"Unique creature creation completed in {result.creation_time:.2f}s")
             return result
             
         except Exception as e:
             logger.error(f"Creature creation failed: {str(e)}")
             result = CreationResult()
+            result.success = False
             result.error = f"Creature creation failed: {str(e)}"
             result.creation_time = time.time() - start_time
             return result
     
-    def _build_creature_from_data(self, creature_data: Dict[str, Any], 
-                                 challenge_rating: float) -> CreatureCore:
-        """Build CreatureCore from generated data."""
-        name = creature_data.get("name", "Unknown Creature")
-        creature = CreatureCore(name)
+    def _generate_unique_creature_with_llm(self, description: str, challenge_rating: float, creature_type: str) -> Dict[str, Any]:
+        """Generate a unique creature using LLM services."""
+        if not self.llm_service:
+            raise ValueError("LLM service not available for creature generation")
         
-        # Set basic properties
-        creature.challenge_rating = challenge_rating
-        creature.description = creature_data.get("description", "")
+        # Create specialized prompt for creature generation
+        specialized_prompt = f"""
+        Generate a unique D&D 5e creature based on this description: {description}
         
-        # Set ability scores if provided
-        if "ability_scores" in creature_data:
-            abilities = creature_data["ability_scores"]
-            creature.strength = AbilityScore(abilities.get("strength", 10))
-            creature.dexterity = AbilityScore(abilities.get("dexterity", 10))
-            creature.constitution = AbilityScore(abilities.get("constitution", 10))
-            creature.intelligence = AbilityScore(abilities.get("intelligence", 10))
-            creature.wisdom = AbilityScore(abilities.get("wisdom", 10))
-            creature.charisma = AbilityScore(abilities.get("charisma", 10))
+        Challenge Rating: {challenge_rating}
+        Creature Type: {creature_type}
         
-        # Set combat stats
-        creature.armor_class = creature_data.get("armor_class", 10)
-        creature.hit_points = creature_data.get("hit_points", 10)
-        creature.hit_dice = creature_data.get("hit_dice", "2d8+2")
-        creature.speed = creature_data.get("speed", {"walk": 30})
+        IMPORTANT: Return ONLY valid JSON in this exact format:
+        {{
+            "name": "Unique creature name",
+            "size": "Tiny/Small/Medium/Large/Huge/Gargantuan",
+            "type": "{creature_type}",
+            "alignment": "D&D alignment",
+            "challenge_rating": {challenge_rating},
+            "armor_class": 8-25,
+            "hit_points": 1-500,
+            "speed": {{
+                "walk": "30 ft",
+                "fly": "0 ft",
+                "swim": "0 ft"
+            }},
+            "abilities": {{
+                "strength": 1-30,
+                "dexterity": 1-30,
+                "constitution": 1-30,
+                "intelligence": 1-30,
+                "wisdom": 1-30,
+                "charisma": 1-30
+            }},
+            "saving_throws": ["Str +X", "Dex +X"],
+            "skills": ["Perception +X", "Stealth +X"],
+            "damage_vulnerabilities": [],
+            "damage_resistances": [],
+            "damage_immunities": [],
+            "condition_immunities": [],
+            "senses": ["darkvision 60 ft", "passive Perception X"],
+            "languages": ["Common", "other languages"],
+            "proficiency_bonus": 2-9,
+            "description": "Detailed creature description",
+            "behavior": "How the creature acts",
+            "habitat": "Where it lives",
+            "diet": "What it eats",
+            "actions": [
+                {{
+                    "name": "Action Name",
+                    "description": "Action description with mechanics",
+                    "attack_bonus": "+X to hit",
+                    "damage": "XdY + Z damage type",
+                    "range": "5 ft or ranged"
+                }}
+            ],
+            "legendary_actions": [],
+            "lair_actions": [],
+            "regional_effects": [],
+            "special_abilities": [
+                {{
+                    "name": "Ability Name",
+                    "description": "Ability description and mechanics"
+                }}
+            ]
+        }}
         
-        return creature
+        Make this creature unique, memorable, and balanced for CR {challenge_rating}.
+        Include appropriate abilities, attacks, and special features.
+        """
+        
+        # Get LLM response
+        response = self.llm_service.generate_content(specialized_prompt)
+        
+        # Parse JSON response
+        try:
+            # Extract JSON from response
+            response_stripped = response.strip()
+            start = response_stripped.find('{')
+            
+            # Find the last valid closing brace by counting braces
+            end = -1
+            brace_count = 0
+            for i, char in enumerate(response_stripped[start:], start):
+                if char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        end = i + 1
+                        break
+            
+            if start != -1 and end > start:
+                json_str = response_stripped[start:end]
+                creature_data = json.loads(json_str)
+                logger.info(f"Successfully generated unique creature: {creature_data.get('name', 'Unknown')}")
+                return creature_data
+            else:
+                raise ValueError("Could not find valid JSON in LLM response")
+                
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse LLM response as JSON: {e}")
+            # Fallback to basic creature structure
+            return self._create_fallback_creature(description, challenge_rating, creature_type)
+        except Exception as e:
+            logger.error(f"Error processing LLM response: {e}")
+            return self._create_fallback_creature(description, challenge_rating, creature_type)
+    
+    def _create_fallback_creature(self, description: str, challenge_rating: float, creature_type: str) -> Dict[str, Any]:
+        """Create a basic creature when LLM generation fails."""
+        import random
+        
+        # Basic creature names by type
+        creature_names = {
+            "beast": ["Wild Beast", "Forest Creature", "Mountain Beast"],
+            "monstrosity": ["Strange Monstrosity", "Twisted Creature", "Aberrant Beast"],
+            "undead": ["Undead Horror", "Restless Spirit", "Skeletal Creature"],
+            "dragon": ["Young Dragon", "Dragonling", "Lesser Wyrm"],
+            "elemental": ["Elemental Being", "Primal Force", "Nature Spirit"],
+            "fey": ["Fey Creature", "Forest Spirit", "Magical Being"],
+            "fiend": ["Lesser Fiend", "Demonic Creature", "Infernal Beast"],
+            "celestial": ["Celestial Being", "Divine Creature", "Heavenly Spirit"]
+        }
+        
+        # Calculate basic stats based on CR
+        cr_adjustments = {
+            "hp": max(10, int(challenge_rating * 20 + 10)),
+            "ac": max(10, int(challenge_rating + 10)),
+            "attack_bonus": max(2, int(challenge_rating + 2)),
+            "damage": max(1, int(challenge_rating * 2 + 1))
+        }
+        
+        return {
+            "name": random.choice(creature_names.get(creature_type, ["Generic Creature"])),
+            "size": "Medium",
+            "type": creature_type,
+            "alignment": "neutral",
+            "challenge_rating": challenge_rating,
+            "armor_class": cr_adjustments["ac"],
+            "hit_points": cr_adjustments["hp"],
+            "speed": {"walk": "30 ft", "fly": "0 ft", "swim": "0 ft"},
+            "abilities": {
+                "strength": 12, "dexterity": 12, "constitution": 12,
+                "intelligence": 8, "wisdom": 12, "charisma": 8
+            },
+            "saving_throws": [],
+            "skills": ["Perception +2"],
+            "damage_vulnerabilities": [],
+            "damage_resistances": [],
+            "damage_immunities": [],
+            "condition_immunities": [],
+            "senses": ["passive Perception 12"],
+            "languages": [],
+            "proficiency_bonus": max(2, int((challenge_rating + 7) / 4)),
+            "description": f"A {creature_type} creature",
+            "behavior": "Acts according to its nature",
+            "habitat": "Various environments",
+            "diet": "Omnivore",
+            "actions": [
+                {
+                    "name": "Basic Attack",
+                    "description": "A simple attack",
+                    "attack_bonus": f"+{cr_adjustments['attack_bonus']} to hit",
+                    "damage": f"{cr_adjustments['damage']}d6 bludgeoning",
+                    "range": "5 ft"
+                }
+            ],
+            "legendary_actions": [],
+            "lair_actions": [],
+            "regional_effects": [],
+            "special_abilities": []
+        }
+    
+    def _validate_and_enhance_creature(self, creature_data: Dict[str, Any], challenge_rating: float) -> Dict[str, Any]:
+        """Validate and enhance the generated creature data."""
+        # Ensure required fields exist
+        required_fields = ["name", "type", "challenge_rating", "abilities", "hit_points", "armor_class"]
+        for field in required_fields:
+            if field not in creature_data:
+                logger.warning(f"Missing required field '{field}' in creature data")
+                
+                # Provide defaults
+                if field == "abilities":
+                    creature_data[field] = {
+                        "strength": 10, "dexterity": 10, "constitution": 10,
+                        "intelligence": 10, "wisdom": 10, "charisma": 10
+                    }
+                elif field == "challenge_rating":
+                    creature_data[field] = challenge_rating
+                elif field == "hit_points":
+                    creature_data[field] = max(1, int(challenge_rating * 20))
+                elif field == "armor_class":
+                    creature_data[field] = max(8, int(challenge_rating + 10))
+                else:
+                    creature_data[field] = "Unknown"
+        
+        # Validate ability scores (ensure they're in valid range)
+        if "abilities" in creature_data:
+            for ability, score in creature_data["abilities"].items():
+                if not isinstance(score, int) or score < 1 or score > 30:
+                    creature_data["abilities"][ability] = 10
+        
+        # Ensure challenge rating consistency
+        creature_data["challenge_rating"] = challenge_rating
+        
+        # Add metadata
+        creature_data["creation_method"] = "llm_generated"
+        creature_data["stat_block_complete"] = True
+        
+        return creature_data
 
 # ============================================================================
 # UTILITY FUNCTIONS

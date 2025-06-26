@@ -159,13 +159,13 @@ class ItemCreator:
         # Initialize shared components
         self.validator = CharacterValidator()
         self.data_generator = CharacterDataGenerator(self.llm_service, self.config)
-        self.content_generator = CustomContentGenerator(self.llm_service)
         self.content_registry = ContentRegistry()
+        self.content_generator = CustomContentGenerator(self.llm_service, self.content_registry)
         self.magic_item_manager = MagicItemManager()
         
         logger.info("ItemCreator initialized with shared components")
     
-    def create_item(self, description: str, item_type: ItemType, 
+    async def create_item(self, description: str, item_type: ItemType, 
                    character_level: int = 1, character_concept: str = "",
                    rarity: Optional[ItemRarity] = None) -> CreationResult:
         """
@@ -204,7 +204,7 @@ class ItemCreator:
                 "character_concept": character_concept
             }
             
-            result = self.data_generator.generate_character_data(item_prompt, item_preferences)
+            result = await self.data_generator.generate_character_data(item_prompt, item_preferences)
             
             if result.success:
                 # Build item from generated data
@@ -385,6 +385,7 @@ class ItemCreator:
         if item_type == ItemType.WEAPON:
             item = WeaponCore(
                 name=name,
+                item_type=ItemType.WEAPON,
                 description=description,
                 rarity=rarity,
                 damage_dice=item_data.get("damage_dice", "1d6"),
@@ -402,6 +403,7 @@ class ItemCreator:
         elif item_type == ItemType.ARMOR:
             item = ArmorCore(
                 name=name,
+                item_type=ItemType.ARMOR,
                 description=description,
                 rarity=rarity,
                 armor_class_base=item_data.get("armor_class", 11),
@@ -420,6 +422,7 @@ class ItemCreator:
         elif item_type == ItemType.SPELL:
             item = SpellCore(
                 name=name,
+                item_type=ItemType.SPELL,
                 description=description,
                 rarity=rarity,
                 level=item_data.get("level", 1),
@@ -561,11 +564,11 @@ class ItemCreator:
 # UTILITY FUNCTIONS
 # ============================================================================
 
-def create_item_from_prompt(prompt: str, item_type: ItemType = ItemType.MAGIC_ITEM,
+async def create_item_from_prompt(prompt: str, item_type: ItemType = ItemType.MAGIC_ITEM,
                            character_level: int = 1) -> CreationResult:
     """Utility function for simple item creation."""
     creator = ItemCreator()
-    return creator.create_item(prompt, item_type, character_level)
+    return await creator.create_item(prompt, item_type, character_level)
 
 def create_character_items(character_data: Dict[str, Any]) -> CreationResult:
     """Create a complete item set for a character."""

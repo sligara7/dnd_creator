@@ -245,9 +245,9 @@ run_conditional_test "List Branches" "GET" "/api/v1/character-repositories/\$REP
 
 # 11. Commit Operations
 COMMIT_DATA='{
-    "message": "Test commit",
+    "commit_message": "Test commit",
     "branch_name": "main",
-    "character_changes": {
+    "character_data": {
         "name": "Evolved Test Wizard",
         "level": 4
     }
@@ -277,7 +277,7 @@ run_conditional_test "Get Character State" "GET" "/api/v1/characters/\$CHARACTER
 
 # 14. Character State Updates
 STATE_UPDATE='{
-    "current_hit_points": 20,
+    "current_hp": 20,
     "add_condition": {"condition": "poisoned", "duration": 3}
 }'
 
@@ -301,9 +301,23 @@ run_conditional_test "Character Rest" "POST" "/api/v1/characters/\$CHARACTER_ID/
 
 # 17. Level Up Operations
 LEVELUP_DATA='{
-    "commit_message": "Leveled up to 4",
-    "level_choices": {
-        "hit_points": 8,
+    "branch_name": "main",
+    "new_character_data": {
+        "name": "Evolved Test Wizard",
+        "level": 4,
+        "hit_points": 32,
+        "abilities": {
+            "strength": 10,
+            "dexterity": 14,
+            "constitution": 13,
+            "intelligence": 16,
+            "wisdom": 12,
+            "charisma": 8
+        }
+    },
+    "level_info": {
+        "new_level": 4,
+        "hit_points_gained": 8,
         "ability_score_improvement": {"intelligence": 1}
     }
 }'

@@ -284,6 +284,10 @@ class CharacterStateUpdateRequest(BaseModel):
     add_equipment: Optional[Dict[str, Any]] = None
     add_weapon: Optional[Dict[str, Any]] = None
 
+class CharacterRestRequest(BaseModel):
+    """Request model for character rest operations."""
+    rest_type: Optional[str] = "long"  # "short" or "long"
+
 class CharacterResponse(BaseModel):
     """Response model for character data."""
     id: str
@@ -639,6 +643,9 @@ async def update_character(character_id: str, character_data: CharacterUpdateReq
     Operation Flow: Database -> CharacterDB.load_character_sheet() -> modify -> save back
     """
     try:
+        logger.info(f"Starting character update for ID: {character_id}")
+        logger.info(f"Character data type: {type(character_data)}")
+        
         # Normalize age, height, weight, and any other integer-like fields
         def normalize_int_fields(data):
             import re
@@ -684,9 +691,28 @@ async def update_character(character_id: str, character_data: CharacterUpdateReq
                     setattr(character_data, key, val)
         
         # Load character as CharacterSheet for full functionality
-        character_sheet = CharacterDB.load_character_sheet(db, character_id)
+        logger.info(f"Loading character sheet for ID: {character_id}")
+        try:
+            character_sheet = CharacterDB.load_character_sheet(db, character_id)
+            logger.info(f"Loaded character_sheet type: {type(character_sheet)}")
+        except Exception as load_error:
+            logger.error(f"Error during character loading: {load_error}")
+            raise HTTPException(status_code=500, detail=f"Character loading failed: {str(load_error)}")
+        
         if not character_sheet:
             raise HTTPException(status_code=404, detail="Character not found")
+        
+        # Type check to prevent dict attribute errors
+        if isinstance(character_sheet, dict):
+            logger.error(f"Loaded character is a dict, not a CharacterSheet. Data: {character_sheet}")
+            raise HTTPException(status_code=500, detail="Character update failed: Internal type error (character loaded as dict, not CharacterSheet). Please check database integrity and model code.")
+        
+        # Check if character_sheet has core attribute
+        if not hasattr(character_sheet, 'core'):
+            logger.error(f"Character sheet object does not have 'core' attribute. Type: {type(character_sheet)}, Dir: {dir(character_sheet)}")
+            raise HTTPException(status_code=500, detail="Character update failed: CharacterSheet object missing 'core' attribute")
+        
+        logger.info(f"Character sheet loaded successfully, core type: {type(character_sheet.core)}")
         
         # Apply updates using CharacterSheet methods
         if character_data.name is not None:
@@ -801,17 +827,43 @@ async def update_character_state(character_id: str, state_updates: CharacterStat
             updates["add_weapon"] = state_updates.add_weapon
         
         # Apply real-time updates using state methods
-        if "current_hit_points" in updates:
-            character_sheet.state.current_hit_points = updates["current_hit_points"]
+        if "current_hp" in updates:
+            character_sheet.state.current_hit_points = updates["current_hp"]
+        if "temp_hp" in updates:
+            character_sheet.state.temp_hit_points = updates["temp_hp"]
+        if "armor" in updates:
+            character_sheet.state.armor = updates["armor"]
         if "add_condition" in updates:
             condition_data = updates["add_condition"]
-            character_sheet.state.add_condition(condition_data["condition"], condition_data.get("duration"))
+            condition_name = condition_data["condition"]
+            duration = condition_data.get("duration")
+            # Add condition without using .value attribute
+            if hasattr(character_sheet.state, 'conditions'):
+                if not isinstance(character_sheet.state.conditions, list):
+                    character_sheet.state.conditions = []
+                character_sheet.state.conditions.append({
+                    "name": condition_name,
+                    "duration": duration
+                })
         if "remove_condition" in updates:
-            character_sheet.state.remove_condition(updates["remove_condition"])
+            condition_name = updates["remove_condition"]
+            if hasattr(character_sheet.state, 'conditions') and isinstance(character_sheet.state.conditions, list):
+                character_sheet.state.conditions = [
+                    c for c in character_sheet.state.conditions 
+                    if c.get("name") != condition_name
+                ]
+        if "exhaustion_level" in updates:
+            character_sheet.state.exhaustion_level = updates["exhaustion_level"]
         if "add_equipment" in updates:
-            character_sheet.state.equipment.append(updates["add_equipment"])
+            if hasattr(character_sheet.state, 'equipment'):
+                if not isinstance(character_sheet.state.equipment, list):
+                    character_sheet.state.equipment = []
+                character_sheet.state.equipment.append(updates["add_equipment"])
         if "add_weapon" in updates:
-            character_sheet.state.weapons.append(updates["add_weapon"])
+            if hasattr(character_sheet.state, 'weapons'):
+                if not isinstance(character_sheet.state.weapons, list):
+                    character_sheet.state.weapons = []
+                character_sheet.state.weapons.append(updates["add_weapon"])
         
         # Save updated state back to database
         CharacterDB.save_character_sheet(db, character_sheet, character_id)
@@ -894,7 +946,7 @@ async def apply_combat_effects(character_id: str, combat_data: Dict[str, Any], d
 
 
 @app.post("/api/v1/characters/{character_id}/rest", tags=["gameplay"])
-async def apply_rest_effects(character_id: str, rest_type: str = "long", db = Depends(get_db)):
+async def apply_rest_effects(character_id: str, rest_data: CharacterRestRequest, db = Depends(get_db)):
     """
     Apply rest effects to character.
     
@@ -905,8 +957,57 @@ async def apply_rest_effects(character_id: str, rest_type: str = "long", db = De
         if not character_sheet:
             raise HTTPException(status_code=404, detail="Character not found")
         
-        # Apply rest effects
-        rest_result = character_sheet.apply_rest_effects(rest_type)
+        rest_type = rest_data.rest_type
+        
+        # Apply rest effects manually since the method doesn't exist
+        rest_result = {}
+        
+        if rest_type == "short":
+            # Short rest: recover some hit dice and possibly some abilities
+            # For simplicity, we'll just restore some HP (up to 1/4 of max)
+            max_hp = getattr(character_sheet.state, 'max_hit_points', 100)
+            current_hp = getattr(character_sheet.state, 'current_hit_points', max_hp)
+            
+            # Heal 1/4 of max HP on short rest (simplified)
+            healing = max_hp // 4
+            new_hp = min(max_hp, current_hp + healing)
+            character_sheet.state.current_hit_points = new_hp
+            
+            rest_result = {
+                "rest_type": "short",
+                "healing_applied": new_hp - current_hp,
+                "new_hp": new_hp,
+                "max_hp": max_hp
+            }
+            
+        elif rest_type == "long":
+            # Long rest: full HP recovery, spell slots, abilities reset
+            max_hp = getattr(character_sheet.state, 'max_hit_points', 100)
+            character_sheet.state.current_hit_points = max_hp
+            
+            # Clear exhaustion (reduce by 1 level)
+            if hasattr(character_sheet.state, 'exhaustion_level'):
+                current_exhaustion = getattr(character_sheet.state, 'exhaustion_level', 0)
+                new_exhaustion = max(0, current_exhaustion - 1)
+                character_sheet.state.exhaustion_level = new_exhaustion
+            
+            # Remove certain conditions (simplified - remove all temporary conditions)
+            if hasattr(character_sheet.state, 'conditions') and isinstance(character_sheet.state.conditions, list):
+                # Remove conditions that would be cleared by a long rest
+                temporary_conditions = ["poisoned", "charmed", "frightened"]
+                character_sheet.state.conditions = [
+                    c for c in character_sheet.state.conditions 
+                    if c.get("name", "").lower() not in temporary_conditions
+                ]
+            
+            rest_result = {
+                "rest_type": "long",
+                "hp_restored": True,
+                "new_hp": max_hp,
+                "max_hp": max_hp,
+                "exhaustion_reduced": True,
+                "conditions_cleared": True
+            }
         
         # Save updated state
         CharacterDB.save_character_sheet(db, character_sheet, character_id)
@@ -916,7 +1017,7 @@ async def apply_rest_effects(character_id: str, rest_type: str = "long", db = De
             "message": f"{rest_type.capitalize()} rest completed successfully",
             "character_id": character_id,
             "rest_result": rest_result,
-            "current_state": character_sheet.get_real_time_state_snapshot()
+            "current_state": character_sheet.state.to_dict()
         }
         
     except HTTPException:
@@ -1075,31 +1176,31 @@ async def validate_character(character_data: CharacterCreateRequest):
     """
     Validate a character's build for D&D 5e compliance.
     
-    Operation Flow: Request -> CharacterSheet -> validate() -> Response
+    Operation Flow: Request -> CharacterCore -> validate() -> Response
     """
     try:
         # Create temporary CharacterCore for validation
-        character_sheet = CharacterCore(character_data.name)
+        character_core = CharacterCore(character_data.name)
         
         # Set character properties
-        character_sheet.species = character_data.species
-        character_sheet.background = character_data.background
-        character_sheet.alignment = character_data.alignment
-        character_sheet.character_classes = character_data.character_classes
-        character_sheet.core.backstory = character_data.backstory
+        character_core.species = character_data.species
+        character_core.background = character_data.background
+        character_core.alignment = character_data.alignment
+        character_core.character_classes = character_data.character_classes
+        character_core.backstory = character_data.backstory
         
         # Set ability scores
         if character_data.abilities:
             for ability, score in character_data.abilities.items():
-                character_sheet.core.set_ability_score(ability, score)
+                character_core.set_ability_score(ability, score)
         
         # Validate the character
-        validation_result = character_sheet.validate_character()
+        validation_result = character_core.validate_character_data()
         
         return {
             "valid": validation_result["valid"],
-            "issues": validation_result["issues"],
-            "warnings": validation_result["warnings"],
+            "issues": validation_result.get("issues", []),
+            "warnings": validation_result.get("warnings", []),
             "character_name": character_data.name
         }
         
@@ -1120,7 +1221,7 @@ async def validate_existing_character(character_id: str, db = Depends(get_db)):
         if not character_sheet:
             raise HTTPException(status_code=404, detail="Character not found")
         
-        validation_result = character_sheet.validate_character()
+        validation_result = character_sheet.core.validate_character_data()
         
         return {
             "character_id": character_id,
@@ -1199,14 +1300,37 @@ async def get_character_timeline(repository_id: str, db = Depends(get_db)):
     Returns complete repository structure including branches, commits, and relationships
     formatted for frontend graph display.
     
-    Operation Flow: Request -> CharacterVersioningAPI.get_character_timeline_for_frontend() -> Response
+    Operation Flow: Request -> Database Query -> Transform Data -> Response
     """
     try:
-        timeline_data = CharacterVersioningAPI.get_character_timeline_for_frontend(db, repository_id)
-        if not timeline_data:
+        # Get repository info first
+        repo = db.query(CharacterRepository).filter(CharacterRepository.id == repository_id).first()
+        if not repo:
             raise HTTPException(status_code=404, detail="Character repository not found")
         
-        return CharacterTimelineResponse(**timeline_data)
+        # Get branches and commits for the response
+        branches = db.query(CharacterBranch).filter(CharacterBranch.repository_id == repository_id).all()
+        commits = db.query(CharacterCommit).filter(CharacterCommit.repository_id == repository_id).all()
+        
+        # Transform data to match CharacterTimelineResponse model
+        response_data = {
+            "character_name": repo.name,
+            "player_name": repo.player_name,
+            "branches": [branch.to_dict() for branch in branches],
+            "commits": [commit.to_dict() for commit in commits],
+            "connections": []  # Will be populated with parent-child relationships
+        }
+        
+        # Build connections (parent-child relationships)
+        for commit in commits:
+            if commit.parent_commit_hash:
+                response_data["connections"].append({
+                    "from": commit.parent_commit_hash,
+                    "to": commit.commit_hash,
+                    "type": "progression"
+                })
+        
+        return CharacterTimelineResponse(**response_data)
         
     except HTTPException:
         raise
@@ -1242,21 +1366,28 @@ async def get_character_visualization(repository_id: str, db = Depends(get_db)):
                 "level": commit["character_level"],
                 "type": commit["commit_type"],
                 "branch": commit["branch_id"],
-                "color": get_commit_color(commit["commit_type"]),
-                "size": get_commit_size(commit["character_level"]),
                 "title": commit["commit_message"],
                 "commit_hash": commit["commit_hash"],
                 "created_at": commit["created_at"]
             })
         
-        # Create edges for commit relationships
-        for commit_hash, parent_hash in tree_data["relationships"]["parent_child"].items():
-            edges.append({
-                "from": parent_hash[:8],
-                "to": commit_hash[:8],
-                "type": "progression",
-                "color": "#666666"
-            })
+        # Create edges for commit relationships (parent-child)
+        for commit in tree_data["commits"]:
+            if commit.get("parent_commit_hash"):
+                # Find parent commit short hash
+                parent_short = None
+                for parent_commit in tree_data["commits"]:
+                    if parent_commit["commit_hash"] == commit["parent_commit_hash"]:
+                        parent_short = parent_commit["short_hash"]
+                        break
+                
+                if parent_short:
+                    edges.append({
+                        "from": parent_short,
+                        "to": commit["short_hash"],
+                        "type": "progression",
+                        "color": "#666666"
+                    })
         
         return CharacterVisualizationResponse(
             nodes=nodes,
@@ -1291,8 +1422,8 @@ async def create_character_branch(
         branch = CharacterRepositoryManager.create_branch(
             db=db,
             repository_id=repository_id,
-            new_branch_name=branch_data.branch_name,
-            source_commit_hash=branch_data.source_commit_hash,
+            branch_name=branch_data.branch_name,
+            branch_point_hash=branch_data.source_commit_hash,
             description=branch_data.description
         )
         
@@ -1337,12 +1468,13 @@ async def create_character_commit(
     Operation Flow: Request -> CharacterRepositoryManager.commit_character_change() -> Response
     """
     try:
-        commit = CharacterRepositoryManager.commit_character_change(
+        commit = CharacterRepositoryManager.create_commit(
             db=db,
             repository_id=repository_id,
             branch_name=commit_data.branch_name,
-            character_data=commit_data.character_data,
             commit_message=commit_data.commit_message,
+            character_data=commit_data.character_data,
+            character_level=commit_data.character_data.get("level", 1),
             commit_type=commit_data.commit_type,
             milestone_name=commit_data.milestone_name,
             session_date=commit_data.session_date,
@@ -1426,23 +1558,35 @@ async def level_up_character(
     This is a high-level operation that creates a commit specifically for character
     level advancement, with appropriate commit messages and milestone tracking.
     
-    Operation Flow: Request -> CharacterVersioningAPI.level_up_character() -> Response
+    Operation Flow: Request -> CharacterRepositoryManager.level_up_character() -> Response
     """
     try:
+        # Use repository_id as UUID string (no conversion needed)
         result = CharacterVersioningAPI.level_up_character(
             db=db,
-            repository_id=repository_id,
+            repository_id=repository_id,  # Keep as string UUID
             branch_name=level_up_data.branch_name,
             new_character_data=level_up_data.new_character_data,
-            level_info=level_up_data.level_info
+            level_up_choices=level_up_data.level_info
         )
+        
+        # Extract level information for response
+        new_level = level_up_data.new_character_data.get("level", 1)
         
         return {
             "success": True,
-            "level_up": result,
-            "message": f"Character leveled up to level {level_up_data.level_info['new_level']}"
+            "level_up": {
+                "commit_hash": result.commit_hash,
+                "commit_message": result.commit_message,
+                "character_level": result.character_level,
+                "created_at": result.created_at.isoformat() if result.created_at else None
+            },
+            "message": f"Character leveled up to level {new_level}"
         }
         
+    except ValueError as e:
+        logger.error(f"Invalid repository ID {repository_id}: {e}")
+        raise HTTPException(status_code=400, detail="Invalid repository ID")
     except Exception as e:
         logger.error(f"Failed to level up character: {e}")
         raise HTTPException(status_code=500, detail=f"Level up failed: {str(e)}")
@@ -1463,10 +1607,23 @@ async def create_character_tag(
     Operation Flow: Request -> CharacterRepositoryManager.create_tag() -> Response
     """
     try:
+        # Check if commit_hash is actually a branch name and resolve it to a commit hash
+        commit_hash = tag_data.commit_hash
+        
+        # If it's a branch name (like "main"), find the latest commit on that branch
+        branch = db.query(CharacterBranch).filter(
+            CharacterBranch.repository_id == repository_id,
+            CharacterBranch.branch_name == commit_hash
+        ).first()
+        
+        if branch and branch.head_commit_hash:
+            commit_hash = branch.head_commit_hash
+            logger.info(f"Resolved branch '{tag_data.commit_hash}' to commit hash '{commit_hash}'")
+        
         tag = CharacterRepositoryManager.create_tag(
             db=db,
-            repository_id=repository_id,
-            commit_hash=tag_data.commit_hash,
+            repository_id=repository_id,  # Keep as string to match database model
+            commit_hash=commit_hash,
             tag_name=tag_data.tag_name,
             tag_type=tag_data.tag_type,
             description=tag_data.description,

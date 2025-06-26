@@ -5,11 +5,15 @@ from datetime import datetime
 from typing import Dict, Any, Optional, List
 import hashlib
 import uuid
+import logging
 from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean, JSON, ForeignKey, create_engine
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.types import TypeDecorator, CHAR
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, Session, sessionmaker
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 
 # Custom UUID type that works with SQLite
@@ -632,7 +636,40 @@ class CharacterDB:
         Save a CharacterSheet object to the database.
         This bridges the gap between the new character models and database storage.
         """
-        character_data = character_sheet.to_dict()
+        # Type check to prevent dict attribute errors
+        if isinstance(character_sheet, dict):
+            logger.error(f"save_character_sheet received a dict instead of CharacterSheet object: {character_sheet}")
+            raise ValueError("Expected CharacterSheet object, got dict. Please pass a properly constructed CharacterSheet.")
+        
+        if not hasattr(character_sheet, 'core'):
+            logger.error(f"save_character_sheet received object without 'core' attribute. Type: {type(character_sheet)}")
+            raise ValueError("Object passed to save_character_sheet must have a 'core' attribute")
+        
+        # Convert CharacterSheet to flat database format
+        character_data = {
+            # Core character data
+            "name": character_sheet.core.name,
+            "species": character_sheet.core.species,
+            "background": character_sheet.core.background,
+            "alignment": " ".join(character_sheet.core.alignment) if isinstance(character_sheet.core.alignment, list) else character_sheet.core.alignment,
+            "level": character_sheet.core.level,
+            "character_classes": character_sheet.core.character_classes,
+            "backstory": character_sheet.core.backstory,
+            
+            # Ability scores
+            "strength": character_sheet.core.strength.total_score,
+            "dexterity": character_sheet.core.dexterity.total_score,
+            "constitution": character_sheet.core.constitution.total_score,
+            "intelligence": character_sheet.core.intelligence.total_score,
+            "wisdom": character_sheet.core.wisdom.total_score,
+            "charisma": character_sheet.core.charisma.total_score,
+            
+            # Calculated stats
+            "armor_class": character_sheet.stats.armor_class,
+            "hit_points": character_sheet.stats.max_hit_points,
+            "proficiency_bonus": character_sheet.stats.proficiency_bonus,
+            "skills": character_sheet.stats.skills,
+        }
         
         # Use provided character_id or try to get from character sheet
         char_id = character_id or getattr(character_sheet.core, 'id', None)
@@ -914,7 +951,7 @@ class CharacterRepositoryManager:
         return commit
     
     @staticmethod
-    def get_commit_history(db: Session, repository_id: int, branch_name: str = None,
+    def get_commit_history(db: Session, repository_id: str, branch_name: str = None,
                           limit: int = 50) -> List[CharacterCommit]:
         """
         Get commit history for a repository or branch.
@@ -964,7 +1001,7 @@ class CharacterRepositoryManager:
         return commit.character_data
     
     @staticmethod
-    def create_tag(db: Session, repository_id: int, tag_name: str,
+    def create_tag(db: Session, repository_id: str, tag_name: str,
                    commit_hash: str, description: str = None,
                    tag_type: str = "milestone", created_by: str = None) -> CharacterTag:
         """
@@ -983,6 +1020,7 @@ class CharacterRepositoryManager:
             CharacterTag: Created tag
         """
         tag = CharacterTag(
+            id=str(uuid.uuid4()),  # Generate UUID for the tag
             repository_id=repository_id,
             tag_name=tag_name,
             commit_hash=commit_hash,
@@ -996,7 +1034,7 @@ class CharacterRepositoryManager:
         return tag
     
     @staticmethod
-    def get_repository_tree(db: Session, repository_id: int) -> Dict[str, Any]:
+    def get_repository_tree(db: Session, repository_id: str) -> Dict[str, Any]:
         """
         Get complete repository tree structure for visualization.
         
@@ -1049,7 +1087,7 @@ class CharacterVersioningAPI:
     """
     
     @staticmethod
-    def get_character_timeline_for_frontend(db: Session, repository_id: int) -> Dict[str, Any]:
+    def get_character_timeline_for_frontend(db: Session, repository_id: str) -> Dict[str, Any]:
         """
         Get timeline data optimized for frontend visualization.
         
@@ -1108,7 +1146,7 @@ class CharacterVersioningAPI:
         }
     
     @staticmethod
-    def get_character_visualization_data(db: Session, repository_id: int) -> Dict[str, Any]:
+    def get_character_visualization_data(db: Session, repository_id: str) -> Dict[str, Any]:
         """
         Get graph visualization data for D3.js/vis.js.
         
@@ -1189,7 +1227,7 @@ class CharacterVersioningAPI:
         }
     
     @staticmethod
-    def level_up_character(db: Session, repository_id: int, branch_name: str,
+    def level_up_character(db: Session, repository_id: str, branch_name: str,
                           new_character_data: Dict[str, Any], level_up_choices: Dict[str, Any] = None) -> CharacterCommit:
         """
         Handle character level up with automatic commit creation.

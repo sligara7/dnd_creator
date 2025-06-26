@@ -75,7 +75,7 @@ class CharacterCreator:
                 else:
                     logger.warning(f"Journal-based evolution failed: {evolution_result.error}")
                 # Optionally, update backstory after evolution
-                backstory_result = self._generate_enhanced_backstory(character_data, prompt or "Journal evolution")
+                backstory_result = await self._generate_enhanced_backstory(character_data, prompt or "Journal evolution")
                 if backstory_result.success:
                     character_data.update(backstory_result.data)
                 # Create final character sheet
@@ -88,7 +88,8 @@ class CharacterCreator:
             # ...existing code for new character creation...
             logger.info(f"Starting character creation with prompt: {prompt[:100]}...")
             # Step 1: Generate base character data using shared generator
-            base_result = await self.data_generator.generate_character_data(prompt, user_preferences)
+            level = user_preferences.get("level", 1) if user_preferences else 1
+            base_result = await self.data_generator.generate_character_data(prompt, level)
             if not base_result.success:
                 return base_result
             # Step 2: Validate the generated data
@@ -101,13 +102,13 @@ class CharacterCreator:
             character_data = base_result.data
             character_core = build_character_core(character_data)
             # Step 4: Generate backstory
-            backstory_result = self._generate_enhanced_backstory(character_data, prompt)
+            backstory_result = await self._generate_enhanced_backstory(character_data, prompt)
             if backstory_result.success:
                 character_data.update(backstory_result.data)
             else:
                 base_result.add_warning(f"Backstory generation failed: {backstory_result.error}")
             # Step 5: Add custom content if needed
-            custom_content_result = self._generate_custom_content(character_data)
+            custom_content_result = await self._generate_custom_content(character_data, prompt)
             if custom_content_result.success:
                 character_data.update(custom_content_result.data)
             else:
@@ -145,17 +146,17 @@ class CharacterCreator:
         # (This could use LLM or random table in the future)
         return starter_journal
     
-    def _generate_enhanced_backstory(self, character_data: Dict[str, Any], original_prompt: str) -> CreationResult:
+    async def _generate_enhanced_backstory(self, character_data: Dict[str, Any], original_prompt: str) -> CreationResult:
         """Generate enhanced backstory using the backstory generator."""
         try:
             # Create specialized prompt for backstory generation
             backstory_prompt = create_specialized_prompt(
-                base_prompt=original_prompt,
-                character_data=character_data,
-                specialization_type="backstory"
+                content_type="backstory",
+                description=original_prompt,
+                level=character_data.get("level", 1)
             )
             
-            backstory = self.backstory_generator.generate_backstory(backstory_prompt, character_data)
+            backstory = await self.backstory_generator.generate_backstory(character_data, backstory_prompt)
             
             result = CreationResult(success=True)
             result.data = {"backstory": backstory}
@@ -167,20 +168,18 @@ class CharacterCreator:
             result.error = str(e)
             return result
     
-    def _generate_custom_content(self, character_data: Dict[str, Any]) -> CreationResult:
+    async def _generate_custom_content(self, character_data: Dict[str, Any], original_prompt: str) -> CreationResult:
         """Generate custom content (spells, items, etc.) if needed."""
         try:
             custom_content = {}
             
-            # Check if character needs custom spells
-            if self._needs_custom_spells(character_data):
-                spells = self.custom_content_generator.generate_custom_spells(character_data)
-                custom_content["custom_spells"] = spells
+            # Generate comprehensive custom content
+            custom_result = await self.custom_content_generator.generate_custom_content_for_character(
+                character_data, original_prompt
+            )
             
-            # Check if character needs custom items
-            if self._needs_custom_items(character_data):
-                items = self.custom_content_generator.generate_custom_items(character_data)
-                custom_content["custom_items"] = items
+            if custom_result:
+                custom_content.update(custom_result)
             
             result = CreationResult(success=True)
             result.data = custom_content

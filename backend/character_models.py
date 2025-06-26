@@ -1124,6 +1124,12 @@ class CharacterState:
         self.session_notes: List[Dict[str, Any]] = []
         self.campaign_journal: List[str] = []
         self.character_goals: List[str] = []
+        self.journal_entries: List[Dict[str, Any]] = []
+        self.character_evolution_notes: List[str] = []
+        self.session_count: int = 0
+        self.creation_iterations: int = 0
+        self.user_feedback: List[str] = []
+        self.modification_history: List[str] = []
         
         # Initiative and Combat
         self.initiative_modifier: int = 0
@@ -1782,6 +1788,16 @@ class CharacterSheet:
     def name(self, value: str):
         self.core.name = value
     
+    def add_journal_entry(self, text: str, tags: List[str] = None):
+        """Add a journal entry to the character's state."""
+        import datetime
+        entry = {
+            "date": datetime.datetime.now().strftime("%Y-%m-%d"),
+            "text": text,
+            "tags": tags or []
+        }
+        self.state.journal_entries.append(entry)
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary representation."""
         return {

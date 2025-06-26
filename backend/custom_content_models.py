@@ -865,6 +865,10 @@ class CustomFeat:
         """Get all levels at which this character could have taken feats."""
         opportunities = []
         
+        # Handle None character_level
+        if character_level is None:
+            character_level = 1
+        
         # Level 1 origin feat (2024 rule)
         if character_level >= 1:
             opportunities.append(1)

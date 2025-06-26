@@ -578,6 +578,23 @@ Include: name, level, school, casting_time, range, components, duration, descrip
 
 Match description exactly. Return complete JSON only."""
     
+    elif content_type == "backstory":
+        return f"""Generate a detailed D&D character backstory. Return ONLY JSON:
+
+CHARACTER CONCEPT: {description}
+LEVEL: {level or 1}
+
+IMPORTANT: Return only valid JSON in this format:
+{{
+    "backstory": "A detailed backstory of 2-3 paragraphs...",
+    "personality_traits": ["Trait 1", "Trait 2"],
+    "ideals": ["Ideal 1"],
+    "bonds": ["Bond 1"],
+    "flaws": ["Flaw 1"]
+}}
+
+Match the character concept exactly. Return complete JSON only."""
+    
     else:  # Default to character
         return f"""Create D&D character. Return ONLY JSON:
 

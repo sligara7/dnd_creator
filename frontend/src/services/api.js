@@ -90,11 +90,9 @@ export const generationAPI = {
   // Generate full character (AI-driven creation)
   generateCharacter: (generationData) => api.post('/api/v1/characters/generate', generationData),
 
-  // Quick generation endpoints
-  quickCharacter: (params) => api.post('/api/v1/generate/quick-character', params),
-  quickItem: (params) => api.post('/api/v1/generate/quick-item', params),
-  quickNPC: (params) => api.post('/api/v1/generate/quick-npc', params),
-  quickCreature: (params) => api.post('/api/v1/generate/quick-creature', params),
+  // Generator endpoints
+  generateBackstory: (characterData) => api.post('/api/v1/generate/backstory', { character_data: characterData }),
+  generateEquipment: (characterData) => api.post('/api/v1/generate/equipment', { character_data: characterData }),
 };
 
 // Item Creation API endpoints

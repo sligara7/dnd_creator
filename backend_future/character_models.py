@@ -24,12 +24,27 @@ from core_models import (
     SpellcastingManager
 )
 
-# Import from centralized enums
-from enums import DnDCondition
-
 # ============================================================================
 # D&D 5E 2024 CONDITIONS
 # ============================================================================
+
+class DnDCondition(Enum):
+    """D&D 5e 2024 conditions with their effects."""
+    BLINDED = "blinded"
+    CHARMED = "charmed"
+    DEAFENED = "deafened"
+    EXHAUSTION = "exhaustion"
+    FRIGHTENED = "frightened"
+    GRAPPLED = "grappled"
+    INCAPACITATED = "incapacitated"
+    INVISIBLE = "invisible"
+    PARALYZED = "paralyzed"
+    PETRIFIED = "petrified"
+    POISONED = "poisoned"
+    PRONE = "prone"
+    RESTRAINED = "restrained"
+    STUNNED = "stunned"
+    UNCONSCIOUS = "unconscious"
 
 class ExhaustionLevel:
     """D&D 5e 2024 Exhaustion level effects."""

@@ -29,7 +29,7 @@ TAG_NAME=""
 echo -e "${PURPLE}🚀 D&D Character Creator - COMPREHENSIVE API Test Suite${NC}"
 echo -e "${PURPLE}=====================================================${NC}"
 echo "Testing against: $BASE_URL"
-echo "Total endpoints to test: 34"
+echo "Total endpoints to test: 30"
 echo ""
 
 # Helper function to run test
@@ -359,20 +359,7 @@ CREATURE_DATA='{
 run_test "Create Creature" "POST" "/api/v1/creatures/create" "$CREATURE_DATA" "200" "SLOW"
 
 echo ""
-echo -e "${YELLOW}🐌 TIER 7: SLOW TESTS (Quick Generation - Non-LLM)${NC}"
-echo "==============================================="
-
-# 21. Quick Generation Tests
-run_test "Quick Character Generation" "POST" "/api/v1/generate/quick-character?concept=A%20dwarf%20fighter%20from%20the%20mountains" "" "200" "SLOW"
-
-run_test "Quick Item Generation" "POST" "/api/v1/generate/quick-item?concept=A%20magical%20sword%20glowing%20with%20inner%20fire&item_type=magic_item&level=1" "" "200" "SLOW"
-
-run_test "Quick NPC Generation" "POST" "/api/v1/generate/quick-npc?concept=A%20mysterious%20tavern%20keeper&npc_type=humanoid" "" "200" "SLOW"
-
-run_test "Quick Creature Generation" "POST" "/api/v1/generate/quick-creature?concept=A%20fierce%20dragon%20guarding%20treasure&creature_type=dragon" "" "200" "SLOW"
-
-echo ""
-echo -e "${RED}🐢 TIER 8: SLOWEST TESTS (LLM-Based Generation)${NC}"
+echo -e "${RED}🐢 TIER 7: SLOWEST TESTS (LLM-Based Generation)${NC}"
 echo "=============================================="
 echo -e "${YELLOW}⚠️  LLM tests may fail if no LLM service is configured${NC}"
 echo -e "${YELLOW}⚠️  These are the slowest tests and will be run last${NC}"
@@ -421,10 +408,10 @@ echo -e "Failed: ${RED}$FAILED_TESTS${NC} ($(( FAILED_TESTS * 100 / TOTAL_TESTS 
 echo ""
 
 # Performance Analysis
-if [ $PASSED_TESTS -ge 30 ]; then
-    echo -e "${GREEN}🎉 Excellent! Most endpoints are working (30+ tests passed)${NC}"
-elif [ $PASSED_TESTS -ge 20 ]; then
-    echo -e "${YELLOW}👍 Good progress! Core functionality working (20+ tests passed)${NC}"
+if [ $PASSED_TESTS -ge 25 ]; then
+    echo -e "${GREEN}🎉 Excellent! Most endpoints are working (25+ tests passed)${NC}"
+elif [ $PASSED_TESTS -ge 18 ]; then
+    echo -e "${YELLOW}👍 Good progress! Core functionality working (18+ tests passed)${NC}"
 elif [ $PASSED_TESTS -ge 10 ]; then
     echo -e "${YELLOW}⚠️  Basic functionality working (10+ tests passed)${NC}"
 else
@@ -437,8 +424,8 @@ echo "- Tier 1 (Health): Fastest basic connectivity tests"
 echo "- Tier 2-3 (CRUD): Core character management" 
 echo "- Tier 4 (Versioning): Git-like character evolution"
 echo "- Tier 5 (Advanced): Character sheets, combat, state"
-echo "- Tier 6-7 (Generation): Content creation"
-echo "- Tier 8 (LLM): AI-powered generation (slowest)"
+echo "- Tier 6 (Generation): Content creation"
+echo "- Tier 7 (LLM): AI-powered generation (slowest)"
 
 if [ $FAILED_TESTS -eq 0 ]; then
     echo -e "${GREEN}🏆 ALL TESTS PASSED! API is fully functional!${NC}"

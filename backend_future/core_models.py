@@ -16,15 +16,6 @@ from dataclasses import dataclass
 from datetime import datetime
 import logging
 
-# Import from centralized enums
-from enums import (
-    ProficiencyLevel, 
-    AbilityScoreSource, 
-    SpellcastingType, 
-    SpellcastingAbility, 
-    RitualCastingType
-)
-
 if TYPE_CHECKING:
     from character_models import CharacterCore
 
@@ -66,6 +57,22 @@ REFACTORING NOTES:
 # ============================================================================
 # CORE ENUMS AND DATA STRUCTURES
 # ============================================================================
+
+class ProficiencyLevel(Enum):
+    """Proficiency levels for D&D 5e skills and abilities."""
+    NONE = 0
+    PROFICIENT = 1
+    EXPERT = 2
+
+class AbilityScoreSource(Enum):
+    """Sources of ability score bonuses."""
+    BASE = "base"
+    ASI = "ability_score_improvement"
+    FEAT = "feat"
+    MAGIC_ITEM = "magic_item"
+    CLASS_FEATURE = "class_feature"
+    SPECIES_TRAIT = "species_trait"
+    TEMPORARY = "temporary"
 
 # ============================================================================
 # ENHANCED ABILITY SCORE SYSTEM
@@ -731,6 +738,28 @@ class CharacterLevelManager:
 # ============================================================================
 # D&D 5E SPELLCASTING SYSTEM
 # ============================================================================
+
+class SpellcastingType(Enum):
+    """Types of spellcasting in D&D 5e 2024."""
+    NONE = "none"                    # Non-spellcaster
+    PREPARED = "prepared"            # Can change spells daily (Cleric, Druid, Paladin, Wizard)
+    KNOWN = "known"                  # Fixed list of known spells (Sorcerer, Warlock, Bard, Ranger)
+    RITUAL_ONLY = "ritual_only"      # Only ritual casting (some subclasses)
+    INNATE = "innate"               # Species/trait-based spellcasting
+    HYBRID = "hybrid"               # Mix of prepared and known (some subclasses)
+
+class SpellcastingAbility(Enum):
+    """Primary spellcasting abilities for each class."""
+    INTELLIGENCE = "intelligence"    # Wizard, Artificer, Eldritch Knight, Arcane Trickster
+    WISDOM = "wisdom"               # Cleric, Druid, Ranger
+    CHARISMA = "charisma"           # Sorcerer, Warlock, Paladin, Bard
+
+class RitualCastingType(Enum):
+    """Types of ritual casting available."""
+    NONE = "none"                   # Cannot cast rituals
+    PREPARED_ONLY = "prepared_only"  # Can only cast prepared rituals
+    SPELLBOOK = "spellbook"         # Can cast any ritual from spellbook (Wizard)
+    CLASS_LIST = "class_list"       # Can cast any ritual from class list (some subclasses)
 
 @dataclass
 class SpellcastingProgression:

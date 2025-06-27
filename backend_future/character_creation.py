@@ -107,12 +107,12 @@ class CharacterCreator:
                 character_data.update(backstory_result.data)
             else:
                 base_result.add_warning(f"Backstory generation failed: {backstory_result.error}")
-            # Step 5: Add custom content if needed
-            custom_content_result = await self._generate_custom_content(character_data, prompt)
-            if custom_content_result.success:
-                character_data.update(custom_content_result.data)
-            else:
-                base_result.add_warning(f"Custom content generation failed: {custom_content_result.error}")
+            # Step 5: Add custom content if needed (TEMPORARILY DISABLED FOR DEBUGGING)
+            # custom_content_result = await self._generate_custom_content(character_data, prompt)
+            # if custom_content_result.success:
+            #     character_data.update(custom_content_result.data)
+            # else:
+            #     base_result.add_warning(f"Custom content generation failed: {custom_content_result.error}")
             # Step 6: Add journal (blank or with fun starter entries)
             if "journal" not in character_data:
                 character_data["journal"] = self._generate_initial_journal(character_data)
@@ -156,24 +156,10 @@ class CharacterCreator:
                 level=character_data.get("level", 1)
             )
             
-            backstory_dict = await self.backstory_generator.generate_backstory(character_data, backstory_prompt)
-            
-            # Extract main backstory text from the dict
-            if isinstance(backstory_dict, dict):
-                # Get the main backstory text - try different possible keys
-                backstory_text = backstory_dict.get("main_backstory", "")
-                if not backstory_text:
-                    backstory_text = backstory_dict.get("backstory", "")
-                if not backstory_text:
-                    # Combine all text values if no main backstory found
-                    text_parts = [str(v) for v in backstory_dict.values() if isinstance(v, str) and v.strip()]
-                    backstory_text = " ".join(text_parts) if text_parts else "A mysterious adventurer."
-            else:
-                # If it's already a string, use it directly
-                backstory_text = str(backstory_dict) if backstory_dict else "A mysterious adventurer."
+            backstory = await self.backstory_generator.generate_backstory(character_data, backstory_prompt)
             
             result = CreationResult(success=True)
-            result.data = {"backstory": backstory_text}
+            result.data = {"backstory": backstory}
             return result
             
         except Exception as e:
@@ -223,20 +209,8 @@ class CharacterCreator:
     def _create_final_character(self, character_data: Dict[str, Any], character_core: CharacterCore) -> Dict[str, Any]:
         """Create the final character representation."""
         try:
-            # Create character sheet using correct parameters
-            name = character_data.get("name", "Generated Character")
-            species = character_data.get("species", "Human")
-            
-            # Get primary class and level
-            character_classes = character_data.get("character_classes", character_data.get("classes", {"Fighter": 1}))
-            if character_classes:
-                primary_class = list(character_classes.keys())[0]
-                level = list(character_classes.values())[0]
-            else:
-                primary_class = "Fighter"
-                level = character_data.get("level", 1)
-            
-            character_sheet = quick_character_sheet(name, species, primary_class, level)
+            # Create character sheet
+            character_sheet = quick_character_sheet(character_data)
             
             # Combine all character information
             final_character = {
@@ -498,4 +472,7 @@ async def create_character_from_prompt(prompt: str, llm_service: Optional[LLMSer
     creator = CharacterCreator(llm_service)
     return await creator.create_character(prompt)
 
-# End of file
+def quick_character_creation(concept: str) -> CreationResult:
+    """Quick character creation utility."""
+    creator = CharacterCreator()
+    return creator.quick_create(concept)

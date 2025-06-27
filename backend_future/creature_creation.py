@@ -11,9 +11,6 @@ from typing import Dict, Any, List, Optional, Union
 from dataclasses import dataclass
 from enum import Enum
 
-# Import from centralized enums
-from enums import CreatureType, CreatureSize, CreatureAlignment
-
 # Import shared components to eliminate duplication
 from shared_character_generation import (
     CreationConfig, CreationResult, CharacterDataGenerator, 
@@ -66,6 +63,11 @@ class CreatureAlignment(Enum):
     LAWFUL_NEUTRAL = "lawful neutral"
     TRUE_NEUTRAL = "true neutral"
     CHAOTIC_NEUTRAL = "chaotic neutral"
+    LAWFUL_EVIL = "lawful evil"
+    NEUTRAL_EVIL = "neutral evil"
+    CHAOTIC_EVIL = "chaotic evil"
+    UNALIGNED = "unaligned"
+
 # ============================================================================
 # CREATURE CORE CLASS
 # ============================================================================

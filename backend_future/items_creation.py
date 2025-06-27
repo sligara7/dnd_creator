@@ -27,9 +27,6 @@ from shared_character_generation import (
     CharacterValidator, create_specialized_prompt
 )
 
-# Import from centralized enums
-from enums import ItemType, ItemRarity, WeaponCategory, ArmorCategory
-
 # Import core D&D components
 from core_models import AbilityScore, MagicItemManager, ProficiencyLevel
 from character_models import DnDCondition
@@ -39,6 +36,45 @@ from custom_content_models import ContentRegistry
 from generators import CustomContentGenerator
 
 logger = logging.getLogger(__name__)
+
+# ============================================================================
+# ITEM-SPECIFIC DEFINITIONS
+# ============================================================================
+
+class ItemType(Enum):
+    """Types of items that can be created."""
+    WEAPON = "weapon"
+    ARMOR = "armor"
+    SHIELD = "shield"
+    SPELL = "spell"
+    MAGIC_ITEM = "magic_item"
+    POTION = "potion"
+    SCROLL = "scroll"
+    TOOL = "tool"
+    ADVENTURING_GEAR = "adventuring_gear"
+
+class ItemRarity(Enum):
+    """D&D 5e item rarity levels."""
+    COMMON = "common"
+    UNCOMMON = "uncommon"
+    RARE = "rare"
+    VERY_RARE = "very_rare"
+    LEGENDARY = "legendary"
+    ARTIFACT = "artifact"
+
+class WeaponCategory(Enum):
+    """D&D 5e weapon categories."""
+    SIMPLE_MELEE = "simple_melee"
+    SIMPLE_RANGED = "simple_ranged"
+    MARTIAL_MELEE = "martial_melee"
+    MARTIAL_RANGED = "martial_ranged"
+
+class ArmorCategory(Enum):
+    """D&D 5e armor categories."""
+    LIGHT = "light"
+    MEDIUM = "medium"
+    HEAVY = "heavy"
+    SHIELD = "shield"
 
 # ============================================================================
 # ITEM CORE CLASSES
@@ -539,4 +575,21 @@ def create_character_items(character_data: Dict[str, Any]) -> CreationResult:
     creator = ItemCreator()
     return creator.create_item_set(character_data)
 
-# End of file
+def quick_item_creation(concept: str, item_type: str = "magic_item", 
+                       level: int = 1) -> CreationResult:
+    """Quick item creation utility."""
+    creator = ItemCreator()
+    
+    # Map string to enum
+    type_mapping = {
+        "weapon": ItemType.WEAPON,
+        "armor": ItemType.ARMOR,
+        "spell": ItemType.SPELL,
+        "magic_item": ItemType.MAGIC_ITEM,
+        "potion": ItemType.POTION,
+        "scroll": ItemType.SCROLL,
+        "tool": ItemType.TOOL
+    }
+    
+    item_type_enum = type_mapping.get(item_type.lower(), ItemType.MAGIC_ITEM)
+    return creator.create_item(concept, item_type_enum, level)

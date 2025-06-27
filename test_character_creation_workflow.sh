@@ -133,18 +133,14 @@ TRADITIONAL_CHARACTER='{
 
 test_api_call "Create Traditional Character" "POST" "/api/v1/characters" "$TRADITIONAL_CHARACTER" "200"
 
-# Step 5: Test Quick Generation (Should work)
-echo -e "${BLUE}⚡ STEP 5: Quick Generation Endpoints${NC}"
+# Step 5: Test Generator Endpoints (Should work)
+echo -e "${BLUE}⚡ STEP 5: Generator Endpoints${NC}"
 echo "===================================="
-echo "Testing the quick generation endpoints that should work..."
+echo "Testing the generator endpoints that should work..."
 
-test_api_call "Quick Character Generation" "POST" "/api/v1/generate/quick-character?concept=A%20wise%20elven%20wizard" "" "200"
+test_api_call "Generate Backstory" "POST" "/api/v1/generate/backstory" '{"character_data": {"name": "Test", "species": "Human", "level": 1}}' "200"
 
-test_api_call "Quick Item Generation" "POST" "/api/v1/generate/quick-item?concept=A%20magical%20healing%20potion&item_type=potion&level=1" "" "200"
-
-test_api_call "Quick NPC Generation" "POST" "/api/v1/generate/quick-npc?concept=A%20friendly%20tavern%20keeper&role=merchant" "" "200"
-
-test_api_call "Quick Creature Generation" "POST" "/api/v1/generate/quick-creature?concept=A%20small%20forest%20sprite&cr=0.25&creature_type=fey" "" "200"
+test_api_call "Generate Equipment" "POST" "/api/v1/generate/equipment" '{"character_data": {"name": "Test", "species": "Human", "level": 1}}' "200"
 
 # Step 6: Summary and Analysis
 echo -e "${PURPLE}📊 WORKFLOW TEST SUMMARY${NC}"
@@ -153,7 +149,7 @@ echo ""
 echo -e "${GREEN}✅ Expected to work:${NC}"
 echo "  - Full Character Generation (works because it uses create_llm_service() internally)"
 echo "  - Traditional Character Creation (doesn't use LLM)"
-echo "  - Quick Generation endpoints (use create_llm_service() internally)"
+echo "  - Generator endpoints (use create_llm_service() internally)"
 echo ""
 echo -e "${RED}❌ Expected to fail:${NC}" 
 echo "  - Generate Backstory (uses app.state.llm_service which isn't initialized)"

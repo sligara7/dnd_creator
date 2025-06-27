@@ -173,13 +173,6 @@ class CharacterDataGenerator:
                 character_data = json.loads(cleaned_response)
                 character_data["level"] = level
                 
-                logger.info(f"Before data structure fix - backstory type: {type(character_data.get('backstory'))}, equipment type: {type(character_data.get('equipment'))}")
-                
-                # Fix data structure mismatches
-                character_data = self._fix_data_structure(character_data)
-                
-                logger.info(f"After data structure fix - backstory type: {type(character_data.get('backstory'))}, equipment type: {type(character_data.get('equipment'))}")
-                
                 # Validate basic structure
                 validation_result = self.validator.validate_basic_structure(character_data)
                 if not validation_result.success:
@@ -279,75 +272,6 @@ JSON: {{"name":"Name","species":"Human","level":{level},"classes":{{"Fighter":{l
         
         return json_str
     
-    def _fix_data_structure(self, character_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Fix data structure mismatches between LLM output and model expectations."""
-        
-        # Fix species: should be string, not list
-        if isinstance(character_data.get("species"), list):
-            species_list = character_data["species"]
-            character_data["species"] = species_list[0] if species_list else "Human"
-        
-        # Fix character_classes: should be dict, not list
-        if isinstance(character_data.get("character_classes"), list):
-            classes_list = character_data["character_classes"]
-            if classes_list:
-                # Convert list to dict format
-                character_data["character_classes"] = {classes_list[0]: character_data.get("level", 1)}
-            else:
-                character_data["character_classes"] = {"Fighter": character_data.get("level", 1)}
-        elif isinstance(character_data.get("classes"), dict):
-            # LLM sometimes returns "classes" instead of "character_classes"
-            character_data["character_classes"] = character_data["classes"]
-        
-        # Fix backstory: should be string, not dict
-        if isinstance(character_data.get("backstory"), dict):
-            backstory_dict = character_data["backstory"]
-            # Extract main backstory text from dict
-            if "main_backstory" in backstory_dict:
-                character_data["backstory"] = backstory_dict["main_backstory"]
-            elif "backstory" in backstory_dict:
-                character_data["backstory"] = backstory_dict["backstory"]
-            elif "description" in backstory_dict:
-                character_data["backstory"] = backstory_dict["description"]
-            else:
-                # Combine all text values from the dict
-                text_parts = [str(v) for v in backstory_dict.values() if isinstance(v, str)]
-                character_data["backstory"] = " ".join(text_parts) if text_parts else "A mysterious adventurer."
-        
-        # Fix equipment: should be dict, not list
-        if isinstance(character_data.get("equipment"), list):
-            equipment_list = character_data["equipment"]
-            equipment_dict = {}
-            logger.debug(f"Converting equipment list to dict: {equipment_list}")
-            for i, item in enumerate(equipment_list):
-                if isinstance(item, dict) and "name" in item:
-                    item_name = item["name"]
-                    quantity = item.get("quantity", 1)
-                    equipment_dict[item_name] = quantity
-                elif isinstance(item, str):
-                    equipment_dict[item] = 1
-                else:
-                    equipment_dict[f"Item_{i}"] = 1
-            character_data["equipment"] = equipment_dict
-            logger.debug(f"Converted equipment to dict: {equipment_dict}")
-        
-        # Ensure equipment is a dict (fallback)
-        if not isinstance(character_data.get("equipment"), dict):
-            character_data["equipment"] = {"Adventurer's Pack": 1}
-        
-        # Fix alignment: ensure it's a list of two strings
-        if isinstance(character_data.get("alignment"), str):
-            # Split string alignment like "Neutral Good" into ["Neutral", "Good"]
-            alignment_parts = character_data["alignment"].split()
-            if len(alignment_parts) >= 2:
-                character_data["alignment"] = [alignment_parts[0], alignment_parts[1]]
-            else:
-                character_data["alignment"] = ["Neutral", "Good"]
-        elif not isinstance(character_data.get("alignment"), list):
-            character_data["alignment"] = ["Neutral", "Good"]
-        
-        return character_data
-    
     def _apply_fixes(self, character_data: Dict[str, Any], description: str, level: int) -> Dict[str, Any]:
         """Apply fixes for common character data issues."""
         
@@ -369,7 +293,7 @@ JSON: {{"name":"Name","species":"Human","level":{level},"classes":{{"Fighter":{l
             "flaws": ["Stubborn"],
             "armor": "Leather",
             "weapons": [{"name": "Sword", "damage": "1d8", "properties": ["versatile"]}],
-            "equipment": {"Adventurer's Pack": 1},  # Changed from list to dict
+            "equipment": [{"name": "Adventurer's Pack", "quantity": 1}],
             "backstory": f"A {description} seeking adventure."
         }
         
@@ -406,7 +330,7 @@ JSON: {{"name":"Name","species":"Human","level":{level},"classes":{{"Fighter":{l
             "flaws": ["Too trusting of others"],
             "armor": "Chain Mail",
             "weapons": [{"name": "Longsword", "damage": "1d8", "properties": ["versatile"]}],
-            "equipment": {"Adventurer's Pack": 1},  # Changed from list to dict
+            "equipment": [{"name": "Adventurer's Pack", "quantity": 1}],
             "backstory": f"A fallback character based on: {description}"
         }
         

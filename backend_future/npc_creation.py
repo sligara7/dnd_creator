@@ -10,9 +10,6 @@ from typing import Dict, Any, List, Optional, Union
 from dataclasses import dataclass
 from enum import Enum
 
-# Import from centralized enums
-from enums import NPCType, NPCRole, NPCSpecies, NPCClass, CreatureType, CreatureSize
-
 # Import shared components to eliminate duplication
 from shared_character_generation import (
     CreationConfig, CreationResult, CharacterDataGenerator, 
@@ -29,6 +26,60 @@ from generators import BackstoryGenerator, CustomContentGenerator
 from custom_content_models import ContentRegistry
 
 logger = logging.getLogger(__name__)
+
+# ============================================================================
+# D&D 5E 2024 NPC DEFINITIONS
+# ============================================================================
+
+class NPCType(Enum):
+    """NPC complexity types."""
+    MINOR = "minor"      # Roleplaying only, no stat block needed
+    MAJOR = "major"      # Full stat block for combat/abilities
+
+class NPCRole(Enum):
+    """2024 role-based NPC categories."""
+    CIVILIAN = "civilian"
+    MERCHANT = "merchant"
+    GUARD = "guard"
+    NOBLE = "noble"
+    SCHOLAR = "scholar"
+    ARTISAN = "artisan"
+    CRIMINAL = "criminal"
+    SOLDIER = "soldier"
+    SPELLCASTER = "spellcaster"
+    LEADER = "leader"
+    HEALER = "healer"
+    SCOUT = "scout"
+
+class NPCSpecies(Enum):
+    """Common NPC species (expandable with LLM-generated custom species)."""
+    HUMAN = "human"
+    ELF = "elf"
+    DWARF = "dwarf"
+    HALFLING = "halfling"
+    DRAGONBORN = "dragonborn"
+    GNOME = "gnome"
+    HALF_ELF = "half-elf"
+    HALF_ORC = "half-orc"
+    TIEFLING = "tiefling"
+    CUSTOM = "custom"  # For LLM-generated species
+
+class NPCClass(Enum):
+    """Common NPC classes (expandable with LLM-generated custom classes)."""
+    FIGHTER = "fighter"
+    WIZARD = "wizard"
+    ROGUE = "rogue"
+    CLERIC = "cleric"
+    RANGER = "ranger"
+    BARD = "bard"
+    PALADIN = "paladin"
+    BARBARIAN = "barbarian"
+    SORCERER = "sorcerer"
+    WARLOCK = "warlock"
+    DRUID = "druid"
+    MONK = "monk"
+    ARTIFICER = "artificer"
+    CUSTOM = "custom"  # For LLM-generated classes
 
 # NPCConfig and NPCResult have been replaced with shared CreationConfig and CreationResult
 # from shared_character_generation.py to eliminate code duplication
@@ -408,4 +459,21 @@ async def create_npc_from_prompt(prompt: str, npc_type: NPCType = NPCType.MINOR)
     creator = NPCCreator()
     return await creator.create_npc(prompt, npc_type)
 
-# End of file
+def quick_npc_creation(concept: str, role: str = "civilian") -> CreationResult:
+    """Quick NPC creation utility."""
+    creator = NPCCreator()
+    npc_role = NPCRole.CIVILIAN
+    
+    # Map role string to enum
+    role_mapping = {
+        "merchant": NPCRole.MERCHANT,
+        "guard": NPCRole.GUARD,
+        "noble": NPCRole.NOBLE,
+        "scholar": NPCRole.SCHOLAR,
+        "artisan": NPCRole.ARTISAN,
+        "criminal": NPCRole.CRIMINAL,
+        "soldier": NPCRole.SOLDIER
+    }
+    
+    npc_role = role_mapping.get(role.lower(), NPCRole.CIVILIAN)
+    return creator.create_npc(concept, NPCType.MINOR, npc_role)

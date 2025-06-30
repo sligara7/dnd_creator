@@ -68,6 +68,7 @@ class CreationResult:
         self.error = error
         self.warnings = warnings or []
         self.creation_time: float = 0.0
+        self.verbose_logs: List[Dict[str, Any]] = []  # For detailed LLM interaction logs
     
     def add_warning(self, warning: str):
         """Add a warning to the result."""
@@ -105,19 +106,64 @@ class BaseCreator(ABC):
         Core LLM generation method used by all content types.
         This is the foundation that all creation types build upon.
         """
+        import time
+        
         for attempt in range(self.config.max_retries):
             try:
+                start_time = time.time()
                 logger.info(f"LLM generation attempt {attempt + 1}/{self.config.max_retries} for {content_type}")
                 
+                # Log the prompt being sent for verbose mode
+                if hasattr(self, 'verbose_logs'):
+                    self.verbose_logs.append({
+                        'type': 'llm_request',
+                        'timestamp': time.time(),
+                        'content_type': content_type,
+                        'attempt': attempt + 1,
+                        'prompt': prompt,
+                        'prompt_length': len(prompt)
+                    })
+                
                 response = await self.llm_service.generate_content(prompt)
+                generation_time = time.time() - start_time
+                
                 cleaned_response = self._clean_json_response(response)
                 data = json.loads(cleaned_response)
                 
-                logger.info(f"LLM generation successful for {content_type}")
+                # Log the response for verbose mode
+                if hasattr(self, 'verbose_logs'):
+                    self.verbose_logs.append({
+                        'type': 'llm_response',
+                        'timestamp': time.time(),
+                        'content_type': content_type,
+                        'attempt': attempt + 1,
+                        'raw_response': response,
+                        'cleaned_response': cleaned_response,
+                        'parsed_data': data,
+                        'response_length': len(response),
+                        'generation_time': generation_time,
+                        'success': True
+                    })
+                
+                logger.info(f"LLM generation successful for {content_type} in {generation_time:.2f}s")
                 return data
                 
             except (json.JSONDecodeError, Exception) as e:
-                logger.warning(f"LLM generation attempt {attempt + 1} failed: {e}")
+                generation_time = time.time() - start_time
+                
+                # Log the failure for verbose mode
+                if hasattr(self, 'verbose_logs'):
+                    self.verbose_logs.append({
+                        'type': 'llm_error',
+                        'timestamp': time.time(),
+                        'content_type': content_type,
+                        'attempt': attempt + 1,
+                        'error': str(e),
+                        'generation_time': generation_time,
+                        'success': False
+                    })
+                
+                logger.warning(f"LLM generation attempt {attempt + 1} failed in {generation_time:.2f}s: {e}")
                 if attempt == self.config.max_retries - 1:
                     raise e
         
@@ -210,6 +256,18 @@ class CharacterCreator(BaseCreator):
         """
         start_time = time.time()
         
+        # Initialize verbose logging if requested
+        verbose_generation = user_preferences.get("verbose_generation", False) if user_preferences else False
+        if verbose_generation:
+            self.verbose_logs = []
+            self.verbose_logs.append({
+                'type': 'creation_start',
+                'timestamp': time.time(),
+                'prompt': prompt,
+                'user_preferences': user_preferences,
+                'import_existing': import_existing
+            })
+        
         try:
             logger.info(f"Starting complete character creation: {prompt[:100]}...")
             
@@ -217,22 +275,96 @@ class CharacterCreator(BaseCreator):
             level = user_preferences.get("level", 1) if user_preferences else 1
             base_data = await self._generate_character_data(prompt, level)
             
+            if verbose_generation and hasattr(self, 'verbose_logs'):
+                self.verbose_logs.append({
+                    'type': 'creation_step',
+                    'timestamp': time.time(),
+                    'step': 'base_character_data',
+                    'description': 'Generated base character data (name, class, stats, skills)',
+                    'level': level,
+                    'data_keys': list(base_data.keys()) if base_data else []
+                })
+            
             # Step 2: Build character core
             character_core = self._build_character_core(base_data)
+            
+            if verbose_generation and hasattr(self, 'verbose_logs'):
+                self.verbose_logs.append({
+                    'type': 'creation_step',
+                    'timestamp': time.time(),
+                    'step': 'character_core',
+                    'description': f'Built character core for {character_core.name}',
+                    'character_name': character_core.name,
+                    'species': character_core.species,
+                    'classes': character_core.character_classes
+                })
             
             # Step 3: Generate enhanced backstory
             backstory_data = await self._generate_enhanced_backstory(base_data, prompt)
             base_data.update(backstory_data)
             
+            if verbose_generation and hasattr(self, 'verbose_logs'):
+                self.verbose_logs.append({
+                    'type': 'creation_step',
+                    'timestamp': time.time(),
+                    'step': 'enhanced_backstory',
+                    'description': 'Generated detailed backstory and character history',
+                    'backstory_keys': list(backstory_data.keys()) if backstory_data else []
+                })
+            
             # Step 4: Generate custom content if needed
             custom_data = await self._generate_custom_content(base_data, prompt)
             base_data.update(custom_data)
             
+            if verbose_generation and hasattr(self, 'verbose_logs'):
+                self.verbose_logs.append({
+                    'type': 'creation_step',
+                    'timestamp': time.time(),
+                    'step': 'custom_content',
+                    'description': 'Generated custom equipment and special abilities',
+                    'custom_keys': list(custom_data.keys()) if custom_data else []
+                })
+            
             # Step 5: Create final character sheet
             final_character = self._create_final_character(base_data, character_core)
             
+            if verbose_generation and hasattr(self, 'verbose_logs'):
+                self.verbose_logs.append({
+                    'type': 'creation_complete',
+                    'timestamp': time.time(),
+                    'total_time': time.time() - start_time,
+                    'character_name': character_core.name,
+                    'final_level': getattr(character_core, 'level', level)
+                })
+            
             result = CreationResult(success=True, data=final_character)
             result.creation_time = time.time() - start_time
+            
+            # Add verbose logs to result if generated
+            if verbose_generation and hasattr(self, 'verbose_logs'):
+                result.verbose_logs = self.verbose_logs
+            
+            logger.info(f"Character creation completed in {result.creation_time:.2f}s: {character_core.name}")
+            return result
+            
+        except Exception as e:
+            if verbose_generation and hasattr(self, 'verbose_logs'):
+                self.verbose_logs.append({
+                    'type': 'creation_error',
+                    'timestamp': time.time(),
+                    'error': str(e),
+                    'total_time': time.time() - start_time
+                })
+            
+            logger.error(f"Character creation failed: {e}")
+            result = CreationResult(success=False, error=str(e))
+            result.creation_time = time.time() - start_time
+            
+            # Add verbose logs to error result if generated
+            if verbose_generation and hasattr(self, 'verbose_logs'):
+                result.verbose_logs = self.verbose_logs
+            
+            return result
             
             logger.info(f"Complete character creation finished in {result.creation_time:.2f}s")
             return result

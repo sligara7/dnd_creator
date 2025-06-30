@@ -1,9 +1,17 @@
 #!/bin/bash
 
 # D&D Character Creator API Comprehensive Testing Script
+# UPDATED FOR PHASE 4: Factory Pattern Architecture
 # Tests ALL endpoints systematically from simple to complex
 # Organized by speed: Fast → Medium → Slow → Very Slow (LLM)
 # Usage: ./test_api_endpoints_refactored.sh [BASE_URL]
+#
+# PHASE 4 CHANGES:
+# ✅ Added: /api/v2/factory/* endpoints (unified creation)
+# ❌ Removed: /api/v1/characters/generate, /items/create, /npcs/create, /creatures/create
+# ❌ Removed: /api/v1/generate/backstory, /generate/equipment
+# ✅ Kept: /api/v1/generate/content, /generate/character-complete (valuable workflows)
+# 🧹 Result: 28 tests total (down from 30, cleaner architecture)
 
 BASE_URL=${1:-"http://localhost:8000"}
 TOTAL_TESTS=0
@@ -26,10 +34,11 @@ BRANCH_NAME=""
 COMMIT_HASH=""
 TAG_NAME=""
 
-echo -e "${PURPLE}🚀 D&D Character Creator - COMPREHENSIVE API Test Suite${NC}"
-echo -e "${PURPLE}=====================================================${NC}"
+echo -e "${PURPLE}🚀 D&D Character Creator - PHASE 4 API Test Suite${NC}"
+echo -e "${PURPLE}===============================================${NC}"
 echo "Testing against: $BASE_URL"
-echo "Total endpoints to test: 30"
+echo "Architecture: Factory Pattern (Phase 4 Complete)"
+echo "Total endpoints to test: 28 (updated after cleanup)"
 echo ""
 
 # Helper function to run test
@@ -91,6 +100,10 @@ extract_ids_from_response() {
     case "$test_name" in
         *"Create Character"*)
             CHARACTER_ID=$(echo "$body" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+            # Also check for factory-created characters with object_id
+            if [ -z "$CHARACTER_ID" ]; then
+                CHARACTER_ID=$(echo "$body" | grep -o '"object_id":"[^"]*"' | head -1 | cut -d'"' -f4)
+            fi
             [ -n "$CHARACTER_ID" ] && echo "   📝 Stored Character ID: $CHARACTER_ID"
             ;;
         *"Create Repository"*)
@@ -117,17 +130,23 @@ run_conditional_test() {
     local test_name="$1"
     local method="$2"
     local endpoint_template="$3"
-    local data="$4"
+    local data_template="$4"
     local expected_status="$5"
     local condition_var="$6"
     local condition_name="$7"
     local test_type="${8:-NORMAL}"
     
     if [ -n "${!condition_var}" ]; then
-        # Replace the placeholder with actual ID
+        # Replace the placeholder with actual ID in endpoint
         local endpoint="${endpoint_template//\$CHARACTER_ID/$CHARACTER_ID}"
         endpoint="${endpoint//\$REPOSITORY_ID/$REPOSITORY_ID}"
         endpoint="${endpoint//\$COMMIT_HASH/$COMMIT_HASH}"
+        
+        # Replace the placeholder with actual ID in data
+        local data="${data_template//\$CHARACTER_ID/$CHARACTER_ID}"
+        data="${data//\$REPOSITORY_ID/$REPOSITORY_ID}"
+        data="${data//\$COMMIT_HASH/$COMMIT_HASH}"
+        
         run_test "$test_name" "$method" "$endpoint" "$data" "$expected_status" "$test_type"
     else
         echo -e "${RED}❌ Skipping $test_name (no $condition_name)${NC}"
@@ -325,78 +344,95 @@ LEVELUP_DATA='{
 run_conditional_test "Character Level Up" "POST" "/api/v1/character-repositories/\$REPOSITORY_ID/level-up" "$LEVELUP_DATA" "200" "REPOSITORY_ID" "repository ID" "SLOW"
 
 echo ""
-echo -e "${YELLOW}🐌 TIER 6: SLOW TESTS (Content Creation)${NC}"
-echo "======================================"
+echo -e "${CYAN}🏭 TIER 5A: FACTORY PATTERN TESTS (New Architecture)${NC}"
+echo "=================================================="
 
-# 18. Create Item
-ITEM_DATA='{
-    "name": "Magic Sword",
-    "item_type": "weapon",
-    "rarity": "rare",
-    "description": "A gleaming magical sword"
-}'
+# 18. Test Factory Types Discovery
+run_test "Factory Types Discovery" "GET" "/api/v2/factory/types" "" "200" "FAST"
 
-run_test "Create Item" "POST" "/api/v1/items/create" "$ITEM_DATA" "200" "SLOW"
-
-# 19. Create NPC
-NPC_DATA='{
-    "name": "Village Elder",
-    "npc_type": "humanoid",
-    "role": "quest_giver",
-    "description": "A wise village elder"
-}'
-
-run_test "Create NPC" "POST" "/api/v1/npcs/create" "$NPC_DATA" "200" "SLOW"
-
-# 20. Create Creature
-CREATURE_DATA='{
-    "name": "Forest Wolf",
-    "creature_type": "beast",
-    "size": "medium",
-    "description": "A fierce forest predator"
-}'
-
-run_test "Create Creature" "POST" "/api/v1/creatures/create" "$CREATURE_DATA" "200" "SLOW"
-
-echo ""
-echo -e "${RED}🐢 TIER 7: SLOWEST TESTS (LLM-Based Generation)${NC}"
-echo "=============================================="
-echo -e "${YELLOW}⚠️  LLM tests may fail if no LLM service is configured${NC}"
-echo -e "${YELLOW}⚠️  These are the slowest tests and will be run last${NC}"
-
-# 22. LLM Backstory Generation
-BACKSTORY_DATA='{
-    "character_concept": "A wise old wizard",
-    "character_details": {
-        "name": "Gandalf",
-        "species": "Human",
-        "character_class": "Wizard",
-        "background": "Hermit"
+# 19. Create Character via Factory
+CHARACTER_FACTORY_DATA='{
+    "creation_type": "character",
+    "prompt": "Create a halfling rogue from a criminal background",
+    "save_to_database": true,
+    "user_preferences": {
+        "level": 3
     }
 }'
 
-run_test "Generate Backstory (LLM)" "POST" "/api/v1/generate/backstory" "$BACKSTORY_DATA" "200" "LLM"
+run_test "Factory Create Character" "POST" "/api/v2/factory/create" "$CHARACTER_FACTORY_DATA" "200" "SLOW"
 
-# 23. LLM Equipment Generation
-EQUIPMENT_DATA='{
-    "character_concept": "A stealthy rogue",
-    "character_level": 3,
-    "character_class": "Rogue"
+# 20. Create Item via Factory
+ITEM_FACTORY_DATA='{
+    "creation_type": "weapon",
+    "prompt": "A magical longsword that glows with inner fire",
+    "save_to_database": false
 }'
 
-run_test "Generate Equipment (LLM)" "POST" "/api/v1/generate/equipment" "$EQUIPMENT_DATA" "200" "LLM"
+run_test "Factory Create Weapon" "POST" "/api/v2/factory/create" "$ITEM_FACTORY_DATA" "200" "SLOW"
 
-# 24. Full Character Generation (SLOWEST)
-run_test "Generate Full Character (LLM)" "POST" "/api/v1/characters/generate?prompt=A%20noble%20paladin%20seeking%20redemption%20for%20past%20misdeeds" "" "200" "LLM"
+# 21. Create NPC via Factory
+NPC_FACTORY_DATA='{
+    "creation_type": "npc",
+    "prompt": "A wise old tavern keeper with secrets",
+    "save_to_database": false
+}'
+
+run_test "Factory Create NPC" "POST" "/api/v2/factory/create" "$NPC_FACTORY_DATA" "200" "SLOW"
+
+# 22. Create Monster via Factory
+MONSTER_FACTORY_DATA='{
+    "creation_type": "monster",
+    "prompt": "A fire dragon with CR 5",
+    "save_to_database": false
+}'
+
+run_test "Factory Create Monster" "POST" "/api/v2/factory/create" "$MONSTER_FACTORY_DATA" "200" "SLOW"
+
+echo ""
+echo -e "${YELLOW}🚶‍♂️ TIER 5B: PRESERVED v1 GENERATION ENDPOINTS${NC}"
+echo "=============================================="
+
+# 23. Unified Content Generation (v1 - preserved) - Uses query parameters
+run_test "Generate Content (v1)" "POST" "/api/v1/generate/content?content_type=character&prompt=A%20noble%20paladin%20seeking%20redemption&save_to_database=true" "" "200" "SLOW"
+
+# 24. Complete Character Workflow (v1 - preserved) - Uses query parameters  
+run_test "Generate Character Complete (v1)" "POST" "/api/v1/generate/character-complete?prompt=A%20mysterious%20wizard%20from%20distant%20lands&level=2&include_equipment=true&include_backstory=true" "" "200" "SLOW"
+
+echo ""
+echo -e "${RED}🐢 TIER 6: SLOWEST TESTS (LLM-Based Generation)${NC}"
+echo "=============================================="
+echo -e "${YELLOW}⚠️  LLM tests may fail if no LLM service is configured${NC}"
+echo -e "${YELLOW}⚠️  These are the slowest tests and will be run last${NC}"
+echo -e "${RED}⚠️  Note: /api/v1/generate/backstory and /equipment removed in Phase 4${NC}"
+
+# 25. Character Evolution via Factory (if we have a character)
+EVOLVE_DATA_TEMPLATE='{
+    "creation_type": "character",
+    "character_id": "$CHARACTER_ID",
+    "evolution_prompt": "The character gains wisdom through adventure",
+    "preserve_backstory": true
+}'
+
+run_conditional_test "Factory Evolve Character" "POST" "/api/v2/factory/evolve" "$EVOLVE_DATA_TEMPLATE" "200" "CHARACTER_ID" "character ID" "LLM"
+
+# 26. Character Level Up via Factory (if we have a character)
+FACTORY_LEVELUP_DATA_TEMPLATE='{
+    "character_id": "$CHARACTER_ID", 
+    "new_level": 4,
+    "preserve_backstory": true
+}'
+
+run_conditional_test "Factory Level Up Character" "POST" "/api/v2/factory/level-up" "$FACTORY_LEVELUP_DATA_TEMPLATE" "200" "CHARACTER_ID" "character ID" "LLM"
 
 echo ""
 echo -e "${BLUE}🧹 CLEANUP PHASE${NC}"
 echo "==============="
 
-# 25. Get Character from Commit (if we have a commit hash)
+# 27. Get Character from Commit (if we have a commit hash)
 run_conditional_test "Get Character from Commit" "GET" "/api/v1/character-commits/\$COMMIT_HASH/character" "" "200" "COMMIT_HASH" "commit hash" "FAST"
 
-# 26. Delete Character (cleanup)
+# 28. Delete Character (cleanup)
 run_conditional_test "Delete Character" "DELETE" "/api/v1/characters/\$CHARACTER_ID" "" "200" "CHARACTER_ID" "character ID" "FAST"
 
 echo ""
@@ -408,8 +444,8 @@ echo -e "Failed: ${RED}$FAILED_TESTS${NC} ($(( FAILED_TESTS * 100 / TOTAL_TESTS 
 echo ""
 
 # Performance Analysis
-if [ $PASSED_TESTS -ge 25 ]; then
-    echo -e "${GREEN}🎉 Excellent! Most endpoints are working (25+ tests passed)${NC}"
+if [ $PASSED_TESTS -ge 24 ]; then
+    echo -e "${GREEN}🎉 Excellent! Most endpoints are working (24+ tests passed)${NC}"
 elif [ $PASSED_TESTS -ge 18 ]; then
     echo -e "${YELLOW}👍 Good progress! Core functionality working (18+ tests passed)${NC}"
 elif [ $PASSED_TESTS -ge 10 ]; then
@@ -419,13 +455,20 @@ else
 fi
 
 echo ""
-echo -e "${CYAN}🔍 Analysis by Test Tier:${NC}"
+echo -e "${CYAN}🔍 Analysis by Test Tier (Phase 4 Updated):${NC}"
 echo "- Tier 1 (Health): Fastest basic connectivity tests"
 echo "- Tier 2-3 (CRUD): Core character management" 
 echo "- Tier 4 (Versioning): Git-like character evolution"
 echo "- Tier 5 (Advanced): Character sheets, combat, state"
-echo "- Tier 6 (Generation): Content creation"
-echo "- Tier 7 (LLM): AI-powered generation (slowest)"
+echo "- Tier 5A (Factory): New factory pattern endpoints (v2)"
+echo "- Tier 5B (Generation): Preserved v1 generation endpoints"
+echo "- Tier 6 (LLM): AI-powered generation via factory (slowest)"
+echo ""
+echo -e "${GREEN}🏭 Phase 4 Changes:${NC}"
+echo "✅ Added: Factory pattern endpoints (/api/v2/factory/*)"
+echo "❌ Removed: Legacy individual creation endpoints"
+echo "✅ Kept: Valuable v1 generation workflows"
+echo "🧹 Result: Cleaner, unified API architecture"
 
 if [ $FAILED_TESTS -eq 0 ]; then
     echo -e "${GREEN}🏆 ALL TESTS PASSED! API is fully functional!${NC}"

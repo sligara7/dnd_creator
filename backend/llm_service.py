@@ -186,7 +186,7 @@ class OpenAILLMService(LLMService):
     """OpenAI API-based LLM service with rate limiting and .env support."""
     
     def __init__(self, api_key: Optional[str] = None, model: str = "gpt-3.5-turbo", 
-                 timeout: int = 30, rate_limit_config: Optional[RateLimitConfig] = None):
+                 timeout: int = 600, rate_limit_config: Optional[RateLimitConfig] = None):
         
         # Load API key from environment if not provided
         self.api_key = api_key or os.getenv('OPENAI_API_KEY')
@@ -296,7 +296,7 @@ class AnthropicLLMService(LLMService):
     """Anthropic Claude API-based LLM service with rate limiting and .env support."""
     
     def __init__(self, api_key: Optional[str] = None, model: str = "claude-3-haiku-20240307", 
-                 timeout: int = 30, rate_limit_config: Optional[RateLimitConfig] = None):
+                 timeout: int = 600, rate_limit_config: Optional[RateLimitConfig] = None):
         
         # Load API key from environment if not provided
         self.api_key = api_key or os.getenv('ANTHROPIC_API_KEY')
@@ -406,7 +406,7 @@ class HTTPLLMService(LLMService):
     """Generic HTTP-based LLM service for custom endpoints with rate limiting."""
     
     def __init__(self, base_url: str, api_key: Optional[str] = None, 
-                 model: str = "default", timeout: int = 30,
+                 model: str = "default", timeout: int = 600,
                  rate_limit_config: Optional[RateLimitConfig] = None):
         self.base_url = base_url.rstrip('/')
         self.api_key = api_key
@@ -532,7 +532,7 @@ class OllamaLLMService(LLMService):
     """Ollama local LLM service - ideal for testing without API costs."""
     
     def __init__(self, model: str = "llama3:latest", base_url: str = "http://localhost:11434", 
-                 timeout: int = 300):
+                 timeout: int = 600):
         self.model = model
         self.base_url = base_url.rstrip('/')
         self.timeout = timeout

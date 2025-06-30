@@ -165,6 +165,7 @@ import logging
 import sys
 import re
 from pathlib import Path
+import time
 
 # Add the app directory to Python path
 sys.path.append(str(Path(__file__).parent))
@@ -238,9 +239,9 @@ async def startup_event():
             logger.info(f"Database initialized successfully using PostgreSQL: {settings.database_url}")
             
         # Initialize LLM service for direct endpoint usage with increased timeout for slower machines
-        # Using tinyllama for faster development testing
-        app.state.llm_service = create_llm_service("ollama", model="tinyllama:latest", timeout=300)
-        logger.info("LLM service initialized successfully with tinyllama model and 5-minute timeout")
+        # Using llama3 for better JSON generation capabilities
+        app.state.llm_service = create_llm_service("ollama", model="llama3:latest", timeout=300)
+        logger.info("LLM service initialized successfully with llama3 model and 5-minute timeout")
         
         # Initialize Creation Factory for Phase 2 factory-based endpoints
         app.state.creation_factory = CreationFactory(app.state.llm_service)
@@ -493,6 +494,7 @@ class FactoryResponse(BaseModel):
     data: Dict[str, Any]
     warnings: Optional[List[str]] = None
     processing_time: Optional[float] = None
+    verbose_logs: Optional[List[Dict[str, Any]]] = None  # Detailed LLM interaction logs
 
 # ============================================================================
 # CHARACTER MANAGEMENT ENDPOINTS - FULLY DATABASE INTEGRATED
@@ -1619,7 +1621,6 @@ async def factory_create_from_scratch(request: FactoryCreateRequest, db = Depend
             creation_type = CreationOptions(request.creation_type)
         except ValueError:
             raise HTTPException(status_code=400, detail=f"Invalid creation type: {request.creation_type}")
-        
         logger.info(f"Factory creating {creation_type.value} from scratch: {request.prompt[:100]}...")
         
         # Use the factory to create the object
@@ -1680,13 +1681,19 @@ async def factory_create_from_scratch(request: FactoryCreateRequest, db = Depend
         
         logger.info(f"Factory creation completed in {processing_time:.2f}s")
         
+        # Get verbose logs if available
+        verbose_logs = None
+        if hasattr(factory, 'last_verbose_logs') and factory.last_verbose_logs:
+            verbose_logs = factory.last_verbose_logs
+        
         return FactoryResponse(
             success=True,
             creation_type=creation_type.value,
             object_id=object_id,
             data=response_data,
             warnings=warnings if warnings else None,
-            processing_time=processing_time
+            processing_time=processing_time,
+            verbose_logs=verbose_logs
         )
         
     except HTTPException:

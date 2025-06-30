@@ -71,6 +71,7 @@ class CreationFactory:
         self.llm_service = llm_service
         self.database = database
         self._configs = self._build_creation_configs()
+        self.last_verbose_logs = []  # Store verbose logs from last creation
     
     def _build_creation_configs(self) -> Dict[CreationOptions, CreationConfig]:
         """Build mapping of creation types to their required components."""
@@ -288,8 +289,14 @@ class CreationFactory:
         creator = CharacterCreator(self.llm_service)
         result = await creator.create_character(prompt, kwargs.get('user_preferences'))
         if result.success:
+            # Store verbose logs for later retrieval
+            if hasattr(result, 'verbose_logs'):
+                self.last_verbose_logs = result.verbose_logs
             return result.data
         else:
+            # Store verbose logs even on failure
+            if hasattr(result, 'verbose_logs'):
+                self.last_verbose_logs = result.verbose_logs
             raise Exception(f"Character creation failed: {result.error}")
     
     async def _evolve_character(self, existing_data: Dict[str, Any], evolution_prompt: str, **kwargs) -> CharacterSheet:

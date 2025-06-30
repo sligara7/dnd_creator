@@ -1,107 +1,178 @@
-# D&D Character Creator Backend
+# D&D Character Creator Backend API
 
-A sophisticated D&D 5e character creation system powered by OpenAI's GPT-4.1-nano for creative content generation.
+A production-ready FastAPI backend for D&D 5e character creation using a unified factory pattern architecture.
 
-## 🔐 Security Setup
+## 🏗️ Architecture
 
-### GitHub Secrets Configuration
+The backend uses a **factory-based pattern** that provides:
+- ✅ **Unified Creation API** - Single endpoint for all content types
+- ✅ **Factory Pattern** - Centralized creation logic with type-specific specialization  
+- ✅ **LLM Integration** - OpenAI/Anthropic/Ollama support for AI-generated content
+- ✅ **D&D 5e 2024 Rules** - Latest official ruleset compliance
+- ✅ **Character Versioning** - Git-like character evolution tracking
 
-This project uses GitHub Secrets to securely manage API keys. **Never commit API keys to your repository.**
+## 🚀 Quick Start with Podman
 
-#### Required GitHub Secrets
-
-Set up these secrets in your repository:
-1. Go to your repository → Settings → Secrets and variables → Actions
-2. Click "New repository secret" and add:
-
-- `OPENAI_API_KEY` - Your OpenAI API key (starts with `-...`)
-- `ANTHROPIC_API_KEY` - Your Anthropic API key (optional)  
-- `DB_PASSWORD` - PostgreSQL database password
-- `SECRET_KEY` - Application secret key
-
-### Local Development Setup
-
-1. **Run the setup script**
-   ```bash
-   ./setup-dev.sh
-   ```
-
-2. **Configure environment variables**
-   ```bash
-   # Edit .env file with your API keys
-   nano .env
-   ```
-
-3. **Test the setup**
-   ```bash
-   python test_llm_diagnostic.py
-   ```
-
-## 🚀 Quick Start
-
-### Development Mode
-
+### 1. Build & Run
 ```bash
-# CLI interface
-python main.py cli
-
-# HTTP server  
-python main.py server 8000
-
-# Validation demo
-python main.py validate
+./build.sh
 ```
 
-### Production Deployment with Podman
-
+### 2. Manual Container Commands
 ```bash
-# Using environment variables from GitHub secrets
-OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }} podman-compose up -d
+# Build
+podman build -t dnd-character-creator-backend:latest .
+
+# Run
+podman run -d --name dnd-backend \
+  -p 8000:8000 \
+  -v $(pwd)/data:/app/data \
+  dnd-character-creator-backend:latest
+
+# View logs
+podman logs -f dnd-backend
 ```
 
-## 🧪 Testing
+### 3. Access API
+- **API Base:** http://localhost:8000
+- **Interactive Docs:** http://localhost:8000/docs
+- **Health Check:** http://localhost:8000/health
 
-### Basic Tests
+## 📡 API Endpoints
+
+### Factory Pattern (Primary Interface)
+- `POST /api/v2/factory/create` - Create any D&D content type
+- `POST /api/v2/factory/evolve` - Evolve character with history 
+- `POST /api/v2/factory/level-up` - Character leveling
+- `GET /api/v2/factory/types` - Available content types
+
+### Character Management
+- `POST /api/v1/characters` - Create character
+- `GET /api/v1/characters` - List characters  
+- `GET /api/v1/characters/{id}` - Get character
+- `PUT /api/v1/characters/{id}` - Update character
+- `DELETE /api/v1/characters/{id}` - Delete character
+
+### Generation Workflows
+- `POST /api/v1/generate/content` - Unified content generation
+- `POST /api/v1/generate/character-complete` - Complete character workflow
+
+## 🎯 Usage Examples
+
+### Create a Character
 ```bash
-python test_llm_diagnostic.py      # Full diagnostic
-python test_openai.py             # OpenAI integration  
-python test_character_openai.py   # Character creation
+curl -X POST "http://localhost:8000/api/v2/factory/create" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "creation_type": "character",
+    "prompt": "Create a halfling rogue from a criminal background",
+    "save_to_database": true
+  }'
 ```
 
-### Creative Stress Test
+### Create Equipment
 ```bash
-python test_creative.py           # Test custom content generation
+curl -X POST "http://localhost:8000/api/v2/factory/create" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "creation_type": "weapon", 
+    "prompt": "A magical longsword that glows with inner fire"
+  }'
 ```
 
-## 🔧 Key Features
+### Create NPCs
+```bash
+curl -X POST "http://localhost:8000/api/v2/factory/create" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "creation_type": "npc",
+    "prompt": "A wise old tavern keeper with secrets"
+  }'
+```
 
-- ✅ **OpenAI GPT-4.1-nano integration** - Fast, cost-effective AI generation
-- ✅ **Secure API key management** - GitHub secrets + Docker/Podman secrets
-- ✅ **Creative content generation** - Custom classes, species, items, spells
-- ✅ **RESTful API** - Clean HTTP endpoints for web integration
-- ✅ **Comprehensive validation** - D&D 5e rule compliance checking
-- ✅ **Multiple output formats** - JSON, formatted text, character sheets
-- ✅ **Container deployment** - Podman/Docker ready with health checks
+## ⚙️ Configuration
 
-The updated D&D 2024 core rules will be released under a Creative Commons Attribution 4.0 International (CC-BY-4.0) license. This license allows third-party creators to use, adapt, and publish content based on the rules, provided they give appropriate attribution to Michael Best & Friedrich LLP. This is a significant change from the previous Open Game License (OGL), and is intended to foster a more open and collaborative environment for third-party content creation. 
-Here's a more detailed breakdown:
-Creative Commons Attribution 4.0 (CC-BY-4.0):
-This license is a globally recognized standard that allows for broad use of the licensed material with minimal restrictions. The key requirement is that users must give appropriate credit to the original creator of D&D Beyond. 
-SRD 5.2:
-The updated System Reference Document (SRD), version 5.2, will incorporate the 2024 core rules and be released under the CC-BY-4.0 license. This document provides the foundational rules content that third-party creators can use for their products. 
-No OGL:
-Unlike the previous SRD 5.1, the new SRD 5.2 will not be released under the OGL. Instead, it will be exclusively under the CC-BY-4.0 license. 
-Irrevocable License:
-The Creative Commons license is irrevocable, meaning that once it's granted, it cannot be taken back. 
-Community Feedback:
-The decision to use Creative Commons for the 2024 rules was influenced by community feedback following the OGL controversy.
+### Environment Variables (.env)
+```bash
+# Database (SQLite by default)
+DATABASE_URL=  # Leave empty for SQLite
+SQLITE_PATH=data/dnd_characters.db
 
-## 📄 License
+# LLM Service (Optional)
+OPENAI_API_KEY=your_key_here
+ANTHROPIC_API_KEY=your_key_here
 
-This project is licensed under the Creative Commons Attribution 4.0 International (CC BY 4.0) license. See the LICENSE file for details.
+# Server
+ENV=production
+DEBUG=false
+```
 
-- D&D 2024 Core Rules and SRD 5.2: © Wizards of the Coast, published under CC-BY-4.0
-- This project: © 2025 [Anthony James Sligar]
+### Volume Mounts
+- `/app/data` - Database and persistent data
+- `/app/logs` - Application logs (optional)
 
-You are free to share and adapt the material for any purpose, even commercially, as long as you provide appropriate attribution. For more information, see https://creativecommons.org/licenses/by/4.0/
+## 🔧 Development
+
+### Local Development
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run development server
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### Project Structure
+```
+backend/
+├── app.py              # Main FastAPI application
+├── main.py             # Entry point
+├── creation_factory.py # Factory pattern implementation
+├── creation.py         # Creation logic (unified)
+├── character_models.py # D&D character models
+├── database_models.py  # Database schemas
+├── config.py          # Configuration
+├── requirements.txt   # Python dependencies
+├── Dockerfile         # Container definition
+├── data/             # Database and persistent data
+├── docs/             # Documentation
+└── examples/         # Example code and demos
+```
+
+## 📚 Documentation
+
+- **API Docs:** Available at `/docs` when running
+- **Factory Pattern:** See `docs/FACTORY_PATTERN_RECOMMENDATIONS.md`
+- **Phase 4 Migration:** See `docs/PHASE_4_CLEANUP_COMPLETE.md`
+- **Production Guide:** See `docs/PRODUCTION_READY.md`
+
+## 🛠️ Content Types Supported
+
+Via the factory pattern (`/api/v2/factory/create`):
+- **Characters** - Full D&D 5e character sheets
+- **NPCs** - Non-player characters with roles and stats
+- **Monsters** - Creatures with stat blocks and abilities
+- **Weapons** - Magical and mundane weapons
+- **Armor** - All armor types and magical variants
+- **Spells** - Custom spells with proper mechanics
+- **Other Items** - Potions, scrolls, tools, etc.
+
+## 🔒 Security
+
+- ✅ Non-root container user
+- ✅ Input validation with Pydantic
+- ✅ SQL injection prevention via SQLAlchemy ORM
+- ✅ CORS configuration for frontend integration
+- ✅ Health check endpoints for monitoring
+
+## 📊 Monitoring
+
+- **Health Check:** `GET /health`
+- **Metrics:** Available via container logs
+- **Status:** `GET /` returns service status
+
+## 🏷️ Version
+
+**Current Version:** 2.0.0 (Factory Pattern Architecture)  
+**Previous Versions:** Legacy individual creator endpoints removed in Phase 4
 

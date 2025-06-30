@@ -41,12 +41,11 @@ from dataclasses import dataclass
 
 from enums import CreationOptions
 from character_models import CharacterSheet
-from creation import CharacterCreator, NPCCreator, CreatureCreator, ItemCreator
+from core_models import CreatureSheet, ItemSheet
+from character_creation import CharacterCreator
+from creature_creation import CreatureCreator
+from items_creation import ItemCreator
 from generators import CustomContentGenerator
-
-# For now, we'll use Dict for missing sheet types until they're implemented
-CreatureSheet = Dict[str, Any]  # Placeholder for future CreatureSheet class
-ItemSheet = Dict[str, Any]      # Placeholder for future ItemSheet class
 
 
 @dataclass

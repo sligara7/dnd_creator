@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     db_password: Optional[str] = None  # Additional database password field
     
     # SQLite Configuration (used when database_url is None)
-    sqlite_path: str = "data/dnd_characters.db"  # Path to SQLite database file in data directory
+    sqlite_path: str = "dnd_characters.db"  # Path to SQLite database file
     
     @property
     def is_sqlite(self) -> bool:

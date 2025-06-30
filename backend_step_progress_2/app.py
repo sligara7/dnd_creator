@@ -182,22 +182,14 @@ from database_models import (
 from character_models import CharacterCore, CharacterSheet, DnDCondition
 from core_models import AbilityScore
 
-# PHASE 4 CLEANUP: Individual creator imports removed - now using factory pattern only
-# from creation import CharacterCreator, NPCCreator, CreatureCreator, ItemCreator
-# PHASE 4 CLEANUP: Legacy utility functions removed - using factory pattern only
-# from creation import create_character_from_prompt, create_npc_from_prompt, create_creature_from_prompt, create_item_from_prompt
-# PHASE 4 CLEANUP: Legacy creation classes removed - using factory pattern only
-# from creation import CreationResult, CreationConfig
-# PHASE 4 CLEANUP: Legacy content type enums removed - using CreationOptions only
-# from enums import NPCType, NPCRole, ItemType, ItemRarity, CreatureType, CreatureSize
+# Import refactored creation modules
+from character_creation import CharacterCreator, create_character_from_prompt
+from items_creation import ItemCreator, ItemType, ItemRarity, create_item_from_prompt
+from npc_creation import NPCCreator, NPCType, NPCRole, create_npc_from_prompt
+from creature_creation import CreatureCreator, CreatureType, CreatureSize, create_creature_from_prompt
 
-# Import factory-based creation system (Phase 2)
-from creation_factory import (
-    CreationFactory, 
-    create_character_from_scratch, evolve_character, level_up_character,
-    create_monster_from_scratch, create_item_from_scratch
-)
-from enums import CreationOptions
+# Import shared components
+from shared_character_generation import CreationConfig, CreationResult
 
 logger = logging.getLogger(__name__)
 
@@ -241,10 +233,6 @@ async def startup_event():
         # Using tinyllama for faster development testing
         app.state.llm_service = create_llm_service("ollama", model="tinyllama:latest", timeout=300)
         logger.info("LLM service initialized successfully with tinyllama model and 5-minute timeout")
-        
-        # Initialize Creation Factory for Phase 2 factory-based endpoints
-        app.state.creation_factory = CreationFactory(app.state.llm_service)
-        logger.info("Creation Factory initialized successfully")
         
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
@@ -449,50 +437,34 @@ class CharacterVisualizationResponse(BaseModel):
     player_name: Optional[str]
     branches: List[Dict[str, Any]]
 
-# PHASE 4 CLEANUP: Legacy creation request models removed - using factory pattern only
-# The following models have been replaced by FactoryCreateRequest:
-# - ItemCreateRequest (use content_type="weapon", "armor", or "other_item")
-# - NPCCreateRequest (use content_type="npc")  
-# - CreatureCreateRequest (use content_type="monster")
+class ItemCreateRequest(BaseModel):
+    """Request model for creating a new item (weapon, armor, spell, equipment, etc.)."""
+    name: str
+    item_type: str  # 'weapon', 'armor', 'spell', 'equipment', etc.
+    description: Optional[str] = ""
+    properties: Optional[Dict[str, Any]] = None
+    is_public: Optional[bool] = False
+    created_by: Optional[str] = None
 
-# ============================================================================
-# FACTORY-BASED CREATION PYDANTIC MODELS (PHASE 2)
-# ============================================================================
+class NPCCreateRequest(BaseModel):
+    """Request model for creating a new NPC."""
+    name: str
+    npc_type: str  # 'villager', 'merchant', 'enemy', etc.
+    description: Optional[str] = ""
+    stats: Optional[Dict[str, Any]] = None
+    challenge_rating: Optional[float] = None
+    is_public: Optional[bool] = False
+    created_by: Optional[str] = None
 
-class FactoryCreateRequest(BaseModel):
-    """Request model for factory-based creation from scratch."""
-    creation_type: str  # 'character', 'monster', 'npc', 'weapon', 'armor', 'spell', 'other_item'
-    prompt: str
-    user_preferences: Optional[Dict[str, Any]] = None
-    save_to_database: Optional[bool] = True
-
-class FactoryEvolveRequest(BaseModel):
-    """Request model for factory-based evolution of existing objects."""
-    creation_type: str  # 'character', 'monster', 'npc'
-    character_id: str  # ID of existing character/object in database
-    evolution_prompt: str
-    preserve_backstory: Optional[bool] = True
-    user_preferences: Optional[Dict[str, Any]] = None
-    save_to_database: Optional[bool] = True
-
-class FactoryLevelUpRequest(BaseModel):
-    """Request model for factory-based character level up."""
-    character_id: str
-    new_level: int
-    multiclass: Optional[str] = None
-    story_reason: Optional[str] = None
-    context: Optional[str] = None
-    preserve_backstory: Optional[bool] = True
-    save_to_database: Optional[bool] = True
-
-class FactoryResponse(BaseModel):
-    """Response model for factory operations."""
-    success: bool
-    creation_type: str
-    object_id: Optional[str] = None  # ID if saved to database
-    data: Dict[str, Any]
-    warnings: Optional[List[str]] = None
-    processing_time: Optional[float] = None
+class CreatureCreateRequest(BaseModel):
+    """Request model for creating a new creature."""
+    name: str
+    creature_type: str  # 'beast', 'monstrosity', 'undead', etc.
+    description: Optional[str] = ""
+    stat_block: Optional[Dict[str, Any]] = None
+    challenge_rating: Optional[float] = None
+    is_public: Optional[bool] = False
+    created_by: Optional[str] = None
 
 # ============================================================================
 # CHARACTER MANAGEMENT ENDPOINTS - FULLY DATABASE INTEGRATED
@@ -1086,38 +1058,15 @@ async def get_character_sheet(character_id: str, db = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Failed to retrieve character sheet")
 
 
-# ============================================================================
-# FACTORY-BASED GENERATION HELPERS (PHASE 3)
-# ============================================================================
-
-async def _factory_generate_backstory(character_data: dict, llm_service=None) -> dict:
-    """
-    Factory-based backstory generation helper.
-    Can be used by both old and new endpoints.
-    """
+# Character generation endpoints
+@app.post("/api/v1/generate/backstory", tags=["generation"])
+async def generate_backstory(character_data: dict):
+    """Generate a character backstory using LLM."""
+    if not app.state.llm_service:
+        raise HTTPException(status_code=503, detail="LLM service not available")
+    
     try:
-        # Use factory to create a temporary character for backstory generation
-        factory = app.state.creation_factory if hasattr(app.state, 'creation_factory') else None
-        if not factory:
-            raise Exception("Factory not available")
-        
-        # Extract character concept for prompt
-        concept_parts = []
-        if isinstance(character_data, dict):
-            concept_parts.append(character_data.get('species', ''))
-            concept_parts.append(character_data.get('background', ''))
-            if character_data.get('classes'):
-                if isinstance(character_data['classes'], dict):
-                    concept_parts.extend(character_data['classes'].keys())
-                elif isinstance(character_data['classes'], list):
-                    concept_parts.extend(character_data['classes'])
-        
-        character_concept = ' '.join(filter(None, concept_parts)) or str(character_data)
-        
-        # Use factory's LLM service for consistent generation
-        prompt = f"""Generate a detailed D&D character backstory for: {character_concept}
-        
-        Character details: {character_data}
+        prompt = f"""Generate a detailed D&D character backstory for: {character_data}
         
         IMPORTANT: Return only valid JSON in this format:
         {{
@@ -1130,44 +1079,51 @@ async def _factory_generate_backstory(character_data: dict, llm_service=None) ->
         
         Use integers for any age, height (inches), weight (lbs) values."""
         
-        response = await factory.llm_service.generate_content(prompt)
+        response = await app.state.llm_service.generate_content(prompt)
         
-        # Use the same JSON cleaning logic but refactored
-        return _clean_json_response(response, "backstory")
-        
+        # Try to parse JSON response
+        try:
+            import json
+            # Extract JSON from response with robust brace counting
+            response_stripped = response.strip()
+            start = response_stripped.find('{')
+            
+            # Find the last valid closing brace by counting braces
+            end = -1
+            brace_count = 0
+            for i, char in enumerate(response_stripped[start:], start):
+                if char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        end = i + 1
+                        break
+            
+            if start != -1 and end > start:
+                json_str = response_stripped[start:end]
+                parsed_data = json.loads(json_str)
+                return parsed_data
+            else:
+                # Fallback to raw text
+                return {"backstory": response}
+        except:
+            # Fallback to raw text
+            return {"backstory": response}
+            
     except Exception as e:
-        logger.error(f"Factory backstory generation failed: {e}")
-        raise
+        logger.error(f"Backstory generation failed: {e}")
+        raise HTTPException(status_code=500, detail="Backstory generation failed")
 
-async def _factory_generate_equipment(character_data: dict, llm_service=None) -> dict:
-    """
-    Factory-based equipment generation helper.
-    Can be used by both old and new endpoints.
-    """
+
+@app.post("/api/v1/generate/equipment", tags=["generation"])
+async def generate_equipment(character_data: dict):
+    """Generate character equipment suggestions using LLM."""
+    if not app.state.llm_service:
+        raise HTTPException(status_code=503, detail="LLM service not available")
+    
     try:
-        # Use factory to create equipment suggestions
-        factory = app.state.creation_factory if hasattr(app.state, 'creation_factory') else None
-        if not factory:
-            raise Exception("Factory not available")
-        
-        # Extract character concept for prompt
-        concept_parts = []
-        if isinstance(character_data, dict):
-            concept_parts.append(character_data.get('species', ''))
-            concept_parts.append(character_data.get('background', ''))
-            if character_data.get('classes'):
-                if isinstance(character_data['classes'], dict):
-                    concept_parts.extend(character_data['classes'].keys())
-                elif isinstance(character_data['classes'], list):
-                    concept_parts.extend(character_data['classes'])
-        
-        character_concept = ' '.join(filter(None, concept_parts)) or str(character_data)
-        level = character_data.get('level', 1) if isinstance(character_data, dict) else 1
-        
-        prompt = f"""Generate D&D equipment suggestions for: {character_concept}
-        
-        Character details: {character_data}
-        Character level: {level}
+        prompt = f"""Generate D&D equipment suggestions for: {character_data}
         
         IMPORTANT: Return only valid JSON in this format:
         {{
@@ -1180,349 +1136,41 @@ async def _factory_generate_equipment(character_data: dict, llm_service=None) ->
         
         Use integers for any age, height (inches), weight (lbs) values."""
         
-        response = await factory.llm_service.generate_content(prompt)
+        response = await app.state.llm_service.generate_content(prompt)
         
-        # Use the same JSON cleaning logic but refactored
-        return _clean_json_response(response, "equipment")
-        
-    except Exception as e:
-        logger.error(f"Factory equipment generation failed: {e}")
-        raise
-
-def _clean_json_response(response: str, fallback_key: str) -> dict:
-    """
-    Shared JSON cleaning logic for generation endpoints.
-    """
-    import json
-    
-    try:
-        # Extract JSON from response with robust brace counting
-        response_stripped = response.strip()
-        start = response_stripped.find('{')
-        
-        # Find the last valid closing brace by counting braces
-        end = -1
-        brace_count = 0
-        for i, char in enumerate(response_stripped[start:], start):
-            if char == '{':
-                brace_count += 1
-            elif char == '}':
-                brace_count -= 1
-                if brace_count == 0:
-                    end = i + 1
-                    break
-        
-        if start != -1 and end > start:
-            json_str = response_stripped[start:end]
-            parsed_data = json.loads(json_str)
-            return parsed_data
-        else:
-            # Fallback to raw text
-            return {fallback_key: response}
-    except:
-        # Fallback to raw text
-        return {fallback_key: response}
-
-# ============================================================================
-# GENERATION ENDPOINTS (MIGRATING TO FACTORY - PHASE 3)
-# ============================================================================
-# PHASE 4: Removed redundant /api/v1/generate/backstory endpoint
-# This functionality is now available via:
-# - POST /api/v2/factory/create (content_type="character")  
-# - POST /api/v1/generate/character-complete (includes backstory)
-# Migration eliminates code duplication and encourages use of better factory pattern.
-
-# PHASE 4: Removed redundant /api/v1/generate/equipment endpoint  
-# This functionality is now available via:
-# - POST /api/v2/factory/create (content_type="weapon", "armor", etc.)
-# - POST /api/v1/generate/character-complete (includes equipment suggestions)
-# Migration eliminates code duplication and encourages use of better factory pattern.
-
-
-# ============================================================================
-# UNIFIED FACTORY-BASED GENERATION ENDPOINTS (PHASE 3)
-# ============================================================================
-
-@app.post("/api/v1/generate/content", tags=["generation", "factory-v1"])
-async def generate_content_unified(
-    content_type: str,
-    prompt: str,
-    user_preferences: Optional[Dict[str, Any]] = None,
-    save_to_database: Optional[bool] = False,
-    db = Depends(get_db)
-):
-    """
-    Unified content generation endpoint using factory pattern.
-    
-    Supports: character, monster, npc, weapon, armor, spell, other_item
-    This demonstrates the factory benefits within the v1 API namespace.
-    
-    PHASE 3 FEATURE: Single endpoint for multiple content types.
-    """
-    import time
-    start_time = time.time()
-    
-    try:
-        # Validate content type
+        # Try to parse JSON response
         try:
-            creation_type = CreationOptions(content_type)
-        except ValueError:
-            raise HTTPException(status_code=400, detail=f"Invalid content type: {content_type}. Supported: {[opt.value for opt in CreationOptions]}")
-        
-        logger.info(f"Unified generation: {creation_type.value} - {prompt[:100]}...")
-        
-        # Use factory for generation
-        factory = app.state.creation_factory
-        result = await factory.create_from_scratch(
-            creation_type,
-            prompt,
-            user_preferences=user_preferences or {}
-        )
-        
-        object_id = None
-        
-        # Save to database if requested (only for characters currently)
-        if save_to_database and creation_type == CreationOptions.CHARACTER:
-            try:
-                # Convert CharacterSheet to database format (reuse existing logic)
-                if hasattr(result, 'to_dict'):
-                    character_data = result.to_dict()
-                else:
-                    character_data = result
-                
-                # Create flattened data structure for database
-                db_character_data = {
-                    "name": character_data.get("core", {}).get("name", "Generated Character"),
-                    "species": character_data.get("core", {}).get("species", "Human"),
-                    "background": character_data.get("core", {}).get("background", "Folk Hero"),
-                    "alignment": " ".join(character_data.get("core", {}).get("alignment", ["Neutral", "Good"])),
-                    "level": character_data.get("core", {}).get("level", 1),
-                    "character_classes": character_data.get("core", {}).get("character_classes", {"Fighter": 1}),
-                    "backstory": character_data.get("core", {}).get("backstory", ""),
-                    "abilities": character_data.get("core", {}).get("abilities", {
-                        "strength": 10, "dexterity": 10, "constitution": 10,
-                        "intelligence": 10, "wisdom": 10, "charisma": 10
-                    }),
-                    "armor_class": character_data.get("stats", {}).get("armor_class", 10),
-                    "hit_points": character_data.get("stats", {}).get("max_hit_points", 10),
-                    "proficiency_bonus": character_data.get("stats", {}).get("proficiency_bonus", 2),
-                    "skills": character_data.get("stats", {}).get("skills", {}),
-                    "equipment": character_data.get("state", {}).get("equipment", {})
-                }
-                
-                db_character = CharacterDB.create_character(db, db_character_data)
-                object_id = db_character.id
-                logger.info(f"Generated {content_type} saved to database with ID: {object_id}")
-                
-            except Exception as e:
-                logger.warning(f"Failed to save generated {content_type} to database: {e}")
-        
-        processing_time = time.time() - start_time
-        
-        # Prepare response data
-        if hasattr(result, 'to_dict'):
-            response_data = result.to_dict()
-        else:
-            response_data = result
-        
-        return {
-            "success": True,
-            "content_type": content_type,
-            "object_id": object_id,
-            "data": response_data,
-            "processing_time": processing_time,
-            "generated_via": "factory_pattern"
-        }
-        
-    except HTTPException:
-        raise
+            import json
+            # Extract JSON from response with robust brace counting
+            response_stripped = response.strip()
+            start = response_stripped.find('{')
+            
+            # Find the last valid closing brace by counting braces
+            end = -1
+            brace_count = 0
+            for i, char in enumerate(response_stripped[start:], start):
+                if char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        end = i + 1
+                        break
+            
+            if start != -1 and end > start:
+                json_str = response_stripped[start:end]
+                parsed_data = json.loads(json_str)
+                return parsed_data
+            else:
+                # Fallback to raw text
+                return {"equipment": response}
+        except:
+            # Fallback to raw text
+            return {"equipment": response}
+            
     except Exception as e:
-        processing_time = time.time() - start_time
-        logger.error(f"Unified generation failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Content generation failed: {str(e)}")
-
-
-@app.post("/api/v1/generate/character-complete", tags=["generation", "factory-v1"])
-async def generate_character_complete(
-    prompt: str,
-    level: Optional[int] = 1,
-    include_backstory: Optional[bool] = True,
-    include_equipment: Optional[bool] = True,
-    save_to_database: Optional[bool] = True,
-    db = Depends(get_db)
-):
-    """
-    Generate a complete character with backstory and equipment in one call.
-    
-    PHASE 3 FEATURE: Demonstrates factory coordination for complex workflows.
-    This replaces multiple separate API calls with a single, intelligent endpoint.
-    """
-    import time
-    start_time = time.time()
-    
-    try:
-        logger.info(f"Generating complete character: {prompt[:100]}...")
-        
-        # Generate base character using factory
-        factory = app.state.creation_factory
-        character_result = await factory.create_from_scratch(
-            CreationOptions.CHARACTER,
-            prompt,
-            user_preferences={"level": level}
-        )
-        
-        # Enhance with additional content if requested
-        enhancements = {}
-        
-        if include_backstory:
-            try:
-                # Extract character data for backstory generation
-                character_data = character_result.to_dict() if hasattr(character_result, 'to_dict') else character_result
-                backstory_data = await _factory_generate_backstory(character_data.get("core", {}))
-                enhancements["backstory_details"] = backstory_data
-                
-                # Update character's backstory if it's basic
-                if hasattr(character_result, 'core') and hasattr(character_result.core, 'backstory'):
-                    if not character_result.core.backstory or len(character_result.core.backstory) < 100:
-                        character_result.core.backstory = backstory_data.get("backstory", character_result.core.backstory)
-                
-            except Exception as e:
-                logger.warning(f"Failed to enhance backstory: {e}")
-                enhancements["backstory_warning"] = "Backstory generation failed, using basic version"
-        
-        if include_equipment:
-            try:
-                # Generate equipment suggestions
-                character_data = character_result.to_dict() if hasattr(character_result, 'to_dict') else character_result
-                equipment_data = await _factory_generate_equipment(character_data.get("core", {}))
-                enhancements["equipment_suggestions"] = equipment_data
-                
-            except Exception as e:
-                logger.warning(f"Failed to generate equipment suggestions: {e}")
-                enhancements["equipment_warning"] = "Equipment suggestions failed"
-        
-        object_id = None
-        
-        # Save to database if requested
-        if save_to_database:
-            try:
-                # Convert to database format
-                character_data = character_result.to_dict() if hasattr(character_result, 'to_dict') else character_result
-                
-                db_character_data = {
-                    "name": character_data.get("core", {}).get("name", "Generated Character"),
-                    "species": character_data.get("core", {}).get("species", "Human"),
-                    "background": character_data.get("core", {}).get("background", "Folk Hero"),
-                    "alignment": " ".join(character_data.get("core", {}).get("alignment", ["Neutral", "Good"])),
-                    "level": character_data.get("core", {}).get("level", level),
-                    "character_classes": character_data.get("core", {}).get("character_classes", {"Fighter": level}),
-                    "backstory": character_data.get("core", {}).get("backstory", ""),
-                    "abilities": character_data.get("core", {}).get("abilities", {
-                        "strength": 10, "dexterity": 10, "constitution": 10,
-                        "intelligence": 10, "wisdom": 10, "charisma": 10
-                    }),
-                    "armor_class": character_data.get("stats", {}).get("armor_class", 10),
-                    "hit_points": character_data.get("stats", {}).get("max_hit_points", 10),
-                    "proficiency_bonus": character_data.get("stats", {}).get("proficiency_bonus", 2),
-                    "skills": character_data.get("stats", {}).get("skills", {}),
-                    "equipment": character_data.get("state", {}).get("equipment", {})
-                }
-                
-                db_character = CharacterDB.create_character(db, db_character_data)
-                object_id = db_character.id
-                logger.info(f"Complete character saved to database with ID: {object_id}")
-                
-            except Exception as e:
-                logger.warning(f"Failed to save complete character to database: {e}")
-                enhancements["save_warning"] = f"Character generated but not saved: {str(e)}"
-        
-        processing_time = time.time() - start_time
-        
-        # Prepare response
-        response_data = character_result.to_dict() if hasattr(character_result, 'to_dict') else character_result
-        
-        return {
-            "success": True,
-            "character_id": object_id,
-            "character": response_data,
-            "enhancements": enhancements,
-            "processing_time": processing_time,
-            "generated_via": "factory_complete_workflow"
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        processing_time = time.time() - start_time
-        logger.error(f"Complete character generation failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Complete character generation failed: {str(e)}")
-
-
-@app.post("/api/v1/characters/{character_id}/evolve", tags=["characters", "factory-v1"])
-async def evolve_character_endpoint(
-    character_id: str,
-    evolution_prompt: str,
-    preserve_backstory: Optional[bool] = True,
-    save_changes: Optional[bool] = True,
-    db = Depends(get_db)
-):
-    """
-    Evolve an existing character using factory-based evolution.
-    
-    PHASE 3 FEATURE: Character evolution with history preservation.
-    This demonstrates factory evolution capabilities within the v1 character namespace.
-    """
-    import time
-    start_time = time.time()
-    
-    try:
-        logger.info(f"Evolving character {character_id}: {evolution_prompt[:100]}...")
-        
-        # Load existing character
-        existing_character = CharacterDB.get_character(db, character_id)
-        if not existing_character:
-            raise HTTPException(status_code=404, detail="Character not found")
-        
-        existing_data = existing_character.to_dict()
-        
-        # Use factory evolution
-        factory = app.state.creation_factory
-        evolved_character = await factory.evolve_existing(
-            CreationOptions.CHARACTER,
-            existing_data,
-            evolution_prompt,
-            preserve_backstory=preserve_backstory
-        )
-        
-        # Save changes if requested
-        if save_changes:
-            try:
-                CharacterDB.save_character_sheet(db, evolved_character, character_id)
-                logger.info(f"Evolved character saved back to database")
-            except Exception as e:
-                logger.warning(f"Failed to save evolved character: {e}")
-                
-        processing_time = time.time() - start_time
-        
-        # Prepare response
-        response_data = evolved_character.to_dict() if hasattr(evolved_character, 'to_dict') else evolved_character
-        
-        return {
-            "success": True,
-            "character_id": character_id,
-            "evolved_character": response_data,
-            "evolution_prompt": evolution_prompt,
-            "changes_saved": save_changes,
-            "processing_time": processing_time,
-            "evolved_via": "factory_evolution"
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        processing_time = time.time() - start_time
-        logger.error(f"Character evolution failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Character evolution failed: {str(e)}")
+        logger.error(f"Equipment generation failed: {e}")
+        raise HTTPException(status_code=500, detail="Equipment generation failed")
 
 
 # ============================================================================
@@ -1594,323 +1242,6 @@ async def validate_existing_character(character_id: str, db = Depends(get_db)):
     except Exception as e:
         logger.error(f"Character validation failed for ID {character_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Validation failed: {str(e)}")
-
-
-# ============================================================================
-# FACTORY-BASED CREATION ENDPOINTS (PHASE 2)
-# ============================================================================
-
-@app.post("/api/v2/factory/create", response_model=FactoryResponse, tags=["factory-v2"])
-async def factory_create_from_scratch(request: FactoryCreateRequest, db = Depends(get_db)):
-    """
-    Create D&D objects from scratch using the factory pattern.
-    
-    Supports: character, monster, npc, weapon, armor, spell, other_item
-    This uses the unified creation architecture where character creation is the foundation.
-    
-    Operation Flow: Request -> CreationFactory.create_from_scratch() -> Optional DB Save -> Response
-    """
-    import time
-    start_time = time.time()
-    
-    try:
-        # Validate creation type
-        try:
-            creation_type = CreationOptions(request.creation_type)
-        except ValueError:
-            raise HTTPException(status_code=400, detail=f"Invalid creation type: {request.creation_type}")
-        
-        logger.info(f"Factory creating {creation_type.value} from scratch: {request.prompt[:100]}...")
-        
-        # Use the factory to create the object
-        factory = app.state.creation_factory
-        result = await factory.create_from_scratch(
-            creation_type, 
-            request.prompt,
-            user_preferences=request.user_preferences
-        )
-        
-        object_id = None
-        warnings = []
-        
-        # Save to database if requested (only for characters currently)
-        if request.save_to_database and creation_type == CreationOptions.CHARACTER:
-            try:
-                # Convert CharacterSheet to database format
-                if hasattr(result, 'to_dict'):
-                    character_data = result.to_dict()
-                else:
-                    character_data = result
-                
-                # Create flattened data structure for database
-                db_character_data = {
-                    "name": character_data.get("core", {}).get("name", "Generated Character"),
-                    "species": character_data.get("core", {}).get("species", "Human"),
-                    "background": character_data.get("core", {}).get("background", "Folk Hero"),
-                    "alignment": " ".join(character_data.get("core", {}).get("alignment", ["Neutral", "Good"])),
-                    "level": character_data.get("core", {}).get("level", 1),
-                    "character_classes": character_data.get("core", {}).get("character_classes", {"Fighter": 1}),
-                    "backstory": character_data.get("core", {}).get("backstory", ""),
-                    "abilities": character_data.get("core", {}).get("abilities", {
-                        "strength": 10, "dexterity": 10, "constitution": 10,
-                        "intelligence": 10, "wisdom": 10, "charisma": 10
-                    }),
-                    "armor_class": character_data.get("stats", {}).get("armor_class", 10),
-                    "hit_points": character_data.get("stats", {}).get("max_hit_points", 10),
-                    "proficiency_bonus": character_data.get("stats", {}).get("proficiency_bonus", 2),
-                    "skills": character_data.get("stats", {}).get("skills", {}),
-                    "equipment": character_data.get("state", {}).get("equipment", {})
-                }
-                
-                db_character = CharacterDB.create_character(db, db_character_data)
-                object_id = db_character.id
-                logger.info(f"Factory-created character saved to database with ID: {object_id}")
-                
-            except Exception as e:
-                logger.warning(f"Failed to save factory-created character to database: {e}")
-                warnings.append(f"Object created but not saved to database: {str(e)}")
-        
-        processing_time = time.time() - start_time
-        
-        # Prepare response data
-        if hasattr(result, 'to_dict'):
-            response_data = result.to_dict()
-        else:
-            response_data = result
-        
-        logger.info(f"Factory creation completed in {processing_time:.2f}s")
-        
-        return FactoryResponse(
-            success=True,
-            creation_type=creation_type.value,
-            object_id=object_id,
-            data=response_data,
-            warnings=warnings if warnings else None,
-            processing_time=processing_time
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        processing_time = time.time() - start_time
-        logger.error(f"Factory creation failed: {e}")
-        return FactoryResponse(
-            success=False,
-            creation_type=request.creation_type,
-            data={"error": str(e)},
-            processing_time=processing_time
-        )
-
-
-@app.post("/api/v2/factory/evolve", response_model=FactoryResponse, tags=["factory-v2"])
-async def factory_evolve_existing(request: FactoryEvolveRequest, db = Depends(get_db)):
-    """
-    Evolve existing D&D objects using their history and new prompts.
-    
-    This preserves existing backstory and uses journal entries as context.
-    Supports: character, monster, npc
-    
-    Operation Flow: Load from DB -> CreationFactory.evolve_existing() -> Save back -> Response
-    """
-    import time
-    start_time = time.time()
-    
-    try:
-        # Validate creation type
-        try:
-            creation_type = CreationOptions(request.creation_type)
-        except ValueError:
-            raise HTTPException(status_code=400, detail=f"Invalid creation type: {request.creation_type}")
-        
-        if creation_type not in [CreationOptions.CHARACTER, CreationOptions.MONSTER, CreationOptions.NPC]:
-            raise HTTPException(status_code=400, detail=f"Evolution not supported for: {creation_type.value}")
-        
-        logger.info(f"Factory evolving {creation_type.value} ID {request.character_id}: {request.evolution_prompt[:100]}...")
-        
-        # Load existing object from database
-        if creation_type == CreationOptions.CHARACTER:
-            existing_character = CharacterDB.get_character(db, request.character_id)
-            if not existing_character:
-                raise HTTPException(status_code=404, detail="Character not found")
-            existing_data = existing_character.to_dict()
-        else:
-            # For monsters/NPCs, implement similar loading logic when available
-            raise HTTPException(status_code=501, detail=f"Evolution for {creation_type.value} not yet implemented")
-        
-        # Use the factory to evolve the object
-        factory = app.state.creation_factory
-        result = await factory.evolve_existing(
-            creation_type,
-            existing_data,
-            request.evolution_prompt,
-            preserve_backstory=request.preserve_backstory,
-            user_preferences=request.user_preferences
-        )
-        
-        object_id = request.character_id
-        warnings = []
-        
-        # Save evolved object back to database if requested
-        if request.save_to_database and creation_type == CreationOptions.CHARACTER:
-            try:
-                # Save the evolved character sheet back to database
-                CharacterDB.save_character_sheet(db, result, request.character_id)
-                logger.info(f"Evolved character saved back to database with ID: {object_id}")
-                
-            except Exception as e:
-                logger.warning(f"Failed to save evolved character to database: {e}")
-                warnings.append(f"Object evolved but not saved to database: {str(e)}")
-        
-        processing_time = time.time() - start_time
-        
-        # Prepare response data
-        if hasattr(result, 'to_dict'):
-            response_data = result.to_dict()
-        else:
-            response_data = result
-        
-        logger.info(f"Factory evolution completed in {processing_time:.2f}s")
-        
-        return FactoryResponse(
-            success=True,
-            creation_type=creation_type.value,
-            object_id=object_id,
-            data=response_data,
-            warnings=warnings if warnings else None,
-            processing_time=processing_time
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        processing_time = time.time() - start_time
-        logger.error(f"Factory evolution failed: {e}")
-        return FactoryResponse(
-            success=False,
-            creation_type=request.creation_type,
-            data={"error": str(e)},
-            processing_time=processing_time
-        )
-
-
-@app.post("/api/v2/factory/level-up", response_model=FactoryResponse, tags=["factory-v2"])
-async def factory_level_up_character(request: FactoryLevelUpRequest, db = Depends(get_db)):
-    """
-    Level up a character using factory-based evolution with story context.
-    
-    This is a specialized evolution that preserves character history and makes
-    appropriate advancement choices based on journal entries and level info.
-    
-    Operation Flow: Load -> level_up_character() -> Save back -> Response
-    """
-    import time
-    start_time = time.time()
-    
-    try:
-        logger.info(f"Factory leveling up character ID {request.character_id} to level {request.new_level}")
-        
-        # Load existing character from database
-        existing_character = CharacterDB.get_character(db, request.character_id)
-        if not existing_character:
-            raise HTTPException(status_code=404, detail="Character not found")
-        existing_data = existing_character.to_dict()
-        
-        # Prepare level info for the factory function
-        level_info = {
-            "new_level": request.new_level,
-            "multiclass": request.multiclass,
-            "context": request.context,
-            "story_reason": request.story_reason
-        }
-        
-        # Use the factory level-up function
-        result = await level_up_character(
-            existing_data,
-            level_info,
-            app.state.llm_service,
-            preserve_backstory=request.preserve_backstory,
-            user_preferences={}
-        )
-        
-        object_id = request.character_id
-        warnings = []
-        
-        # Save leveled character back to database if requested
-        if request.save_to_database:
-            try:
-                CharacterDB.save_character_sheet(db, result, request.character_id)
-                logger.info(f"Leveled up character saved back to database with ID: {object_id}")
-                
-            except Exception as e:
-                logger.warning(f"Failed to save leveled character to database: {e}")
-                warnings.append(f"Character leveled but not saved to database: {str(e)}")
-        
-        processing_time = time.time() - start_time
-        
-        # Prepare response data
-        if hasattr(result, 'to_dict'):
-            response_data = result.to_dict()
-        else:
-            response_data = result
-        
-        logger.info(f"Factory level-up completed in {processing_time:.2f}s")
-        
-        return FactoryResponse(
-            success=True,
-            creation_type="character",
-            object_id=object_id,
-            data=response_data,
-            warnings=warnings if warnings else None,
-            processing_time=processing_time
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        processing_time = time.time() - start_time
-        logger.error(f"Factory level-up failed: {e}")
-        return FactoryResponse(
-            success=False,
-            creation_type="character",
-            data={"error": str(e)},
-            processing_time=processing_time
-        )
-
-
-@app.get("/api/v2/factory/types", tags=["factory-v2"])
-async def get_factory_creation_types():
-    """
-    Get available creation types for the factory system.
-    
-    Returns the types of D&D objects that can be created or evolved.
-    """
-    return {
-        "creation_types": [option.value for option in CreationOptions],
-        "create_from_scratch": {
-            "supported": [
-                CreationOptions.CHARACTER.value,
-                CreationOptions.MONSTER.value,
-                CreationOptions.NPC.value,
-                CreationOptions.WEAPON.value,
-                CreationOptions.ARMOR.value,
-                CreationOptions.SPELL.value,
-                CreationOptions.OTHER_ITEM.value
-            ],
-            "description": "Create entirely new objects using LLM generation"
-        },
-        "evolve_existing": {
-            "supported": [
-                CreationOptions.CHARACTER.value,
-                CreationOptions.MONSTER.value,
-                CreationOptions.NPC.value
-            ],
-            "description": "Evolve existing objects using their history and new prompts"
-        },
-        "level_up": {
-            "supported": [CreationOptions.CHARACTER.value],
-            "description": "Specialized character evolution for leveling up"
-        }
-    }
 
 
 # ============================================================================
@@ -2316,41 +1647,216 @@ async def create_character_tag(
 # CONTENT CREATION ENDPOINTS - USING REFACTORED MODULES
 # ============================================================================
 
-# PHASE 4 REMOVAL: /api/v1/characters/generate removed
-# This endpoint has been replaced by:
-# POST /api/v2/factory/create with content_type="character" and save_to_database=true
-# 
-# Migration guide:
-# OLD: POST /api/v1/characters/generate?prompt="Create a wizard"
-# NEW: POST /api/v2/factory/create 
-#      Body: {"creation_type": "character", "prompt": "Create a wizard", "save_to_database": true}
+@app.post("/api/v1/characters/generate", tags=["character-generation"])
+async def generate_character(prompt: str, db = Depends(get_db)):
+    """
+    Generate a new character using the refactored CharacterCreator with LLM integration.
+    
+    This endpoint uses the new shared components architecture for character generation.
+    """
+    try:
+        # Create LLM service with increased timeout for slower machines
+        # Using tinyllama for faster development testing
+        llm_service = create_llm_service("ollama", model="tinyllama:latest", timeout=300)
+        
+        # Create character using refactored module
+        creator = CharacterCreator(llm_service)
+        result = await creator.create_character(prompt)
+        
+        if result.success:
+            # Save the generated character to database
+            character_data = result.data.get("raw_data", {})
+            
+            # Convert to CharacterCreateRequest format for existing save logic
+            character_request = CharacterCreateRequest(
+                name=character_data.get("name", "Generated Character"),
+                species=character_data.get("species", ""),
+                background=character_data.get("background", ""),
+                alignment=character_data.get("alignment", ["Neutral", "Neutral"]),
+                character_classes=character_data.get("character_classes", character_data.get("classes", {})),
+                abilities=character_data.get("ability_scores", {}),
+                backstory=character_data.get("backstory", ""),
+                equipment=character_data.get("equipment", {})
+            )
+            
+            # Use existing character creation endpoint logic to save
+            saved_character = await create_character(character_request, db)
+            
+            return {
+                "success": True,
+                "generation_time": result.creation_time,
+                "warnings": result.warnings,
+                "character": saved_character,
+                "generation_metadata": result.data.get("creation_metadata", {})
+            }
+        else:
+            raise HTTPException(status_code=500, detail=f"Character generation failed: {result.error}")
+            
+    except Exception as e:
+        logger.error(f"Character generation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Character generation failed: {str(e)}")
 
 
-# PHASE 4 REMOVAL: /api/v1/items/create removed
-# This endpoint has been replaced by:
-# POST /api/v2/factory/create with content_type="weapon", "armor", or "other_item"
-#
-# Migration guide:
-# OLD: POST /api/v1/items/create Body: {"description": "magic sword", "item_type": "weapon"}
-# NEW: POST /api/v2/factory/create Body: {"creation_type": "weapon", "prompt": "magic sword"}
+@app.post("/api/v1/items/create", tags=["content-creation"])
+async def create_item(item: ItemCreateRequest, db = Depends(get_db)):
+    """
+    Create a new item using the refactored ItemCreator.
+    
+    This endpoint uses the new shared components architecture for item creation.
+    """
+    try:
+        # Create LLM service with increased timeout for slower machines
+        # Using tinyllama for faster development testing
+        llm_service = create_llm_service("ollama", model="tinyllama:latest", timeout=300)
+        
+        # Create item using refactored module
+        creator = ItemCreator(llm_service)
+        
+        # Map item_type string to enum
+        item_type_mapping = {
+            "weapon": ItemType.WEAPON,
+            "armor": ItemType.ARMOR,
+            "shield": ItemType.SHIELD,
+            "spell": ItemType.SPELL,
+            "magic_item": ItemType.MAGIC_ITEM,
+            "potion": ItemType.POTION,
+            "scroll": ItemType.SCROLL,
+            "tool": ItemType.TOOL,
+            "adventuring_gear": ItemType.ADVENTURING_GEAR
+        }
+        
+        item_type_enum = item_type_mapping.get(item.item_type.lower(), ItemType.MAGIC_ITEM)
+        
+        # Create item
+        result = await creator.create_item(item.description, item_type_enum, character_level=1)
+        
+        if result.success:
+            # TODO: Save to database if needed
+            return {
+                "success": True,
+                "creation_time": result.creation_time,
+                "warnings": result.warnings,
+                "item": result.data
+            }
+        else:
+            raise HTTPException(status_code=500, detail=f"Item creation failed: {result.error}")
+            
+    except Exception as e:
+        logger.error(f"Item creation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Item creation failed: {str(e)}")
 
 
-# PHASE 4 REMOVAL: /api/v1/npcs/create removed
-# This endpoint has been replaced by:
-# POST /api/v2/factory/create with content_type="npc"
-#
-# Migration guide:
-# OLD: POST /api/v1/npcs/create Body: {"description": "tavern keeper", "npc_type": "minor"}
-# NEW: POST /api/v2/factory/create Body: {"creation_type": "npc", "prompt": "tavern keeper"}
+@app.post("/api/v1/npcs/create", tags=["content-creation"])
+async def create_npc(npc: NPCCreateRequest, db = Depends(get_db)):
+    """
+    Create a new NPC using the refactored NPCCreator.
+    
+    This endpoint uses the new shared components architecture for NPC creation.
+    """
+    try:
+        # Create LLM service with increased timeout for slower machines
+        # Using tinyllama for faster development testing
+        llm_service = create_llm_service("ollama", model="tinyllama:latest", timeout=300)
+        
+        # Create NPC using refactored module
+        creator = NPCCreator(llm_service)
+        
+        # Map npc_type string to enum
+        npc_type_enum = NPCType.MINOR if npc.npc_type.lower() == "minor" else NPCType.MAJOR
+        
+        # Map to role enum (default to civilian)
+        npc_role_enum = NPCRole.CIVILIAN
+        role_mapping = {
+            "merchant": NPCRole.MERCHANT,
+            "guard": NPCRole.GUARD,
+            "noble": NPCRole.NOBLE,
+            "scholar": NPCRole.SCHOLAR,
+            "artisan": NPCRole.ARTISAN,
+            "criminal": NPCRole.CRIMINAL,
+            "soldier": NPCRole.SOLDIER
+        }
+        
+        # Try to infer role from description or npc_type
+        for role_name, role_enum in role_mapping.items():
+            if role_name in npc.description.lower() or role_name in npc.npc_type.lower():
+                npc_role_enum = role_enum
+                break
+        
+        # Create NPC
+        result = await creator.create_npc(npc.description, npc_type_enum, npc_role_enum)
+        
+        if result.success:
+            # TODO: Save to database if needed
+            return {
+                "success": True,
+                "creation_time": result.creation_time,
+                "warnings": result.warnings,
+                "npc": result.data
+            }
+        else:
+            raise HTTPException(status_code=500, detail=f"NPC creation failed: {result.error}")
+            
+    except Exception as e:
+        logger.error(f"NPC creation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"NPC creation failed: {str(e)}")
 
 
-# PHASE 4 REMOVAL: /api/v1/creatures/create removed
-# This endpoint has been replaced by:
-# POST /api/v2/factory/create with content_type="monster"
-#
-# Migration guide:
-# OLD: POST /api/v1/creatures/create Body: {"description": "fire dragon", "creature_type": "dragon", "challenge_rating": 5}
-# NEW: POST /api/v2/factory/create Body: {"creation_type": "monster", "prompt": "fire dragon with CR 5"}
+@app.post("/api/v1/creatures/create", tags=["content-creation"])
+async def create_creature(creature: CreatureCreateRequest, db = Depends(get_db)):
+    """
+    Create a new creature using the refactored CreatureCreator.
+    
+    This endpoint uses the new shared components architecture for creature creation.
+    """
+    try:
+        # Create LLM service with increased timeout for slower machines
+        # Using tinyllama for faster development testing
+        llm_service = create_llm_service("ollama", model="tinyllama:latest", timeout=300)
+        
+        # Create creature using refactored module
+        creator = CreatureCreator(llm_service)
+        
+        # Map creature_type string to enum
+        creature_type_mapping = {
+            "aberration": CreatureType.ABERRATION,
+            "beast": CreatureType.BEAST,
+            "celestial": CreatureType.CELESTIAL,
+            "construct": CreatureType.CONSTRUCT,
+            "dragon": CreatureType.DRAGON,
+            "elemental": CreatureType.ELEMENTAL,
+            "fey": CreatureType.FEY,
+            "fiend": CreatureType.FIEND,
+            "giant": CreatureType.GIANT,
+            "humanoid": CreatureType.HUMANOID,
+            "monstrosity": CreatureType.MONSTROSITY,
+            "ooze": CreatureType.OOZE,
+            "plant": CreatureType.PLANT,
+            "undead": CreatureType.UNDEAD
+        }
+        
+        creature_type_enum = creature_type_mapping.get(creature.creature_type.lower(), CreatureType.BEAST)
+        
+        # Create creature
+        result = creator.create_creature(
+            creature.description, 
+            challenge_rating=creature.challenge_rating or 1.0,
+            creature_type=creature_type_enum.value
+        )
+        
+        if result.success:
+            # TODO: Save to database if needed
+            return {
+                "success": True,
+                "creation_time": result.creation_time,
+                "warnings": result.warnings,
+                "creature": result.data
+            }
+        else:
+            raise HTTPException(status_code=500, detail=f"Creature creation failed: {result.error}")
+            
+    except Exception as e:
+        logger.error(f"Creature creation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Creature creation failed: {str(e)}")
 
 
 # ============================================================================

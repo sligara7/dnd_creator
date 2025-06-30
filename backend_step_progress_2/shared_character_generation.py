@@ -38,9 +38,9 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CreationConfig:
     """Configuration for character creation process."""
-    base_timeout: int = 20
-    backstory_timeout: int = 15
-    custom_content_timeout: int = 30
+    base_timeout: int = 300        # 5 minutes for LLM requests
+    backstory_timeout: int = 300   # 5 minutes for backstory generation
+    custom_content_timeout: int = 300  # 5 minutes for custom content
     max_retries: int = 2
     enable_progress_feedback: bool = True
     auto_save: bool = False

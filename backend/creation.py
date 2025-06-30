@@ -32,17 +32,36 @@ from creation_validation import (
 # Import from centralized enums
 from enums import (
     NPCType, NPCRole, NPCSpecies, NPCClass, CreatureType, CreatureSize, CreatureAlignment,
-    ItemType, ItemRarity, WeaponCategory, ArmorCategory
+    ItemType, ItemRarity, WeaponCategory, ArmorCategory, FeatCategory, FeatType, FeatPrerequisite,
+    Skill, SkillAbilityMapping, SkillSource
 )
 
 # Import core D&D components
 from core_models import AbilityScore, ProficiencyLevel, ASIManager, MagicItemManager
-from character_models import DnDCondition, CharacterCore, CharacterSheet, CharacterState, CharacterStats
+from character_models import CharacterCore  # DnDCondition, CharacterSheet, CharacterState, CharacterStats - may not exist yet
 from llm_service import create_llm_service, LLMService
 from database_models import CustomContent
 from ability_management import AdvancedAbilityManager
 from generators import BackstoryGenerator, CustomContentGenerator
 from custom_content_models import ContentRegistry, CustomClass
+
+# Import D&D 5e official data
+from dnd_data import (
+    DND_SPELL_DATABASE, CLASS_SPELL_LISTS, COMPLETE_SPELL_LIST, SPELL_LOOKUP,
+    DND_WEAPON_DATABASE, ALL_WEAPONS, WEAPON_LOOKUP, CLASS_WEAPON_PROFICIENCIES,
+    DND_FEAT_DATABASE, ALL_FEATS, FEAT_LOOKUP, FEAT_AVAILABILITY,
+    DND_ARMOR_DATABASE, ALL_ARMOR, ARMOR_LOOKUP, CLASS_ARMOR_PROFICIENCIES,
+    DND_TOOLS_DATABASE, ALL_TOOLS, TOOLS_LOOKUP,
+    DND_ADVENTURING_GEAR_DATABASE, ALL_ADVENTURING_GEAR, ADVENTURING_GEAR_LOOKUP, CLASS_EQUIPMENT_PREFERENCES,
+    is_existing_dnd_spell, find_similar_spells, is_existing_dnd_weapon, find_similar_weapons,
+    is_existing_dnd_feat, find_similar_feats, get_feat_data,
+    is_existing_dnd_armor, find_similar_armor, get_armor_data, get_appropriate_armor_for_character,
+    is_existing_dnd_tool, find_similar_tools, get_tool_data, get_appropriate_tools_for_character,
+    is_existing_dnd_gear, find_similar_gear, get_gear_data, get_appropriate_equipment_pack_for_character,
+    get_weapon_data, get_appropriate_spells_for_character, get_appropriate_weapons_for_character,
+    get_appropriate_feats_for_character, get_available_feats_for_level, validate_feat_prerequisites,
+    get_spell_schools_for_class
+)
 
 logger = logging.getLogger(__name__)
 
@@ -229,6 +248,215 @@ class BaseCreator(ABC):
             return False
         
         return any(cls.lower() in spellcasting_classes for cls in class_names)
+    
+    def _get_feat_section_for_level(self, level: int) -> str:
+        """Get appropriate feat section for character level based on D&D 5e 2024 rules."""
+        feat_parts = []
+        
+        # Origin feat (always available at level 1)
+        feat_parts.append('"origin_feat":"Origin Feat Name"')
+        
+        # General feats available at levels 4, 8, 12, 16, 19
+        general_feat_levels = [4, 8, 12, 16, 19]
+        available_general_feats = [l for l in general_feat_levels if l <= level]
+        
+        if available_general_feats:
+            general_feats = ['{"name":"General Feat","level":' + str(l) + ',"grants_asi":true}' 
+                           for l in available_general_feats]
+            feat_parts.append('"general_feats":[' + ','.join(general_feats) + ']')
+        else:
+            feat_parts.append('"general_feats":[]')
+        
+        # Epic Boon at level 19
+        if level >= 19:
+            feat_parts.append('"epic_boon":"Epic Boon Name"')
+        
+        # Fighting style feats (conditional)
+        feat_parts.append('"fighting_style_feats":[]')
+        
+        return ','.join(feat_parts) + ','
+    
+    def _determine_character_skills(self, character_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Determine character skills based on D&D 5e 2024 rules.
+        Skills come from species, class, background, and feats.
+        """
+        skills = {}
+        skill_sources = {}
+        
+        # Get character details
+        species = character_data.get("species", "Human")
+        classes = character_data.get("classes", {"Fighter": 1})
+        background = character_data.get("background", "Folk Hero")
+        level = character_data.get("level", 1)
+        
+        # Add species-based skills
+        species_skills = self._get_species_skills(species)
+        for skill in species_skills:
+            skills[skill] = "proficient"
+            skill_sources[skill] = "species"
+        
+        # Add class-based skills
+        for class_name, class_level in classes.items():
+            class_skills = self._get_class_skills(class_name, class_level)
+            for skill in class_skills:
+                if skill not in skills:
+                    skills[skill] = "proficient"
+                    skill_sources[skill] = "class"
+                elif skills[skill] == "proficient":
+                    # Already proficient, check for expertise
+                    if self._class_grants_expertise(class_name, skill):
+                        skills[skill] = "expert"
+        
+        # Add background-based skills
+        background_skills = self._get_background_skills(background)
+        for skill in background_skills:
+            if skill not in skills:
+                skills[skill] = "proficient"
+                skill_sources[skill] = "background"
+        
+        # Add feat-based skills
+        feat_skills = self._get_feat_skills(character_data)
+        for skill, proficiency_level in feat_skills.items():
+            if skill not in skills:
+                skills[skill] = proficiency_level
+                skill_sources[skill] = "feat"
+            elif skills[skill] == "proficient" and proficiency_level == "expert":
+                skills[skill] = "expert"
+        
+        # Store skill proficiencies in character data
+        character_data["skill_proficiencies"] = skills
+        character_data["skill_sources"] = skill_sources
+        
+        return character_data
+    
+    def _get_species_skills(self, species: str) -> List[str]:
+        """Get skill proficiencies granted by species."""
+        species_skills = {
+            "Human": ["persuasion"],  # Variant Human often gets a skill
+            "Elf": ["perception"],
+            "Dwarf": ["history"],  # Knowledge of stonework and dwarven history
+            "Halfling": ["stealth"],
+            "Dragonborn": ["intimidation"],
+            "Gnome": ["arcana"],  # Rock gnome tinkering knowledge
+            "Half-Elf": ["persuasion", "deception"],  # Choose 2 from any
+            "Half-Orc": ["intimidation"],
+            "Tiefling": ["deception"],
+            "Aasimar": ["insight"],
+            "Goliath": ["athletics"],
+            "Firbolg": ["nature"],
+            "Kenku": ["deception", "stealth"],
+            "Tabaxi": ["perception", "stealth"],
+            "Tortle": ["survival"],
+            "Lizardfolk": ["nature", "survival"],
+            "Aarakocra": ["perception"],
+            "Genasi": [],  # Varies by subtype
+            "Githyanki": ["intimidation"],
+            "Githzerai": ["insight"]
+        }
+        return species_skills.get(species, [])
+    
+    def _get_class_skills(self, class_name: str, level: int) -> List[str]:
+        """Get skill proficiencies granted by class."""
+        class_skills = {
+            "Barbarian": ["animal_handling", "athletics", "intimidation", "nature", "perception", "survival"],
+            "Bard": ["any_three"],  # Choose any 3 skills
+            "Cleric": ["history", "insight", "medicine", "persuasion", "religion"],
+            "Druid": ["arcana", "animal_handling", "insight", "medicine", "nature", "perception", "religion", "survival"],
+            "Fighter": ["acrobatics", "animal_handling", "athletics", "history", "insight", "intimidation", "perception", "survival"],
+            "Monk": ["acrobatics", "athletics", "history", "insight", "religion", "stealth"],
+            "Paladin": ["athletics", "insight", "intimidation", "medicine", "persuasion", "religion"],
+            "Ranger": ["animal_handling", "athletics", "insight", "investigation", "nature", "perception", "stealth", "survival"],
+            "Rogue": ["acrobatics", "athletics", "deception", "insight", "intimidation", "investigation", "perception", "performance", "persuasion", "sleight_of_hand", "stealth"],
+            "Sorcerer": ["arcana", "deception", "insight", "intimidation", "persuasion", "religion"],
+            "Warlock": ["arcana", "deception", "history", "intimidation", "investigation", "nature", "religion"],
+            "Wizard": ["arcana", "history", "insight", "investigation", "medicine", "religion"]
+        }
+        
+        available_skills = class_skills.get(class_name, [])
+        
+        # For classes that choose from a list, simulate selection
+        if class_name == "Bard":
+            return ["persuasion", "performance", "deception"]  # Common bard skills
+        elif class_name == "Fighter":
+            return ["athletics", "intimidation"]  # Common fighter choices (2 skills)
+        elif class_name == "Rogue":
+            return ["stealth", "sleight_of_hand", "perception", "investigation"]  # 4 skills typical
+        elif class_name == "Ranger":
+            return ["survival", "nature", "perception"]  # 3 skills typical
+        else:
+            # Return first 2 skills for most classes
+            return available_skills[:2] if len(available_skills) >= 2 else available_skills
+    
+    def _get_background_skills(self, background: str) -> List[str]:
+        """Get skill proficiencies granted by background."""
+        background_skills = {
+            "Acolyte": ["insight", "religion"],
+            "Criminal": ["deception", "stealth"],
+            "Folk Hero": ["animal_handling", "survival"],
+            "Noble": ["history", "persuasion"],
+            "Sage": ["arcana", "history"],
+            "Soldier": ["athletics", "intimidation"],
+            "Charlatan": ["deception", "sleight_of_hand"],
+            "Entertainer": ["acrobatics", "performance"],
+            "Guild Artisan": ["insight", "persuasion"],
+            "Hermit": ["medicine", "religion"],
+            "Outlander": ["athletics", "survival"],
+            "Sailor": ["athletics", "perception"],
+            "Urchin": ["sleight_of_hand", "stealth"],
+            "Artisan": ["history", "investigation"],
+            "Courtier": ["insight", "persuasion"],
+            "Investigator": ["insight", "investigation"],
+            "Scholar": ["arcana", "history"],
+            "Spy": ["deception", "stealth"]
+        }
+        return background_skills.get(background, ["insight", "persuasion"])  # Default
+    
+    def _get_feat_skills(self, character_data: Dict[str, Any]) -> Dict[str, str]:
+        """Get skill proficiencies granted by feats."""
+        feat_skills = {}
+        
+        # Check origin feat
+        origin_feat = character_data.get("origin_feat", "")
+        if origin_feat == "Skilled":
+            # Skilled feat grants proficiency in 3 skills
+            feat_skills.update({
+                "athletics": "proficient",
+                "perception": "proficient",
+                "investigation": "proficient"
+            })
+        elif origin_feat == "Prodigy":
+            # Prodigy grants 1 skill and 1 expertise
+            feat_skills["insight"] = "expert"
+        
+        # Check general feats
+        general_feats = character_data.get("general_feats", [])
+        for feat in general_feats:
+            feat_name = feat.get("name", "")
+            if feat_name == "Skilled":
+                feat_skills.update({
+                    "survival": "proficient",
+                    "medicine": "proficient",
+                    "nature": "proficient"
+                })
+            elif feat_name == "Observant":
+                if "investigation" not in feat_skills:
+                    feat_skills["investigation"] = "proficient"
+                if "perception" not in feat_skills:
+                    feat_skills["perception"] = "proficient"
+        
+        return feat_skills
+    
+    def _class_grants_expertise(self, class_name: str, skill: str) -> bool:
+        """Check if a class grants expertise in a specific skill."""
+        expertise_classes = {
+            "Rogue": ["stealth", "sleight_of_hand", "deception", "investigation", "perception", "insight"],
+            "Bard": ["persuasion", "deception", "performance", "insight"]
+        }
+        
+        if class_name in expertise_classes:
+            return skill in expertise_classes[class_name]
+        return False
 
 # ============================================================================
 # CHARACTER CREATOR - THE COMPLETE FEATURE SET
@@ -325,7 +553,73 @@ class CharacterCreator(BaseCreator):
                     'custom_keys': list(custom_data.keys()) if custom_data else []
                 })
             
-            # Step 5: Create final character sheet
+            # Step 5: Enhance character spells
+            enhanced_spell_data = self._enhance_character_spells(base_data)
+            base_data.update(enhanced_spell_data)
+            
+            if verbose_generation and hasattr(self, 'verbose_logs'):
+                self.verbose_logs.append({
+                    'type': 'creation_step',
+                    'timestamp': time.time(),
+                    'step': 'enhance_spells',
+                    'description': 'Enhanced character spells with appropriate D&D 5e spells',
+                    'spell_count': len(enhanced_spell_data.get("spells_known", []))
+                })
+            
+            # Step 6: Enhance character weapons
+            enhanced_weapon_data = self._enhance_character_weapons(base_data)
+            base_data.update(enhanced_weapon_data)
+            
+            if verbose_generation and hasattr(self, 'verbose_logs'):
+                self.verbose_logs.append({
+                    'type': 'creation_step',
+                    'timestamp': time.time(),
+                    'step': 'enhance_weapons',
+                    'description': 'Enhanced character weapons with appropriate D&D 5e weapons',
+                    'weapon_count': len(enhanced_weapon_data.get("weapons", []))
+                })
+            
+            # Step 7: Enhance character feats
+            enhanced_feat_data = self._enhance_character_feats(base_data)
+            base_data.update(enhanced_feat_data)
+            
+            if verbose_generation and hasattr(self, 'verbose_logs'):
+                self.verbose_logs.append({
+                    'type': 'creation_step',
+                    'timestamp': time.time(),
+                    'step': 'enhance_feats',
+                    'description': 'Enhanced character feats with appropriate D&D 5e feats',
+                    'feat_count': len(enhanced_feat_data.get("general_feats", [])) + (1 if enhanced_feat_data.get("origin_feat") else 0)
+                })
+            
+            # Step 8: Enhance character armor
+            enhanced_armor_data = self._enhance_character_armor(base_data)
+            base_data.update(enhanced_armor_data)
+            
+            if verbose_generation and hasattr(self, 'verbose_logs'):
+                self.verbose_logs.append({
+                    'type': 'creation_step',
+                    'timestamp': time.time(),
+                    'step': 'enhance_armor',
+                    'description': 'Enhanced character armor with appropriate D&D 5e armor',
+                    'armor': enhanced_armor_data.get("armor", "None")
+                })
+            
+            # Step 9: Enhance character equipment and tools
+            enhanced_equipment_data = self._enhance_character_equipment(base_data)
+            base_data.update(enhanced_equipment_data)
+            
+            if verbose_generation and hasattr(self, 'verbose_logs'):
+                self.verbose_logs.append({
+                    'type': 'creation_step',
+                    'timestamp': time.time(),
+                    'step': 'enhance_equipment',
+                    'description': 'Enhanced character equipment with appropriate D&D 5e gear and tools',
+                    'equipment_count': len(enhanced_equipment_data.get("equipment", {})),
+                    'tools_count': len(enhanced_equipment_data.get("tools", []))
+                })
+            
+            # Step 10: Create final character sheet
             final_character = self._create_final_character(base_data, character_core)
             
             if verbose_generation and hasattr(self, 'verbose_logs'):
@@ -388,16 +682,185 @@ class CharacterCreator(BaseCreator):
         return data
     
     def _create_character_prompt(self, description: str, level: int) -> str:
-        """Create character generation prompt."""
-        return f"""Create D&D character. Return ONLY JSON:
+        """Create character generation prompt with D&D 5e 2024 feats and skills."""
+        # Determine feat availability based on level
+        feat_section = self._get_feat_section_for_level(level)
+        
+        # Create a sample character data to get appropriate spells
+        sample_character = {"level": level, "classes": {"Wizard": level}}  # Default for spell selection
+        suggested_spells = get_appropriate_spells_for_character(sample_character, 8)
+        
+        # Format spell suggestions for the prompt
+        spell_examples = []
+        for spell in suggested_spells[:6]:  # Show first 6 as examples
+            spell_examples.append(f'"{spell["name"]}" (Level {spell["level"]}, {spell["school"].title()})')
+        
+        spell_suggestion_text = ", ".join(spell_examples) if spell_examples else "Magic Missile, Fire Bolt, Cure Wounds"
+        
+        return f"""Create D&D 5e 2024 character. Return ONLY JSON:
 
 DESCRIPTION: {description}
 LEVEL: {level}
 
-{{"name":"Name","species":"Species","level":{level},"classes":{{"Class":{level}}},"background":"Background","alignment":["Ethics","Morals"],"ability_scores":{{"strength":15,"dexterity":14,"constitution":13,"intelligence":12,"wisdom":10,"charisma":8}},"skill_proficiencies":["Skill1","Skill2"],"personality_traits":["Trait"],"ideals":["Ideal"],"bonds":["Bond"],"flaws":["Flaw"],"armor":"Armor","weapons":[{{"name":"Weapon","damage":"1d8","properties":["property"]}}],"equipment":{{"Item":1}},"backstory":"Brief backstory"}}
+{{"name":"Name","species":"Species","level":{level},"classes":{{"Class":{level}}},"background":"Background","alignment":["Ethics","Morals"],"ability_scores":{{"strength":15,"dexterity":14,"constitution":13,"intelligence":12,"wisdom":10,"charisma":8}},"skill_proficiencies":{{"skill_name":"proficient"}},"personality_traits":["Trait"],"ideals":["Ideal"],"bonds":["Bond"],"flaws":["Flaw"],{feat_section}"armor":"Armor","weapons":[{{"name":"Weapon","damage":"1d8","properties":["property"]}}],"equipment":{{"Item":1}},"spells_known":[{{"name":"Spell Name","level":1,"school":"evocation","description":"Spell description"}}],"backstory":"Brief backstory"}}
 
-Match description exactly. Return complete JSON only."""
-    
+D&D 5e 2024 SKILL RULES:
+- Skills from Species: Each species grants specific skill proficiencies
+- Skills from Class: Classes grant choice of skills from their list (2-4 skills typically)
+- Skills from Background: Each background grants 2 specific skills
+- Skills from Feats: Some feats grant additional skill proficiencies or expertise
+- Expertise: Some classes (Rogue, Bard) can double proficiency bonus for certain skills
+- Tool Synergy: Tool proficiency + relevant skill can grant advantage
+
+STANDARD SKILLS (2024):
+Strength: Athletics
+Dexterity: Acrobatics, Stealth, Sleight of Hand
+Intelligence: Arcana, History, Investigation, Nature, Religion, Decorum
+Wisdom: Animal Handling, Insight, Medicine, Perception, Survival  
+Charisma: Deception, Intimidation, Performance, Persuasion
+
+SPELL SELECTION PRIORITY (VERY IMPORTANT):
+1. **MANDATORY FIRST PRIORITY**: Use ONLY existing D&D 5e spells when possible
+2. **REQUIRED**: Choose from these D&D 5e spells: {spell_suggestion_text}
+3. **FORBIDDEN**: Do NOT create new spells unless absolutely necessary for character concept
+4. **REQUIRED**: Spellcasters must have level-appropriate spells (cantrips + leveled spells)
+5. **REQUIRED**: Match spells to class theme (Wizard=all schools, Cleric=divine, Druid=nature, etc.)
+6. **SPELL FORMAT**: Use exact spell names from D&D 5e: "Magic Missile", "Fireball", "Cure Wounds", etc.
+
+COMMON D&D 5E SPELLS BY CLASS:
+- Wizard: Magic Missile, Shield, Mage Armor, Detect Magic, Fireball, Lightning Bolt, Counterspell
+- Cleric: Cure Wounds, Guiding Bolt, Bless, Spiritual Weapon, Hold Person, Dispel Magic
+- Druid: Goodberry, Cure Wounds, Entangle, Barkskin, Moonbeam, Call Lightning, Conjure Animals
+- Sorcerer: Fire Bolt, Shield, Magic Missile, Misty Step, Fireball, Haste, Counterspell
+- Warlock: Eldritch Blast, Hex, Armor of Agathys, Hold Person, Hunger of Hadar, Counterspell
+- Bard: Vicious Mockery, Healing Word, Dissonant Whispers, Heat Metal, Hypnotic Pattern, Counterspell
+- Paladin: Divine Smite, Bless, Cure Wounds, Aid, Lesser Restoration, Protection from Energy
+- Ranger: Hunter's Mark, Cure Wounds, Entangle, Pass without Trace, Spike Growth, Conjure Animals
+
+**CRITICAL**: Only use existing D&D 5e spell names. Do not invent new spells.
+
+WEAPON SELECTION PRIORITY (VERY IMPORTANT):
+1. **MANDATORY FIRST PRIORITY**: Use ONLY existing D&D 5e weapons when possible
+2. **REQUIRED**: Choose from standard D&D weapons: Longsword, Shortsword, Dagger, Rapier, Battleaxe, Greatsword, Longbow, Shortbow, etc.
+3. **FORBIDDEN**: Do NOT create new weapons unless absolutely necessary for character concept
+4. **REQUIRED**: Match weapons to class proficiencies (Simple/Martial) and character abilities
+5. **WEAPON FORMAT**: Use exact weapon names from D&D 5e: "Longsword", "Rapier", "Longbow", etc.
+
+D&D 5e 2024 WEAPON CATEGORIES AND PROPERTIES:
+Simple Melee: Club, Dagger, Greatclub, Handaxe, Javelin, Light Hammer, Mace, Quarterstaff, Sickle, Spear
+Simple Ranged: Dart, Light Crossbow, Shortbow, Sling
+Martial Melee: Battleaxe, Flail, Glaive, Greataxe, Greatsword, Halberd, Lance, Longsword, Maul, Morningstar, Pike, Rapier, Scimitar, Shortsword, Trident, Warhammer, War Pick, Whip
+Martial Ranged: Blowgun, Hand Crossbow, Heavy Crossbow, Longbow, Musket, Pistol
+
+WEAPON PROPERTIES:
+- Finesse: Use STR or DEX for attacks (Dagger, Dart, Rapier, Scimitar, Shortsword, Whip)
+- Light: Can dual-wield (Club, Dagger, Handaxe, Light Hammer, Sickle, Hand Crossbow, Scimitar, Shortsword)
+- Heavy: Disadvantage if STR/DEX < 13 (Glaive, Greataxe, Greatsword, Halberd, Lance, Maul, Pike, Heavy Crossbow, Longbow)
+- Reach: +5 feet reach (Glaive, Halberd, Lance, Pike, Whip)
+- Thrown: Can be thrown (Dagger, Handaxe, Javelin, Light Hammer, Spear, Dart, Trident)
+- Two-Handed: Requires both hands (Greatclub, Glaive, Greataxe, Greatsword, Halberd, Lance, Maul, Pike, Light Crossbow, Longbow, Heavy Crossbow, Shortbow)
+- Versatile: 1-hand or 2-hand damage (Quarterstaff, Spear, Battleaxe, Longsword, Trident, Warhammer, War Pick)
+
+WEAPON MASTERY PROPERTIES (2024):
+- Cleave: Hit adjacent enemy on successful hit (Greataxe, Halberd)
+- Graze: Deal ability mod damage on miss (Glaive, Greatsword)
+- Nick: Light weapon extra attack as part of Attack action (Dagger, Light Hammer, Sickle, Scimitar)
+- Push: Push target 10 feet (Greatclub, Pike, Warhammer, Heavy Crossbow)
+- Sap: Target has disadvantage on next attack (Mace, Spear, Flail, Longsword, Morningstar, War Pick)
+- Slow: Reduce target speed by 10 feet (Club, Javelin, Light Crossbow, Sling, Whip, Longbow, Musket)
+- Topple: Force Constitution save or prone (Quarterstaff, Battleaxe, Lance, Maul, Trident)
+- Vex: Advantage on next attack against target (Handaxe, Dart, Rapier, Shortsword, Blowgun, Hand Crossbow, Shortbow, Pistol)
+
+COMMON D&D 5E WEAPONS BY CLASS:
+- Fighter/Paladin: Longsword, Greatsword, Battleaxe, Warhammer, Longbow, Heavy Crossbow
+- Ranger: Shortsword, Scimitar, Longbow, Handaxe, Javelin
+- Rogue: Rapier, Shortsword, Dagger, Hand Crossbow, Shortbow
+- Cleric: Mace, Warhammer, Light Crossbow, Javelin
+- Wizard/Sorcerer: Dagger, Quarterstaff, Light Crossbow, Dart
+- Barbarian: Greataxe, Handaxe, Javelin, Longbow
+- Bard: Rapier, Shortsword, Dagger, Shortbow
+- Monk: Quarterstaff, Shortsword, Dagger, Dart, Sling
+- Warlock: Dagger, Light Crossbow, Shortsword
+- Druid: Quarterstaff, Sickle, Sling, Spear, Dart
+
+**CRITICAL**: Only use existing D&D 5e weapon names. Do not invent new weapons.
+
+FEAT SELECTION PRIORITY (VERY IMPORTANT):
+1. **MANDATORY FIRST PRIORITY**: Use ONLY existing D&D 5e feats when possible
+2. **REQUIRED**: Choose from standard D&D feats: Alert, Magic Initiate, Skilled, Tough, Lucky, etc.
+3. **FORBIDDEN**: Do NOT create new feats unless absolutely necessary for character concept
+4. **REQUIRED**: Match feats to character level, class, and concept appropriately
+5. **FEAT FORMAT**: Use exact feat names from D&D 5e: "Alert", "Magic Initiate", "Skilled", etc.
+
+D&D 5e 2024 FEAT CATEGORIES:
+Origin Feats (Level 1): Alert, Magic Initiate, Savage Attacker, Skilled
+General Feats (Levels 4,8,12,16,19): Ability Score Improvement, Grappler, Tough, Lucky, Resilient, Fey Touched, Shadow Touched, War Caster
+Fighting Style Feats (Class Feature): Archery, Defense, Great Weapon Fighting, Two-Weapon Fighting, Dueling, Protection
+Epic Boon Feats (Level 20): Boon of Combat Prowess, Boon of Dimensional Travel, Boon of Fate, Boon of Irresistible Offense, Boon of Spell Recall, Boon of the Night Spirit, Boon of Truesight
+
+COMMON D&D 5E FEATS BY CHARACTER TYPE:
+- Spellcasters: Magic Initiate, War Caster, Fey Touched, Shadow Touched, Resilient
+- Warriors: Alert, Tough, Lucky, Grappler, Great Weapon Fighting, Defense
+- Rogues/Rangers: Alert, Skilled, Lucky, Archery, Fey Touched
+- Social Characters: Skilled, Lucky, Fey Touched, Magic Initiate
+
+FEAT RULES:
+- Origin Feat: Available at level 1 from background, choose one
+- General Feats: Available at levels 4, 8, 12, 16, 19 (ASI levels), most grant +1 ability score
+- Fighting Style Feats: Only for Fighter, Paladin, Ranger classes with Fighting Style feature
+- Epic Boon Feats: Level 20 only, powerful legendary abilities
+
+**CRITICAL**: Only use existing D&D 5e feat names. Do not invent new feats.
+
+ARMOR SELECTION PRIORITY (VERY IMPORTANT):
+1. **MANDATORY FIRST PRIORITY**: Use ONLY existing D&D 5e armor when possible
+2. **REQUIRED**: Choose from standard D&D armor: Leather Armor, Studded Leather, Chain Shirt, Breastplate, Chain Mail, Plate Armor, etc.
+3. **FORBIDDEN**: Do NOT create new armor unless absolutely necessary for character concept
+4. **REQUIRED**: Match armor to class proficiencies (Light/Medium/Heavy) and character abilities
+5. **ARMOR FORMAT**: Use exact armor names from D&D 5e: "Leather Armor", "Chain Mail", "Plate Armor", etc.
+
+D&D 5e 2024 ARMOR CATEGORIES:
+Light Armor: Padded Armor, Leather Armor, Studded Leather Armor
+Medium Armor: Hide Armor, Chain Shirt, Scale Mail, Breastplate, Half Plate Armor
+Heavy Armor: Ring Mail, Chain Mail, Splint Armor, Plate Armor
+Shield: Shield (+2 AC)
+
+ARMOR BY CLASS PROFICIENCY:
+- Light only: Rogue, Bard, Sorcerer, Warlock, Wizard (some have no armor proficiency)
+- Light + Medium: Barbarian, Cleric, Druid, Ranger
+- Light + Medium + Heavy: Fighter, Paladin
+- Special: Monk (Unarmored Defense), Wizard/Sorcerer (no armor proficiency)
+
+**CRITICAL**: Only use existing D&D 5e armor names. Do not invent new armor.
+
+EQUIPMENT & TOOLS SELECTION PRIORITY (VERY IMPORTANT):
+1. **MANDATORY FIRST PRIORITY**: Use ONLY existing D&D 5e equipment and tools when possible
+2. **REQUIRED**: Choose from standard D&D equipment packs and tools based on class and background
+3. **REQUIRED**: Include appropriate spellcasting focus for spellcasters (Crystal, Holy Symbol, Druidic Focus)
+4. **REQUIRED**: Include class-appropriate tools (Thieves' Tools for Rogues, Smith's Tools for Fighters, etc.)
+
+D&D 5e 2024 EQUIPMENT PACKS BY CLASS:
+- Barbarian/Druid/Fighter/Monk/Paladin/Ranger: Explorer's Pack
+- Bard: Entertainer's Pack
+- Cleric: Priest's Pack
+- Rogue: Burglar's Pack
+- Sorcerer: Dungeoneer's Pack
+- Warlock/Wizard: Scholar's Pack
+
+D&D 5e 2024 TOOLS BY CLASS/BACKGROUND:
+Artisan's Tools: Alchemist's Supplies, Brewer's Supplies, Calligrapher's Supplies, Carpenter's Tools, Smith's Tools, etc.
+Specialist Kits: Thieves' Tools, Disguise Kit, Forgery Kit, Herbalism Kit, Poisoner's Kit
+Gaming Sets: Dice Set, Dragonchess Set, Playing Card Set
+Musical Instruments: Lute, Flute, Drum, Bagpipes, etc.
+
+**CRITICAL**: Only use existing D&D 5e equipment and tool names. Do not invent new items.
+
+Match description exactly. Prioritize existing D&D 5e spells, weapons, feats, armor, and equipment over custom content. Include appropriate skills and items for level. Return complete JSON only."""
+
+# ============================================================================
+# CHARACTER CREATION METHODS - SPELL AND WEAPON ENHANCEMENT
+# ============================================================================
+
     def _fix_character_data_structure(self, character_data: Dict[str, Any]) -> Dict[str, Any]:
         """Fix data structure mismatches - shared logic for all character types."""
         # Fix species: should be string, not list
@@ -438,6 +901,50 @@ Match description exactly. Return complete JSON only."""
         elif not isinstance(character_data.get("alignment"), list):
             character_data["alignment"] = ["Neutral", "Good"]
         
+        # Fix feats: ensure proper structure for D&D 5e 2024
+        if "origin_feat" in character_data and not character_data["origin_feat"]:
+            character_data["origin_feat"] = "Alert"  # Default origin feat
+        
+        if "general_feats" not in character_data:
+            character_data["general_feats"] = []
+        elif not isinstance(character_data["general_feats"], list):
+            character_data["general_feats"] = []
+            
+        # Ensure general feats have proper structure
+        level = character_data.get("level", 1)
+        expected_general_feats = len([l for l in [4, 8, 12, 16, 19] if l <= level])
+        current_general_feats = len(character_data.get("general_feats", []))
+        
+        # Add missing general feats if character level qualifies
+        if current_general_feats < expected_general_feats:
+            for i in range(current_general_feats, expected_general_feats):
+                feat_level = [4, 8, 12, 16, 19][i]
+                character_data["general_feats"].append({
+                    "name": "Ability Score Improvement", 
+                    "level": feat_level,
+                    "grants_asi": True
+                })
+        
+        if "fighting_style_feats" not in character_data:
+            character_data["fighting_style_feats"] = []
+            
+        if "epic_boon" not in character_data and level >= 19:
+            character_data["epic_boon"] = "Epic Boon of Combat Prowess"
+        
+        # Fix skills: ensure proper D&D 5e 2024 skill structure
+        if "skill_proficiencies" not in character_data:
+            character_data["skill_proficiencies"] = {}
+        elif isinstance(character_data["skill_proficiencies"], list):
+            # Convert old list format to dict format
+            skill_list = character_data["skill_proficiencies"]
+            character_data["skill_proficiencies"] = {}
+            for skill in skill_list:
+                if isinstance(skill, str):
+                    character_data["skill_proficiencies"][skill] = "proficient"
+        
+        # Determine skills based on species, class, background, and feats
+        character_data = self._determine_character_skills(character_data)
+        
         return character_data
     
     def _build_character_core(self, character_data: Dict[str, Any]) -> CharacterCore:
@@ -453,6 +960,26 @@ Match description exactly. Return complete JSON only."""
         for ability_name, score in ability_scores.items():
             if hasattr(character_core, ability_name):
                 setattr(character_core, ability_name, AbilityScore(score))
+        
+        # Set feats (D&D 5e 2024)
+        character_core.origin_feat = character_data.get("origin_feat", "")
+        character_core.general_feats = character_data.get("general_feats", [])
+        character_core.fighting_style_feats = character_data.get("fighting_style_feats", [])
+        character_core.epic_boon = character_data.get("epic_boon", "")
+        character_core.feat_abilities = character_data.get("feat_abilities", {})
+        
+        # Set skill proficiencies with proper proficiency levels
+        skill_proficiencies = character_data.get("skill_proficiencies", {})
+        for skill_name, proficiency_level in skill_proficiencies.items():
+            if proficiency_level == "expert":
+                character_core.skill_proficiencies[skill_name] = ProficiencyLevel.EXPERT
+            elif proficiency_level == "proficient":
+                character_core.skill_proficiencies[skill_name] = ProficiencyLevel.PROFICIENT
+            else:
+                character_core.skill_proficiencies[skill_name] = ProficiencyLevel.NONE
+        
+        # Apply feat effects to character
+        character_core.apply_feat_effects()
         
         return character_core
     
@@ -495,6 +1022,356 @@ Match the character concept exactly. Return complete JSON only."""
             logger.warning(f"Custom content generation failed: {e}")
             return {}
     
+    def _enhance_character_spells(self, character_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Enhance character with appropriate D&D 5e spells based on their class and level.
+        STRONGLY prioritizes existing D&D 5e spells over custom spell creation.
+        """
+        try:
+            classes = character_data.get("classes", {})
+            level = character_data.get("level", 1)
+            
+            # Check if character is a spellcaster
+            if not self._is_spellcaster(character_data):
+                character_data["spells_known"] = []
+                return character_data
+            
+            # Get appropriate spells for this character (prioritizes existing D&D spells)
+            suggested_spells = get_appropriate_spells_for_character(character_data, 15)
+            
+            # If character already has spells, validate and enhance them
+            existing_spells = character_data.get("spells_known", [])
+            
+            # Validate and enhance existing spells
+            enhanced_spells = []
+            existing_spell_names = set()
+            
+            for spell in existing_spells:
+                if isinstance(spell, dict) and "name" in spell:
+                    spell_name = spell["name"]
+                    
+                    # PRIORITY 1: Check if it's an official D&D 5e spell
+                    if is_existing_dnd_spell(spell_name):
+                        enhanced_spells.append(spell)
+                        existing_spell_names.add(spell_name)
+                        logger.info(f"Validated existing D&D 5e spell: {spell_name}")
+                    else:
+                        # PRIORITY 2: Try to find a similar D&D spell
+                        similar_spells = find_similar_spells(spell_name, 1)
+                        if similar_spells:
+                            # Replace with official spell
+                            spell_data = {
+                                "name": similar_spells[0],
+                                "level": spell.get("level", 1),
+                                "school": spell.get("school", "evocation"),
+                                "description": spell.get("description", f"Official D&D 5e spell {similar_spells[0]}"),
+                                "source": "D&D 5e Official"
+                            }
+                            enhanced_spells.append(spell_data)
+                            existing_spell_names.add(similar_spells[0])
+                            logger.info(f"Replaced '{spell_name}' with official D&D spell: {similar_spells[0]}")
+                        else:
+                            # PRIORITY 3: Keep custom spell if no D&D equivalent
+                            spell["source"] = "Custom"
+                            enhanced_spells.append(spell)
+                            existing_spell_names.add(spell_name)
+                            logger.info(f"Kept custom spell: {spell_name}")
+            
+            # PRIORITY 4: Fill remaining slots with official D&D spells
+            for suggested_spell in suggested_spells:
+                if suggested_spell["name"] not in existing_spell_names:
+                    enhanced_spells.append(suggested_spell)
+                    logger.info(f"Added suggested D&D 5e spell: {suggested_spell['name']}")
+                    if len(enhanced_spells) >= 12:  # Reasonable spell limit
+                        break
+            
+            character_data["spells_known"] = enhanced_spells
+            
+            # Add spell slot information
+            character_data["spell_slots"] = self._calculate_spell_slots(character_data)
+            
+            # Log spell source breakdown
+            dnd_spells = len([s for s in enhanced_spells if s.get('source') in ['D&D 5e Core', 'D&D 5e Official']])
+            custom_spells = len([s for s in enhanced_spells if s.get('source') == 'Custom'])
+            
+            logger.info(f"Enhanced character with {len(enhanced_spells)} spells ({dnd_spells} D&D 5e spells, {custom_spells} custom spells)")
+            
+            return character_data
+            
+        except Exception as e:
+            logger.warning(f"Spell enhancement failed: {e}")
+            return character_data
+    
+    def _enhance_character_weapons(self, character_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Enhance character with appropriate D&D 5e weapons based on their class and level.
+        STRONGLY prioritizes existing D&D 5e weapons over custom weapon creation.
+        """
+        try:
+            classes = character_data.get("classes", {})
+            level = character_data.get("level", 1)
+            
+            # Get appropriate weapons for this character (prioritizes existing D&D weapons)
+            suggested_weapons = get_appropriate_weapons_for_character(character_data, 5)
+            
+            # If character already has weapons, validate and enhance them
+            existing_weapons = character_data.get("weapons", [])
+            
+            # Validate and enhance existing weapons
+            enhanced_weapons = []
+            existing_weapon_names = set()
+            
+            for weapon in existing_weapons:
+                if isinstance(weapon, dict) and "name" in weapon:
+                    weapon_name = weapon["name"]
+                    
+                    # PRIORITY 1: Check if it's an official D&D 5e weapon
+                    if is_existing_dnd_weapon(weapon_name):
+                        # Get official weapon data and merge
+                        official_data = get_weapon_data(weapon_name)
+                        if official_data:
+                            # Merge with existing data, prioritizing official stats
+                            enhanced_weapon = {**weapon, **official_data}
+                            enhanced_weapon["source"] = "D&D 5e Official"
+                            enhanced_weapons.append(enhanced_weapon)
+                            existing_weapon_names.add(weapon_name)
+                            logger.info(f"Enhanced official D&D weapon: {weapon_name}")
+                        else:
+                            enhanced_weapons.append(weapon)
+                            existing_weapon_names.add(weapon_name)
+                    else:
+                        # PRIORITY 2: Try to find a similar D&D weapon
+                        similar_weapons = find_similar_weapons(weapon_name, 1)
+                        if similar_weapons:
+                            # Replace with official weapon
+                            official_data = get_weapon_data(similar_weapons[0])
+                            if official_data:
+                                enhanced_weapons.append(official_data)
+                                existing_weapon_names.add(similar_weapons[0])
+                                logger.info(f"Replaced '{weapon_name}' with official D&D weapon: {similar_weapons[0]}")
+                            else:
+                                weapon["source"] = "Custom"
+                                enhanced_weapons.append(weapon)
+                                existing_weapon_names.add(weapon_name)
+                        else:
+                            # PRIORITY 3: Keep custom weapon if no D&D equivalent
+                            weapon["source"] = "Custom"
+                            enhanced_weapons.append(weapon)
+                            existing_weapon_names.add(weapon_name)
+                            logger.info(f"Kept custom weapon: {weapon_name}")
+            
+            # PRIORITY 4: Fill with appropriate official D&D weapons if needed
+            if len(enhanced_weapons) < 2:  # Ensure character has at least 2 weapons
+                for suggested_weapon in suggested_weapons:
+                    if suggested_weapon["name"] not in existing_weapon_names:
+                        enhanced_weapons.append(suggested_weapon)
+                        logger.info(f"Added suggested D&D 5e weapon: {suggested_weapon['name']}")
+                        if len(enhanced_weapons) >= 3:  # Reasonable weapon limit
+                            break
+            
+            character_data["weapons"] = enhanced_weapons
+            
+            # Log weapon source breakdown
+            dnd_weapons = len([w for w in enhanced_weapons if w.get('source') in ['D&D 5e Core', 'D&D 5e Official']])
+            custom_weapons = len([w for w in enhanced_weapons if w.get('source') == 'Custom'])
+            
+            logger.info(f"Enhanced character with {len(enhanced_weapons)} weapons ({dnd_weapons} D&D 5e weapons, {custom_weapons} custom weapons)")
+            
+            return character_data
+            
+        except Exception as e:
+            logger.warning(f"Weapon enhancement failed: {e}")
+            return character_data
+    
+    def _enhance_character_feats(self, character_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Enhance character with appropriate D&D 5e feats based on their class, level, and background.
+        STRONGLY prioritizes existing D&D 5e feats over custom feat creation.
+        """
+        try:
+            level = character_data.get("level", 1)
+            classes = character_data.get("classes", {})
+            primary_class = list(classes.keys())[0] if classes else "Fighter"
+            
+            # Get appropriate feats for this character (prioritizes existing D&D feats)
+            suggested_feats = get_appropriate_feats_for_character(character_data, 10)
+            
+            # Validate and enhance existing feats
+            enhanced_feats = {
+                "origin_feat": "",
+                "general_feats": [],
+                "fighting_style_feats": [],
+                "epic_boon": ""
+            }
+            
+            # Process existing feats if any
+            existing_origin_feat = character_data.get("origin_feat", "")
+            existing_general_feats = character_data.get("general_feats", [])
+            existing_fighting_style_feats = character_data.get("fighting_style_feats", [])
+            existing_epic_boon = character_data.get("epic_boon", "")
+            
+            # PRIORITY 1: Validate existing origin feat
+            if existing_origin_feat:
+                if is_existing_dnd_feat(existing_origin_feat):
+                    feat_data = get_feat_data(existing_origin_feat)
+                    if feat_data and feat_data.get("category") == "Origin":
+                        enhanced_feats["origin_feat"] = existing_origin_feat
+                        logger.info(f"Validated existing D&D 5e origin feat: {existing_origin_feat}")
+                    else:
+                        logger.warning(f"Invalid origin feat: {existing_origin_feat}, will replace")
+                else:
+                    logger.info(f"Custom origin feat detected: {existing_origin_feat}")
+                    enhanced_feats["origin_feat"] = existing_origin_feat
+            
+            # PRIORITY 2: Assign origin feat if missing
+            if not enhanced_feats["origin_feat"]:
+                origin_suggestions = [f for f in suggested_feats if f["category"] == "Origin"]
+                if origin_suggestions:
+                    enhanced_feats["origin_feat"] = origin_suggestions[0]["name"]
+                    logger.info(f"Added suggested D&D 5e origin feat: {enhanced_feats['origin_feat']}")
+                else:
+                    enhanced_feats["origin_feat"] = "Alert"  # Default fallback
+                    logger.info(f"Added default origin feat: Alert")
+            
+            # PRIORITY 3: Validate and enhance general feats
+            asi_levels = [l for l in [4, 8, 12, 16, 19] if l <= level]
+            general_suggestions = [f for f in suggested_feats if f["category"] == "General"]
+            
+            for existing_feat in existing_general_feats:
+                if isinstance(existing_feat, dict) and "name" in existing_feat:
+                    feat_name = existing_feat["name"]
+                    if is_existing_dnd_feat(feat_name):
+                        feat_data = get_feat_data(feat_name)
+                        if feat_data and feat_data.get("category") == "General":
+                            enhanced_feats["general_feats"].append(existing_feat)
+                            logger.info(f"Validated existing D&D 5e general feat: {feat_name}")
+                        else:
+                            logger.warning(f"Invalid general feat: {feat_name}")
+                    else:
+                        logger.info(f"Custom general feat detected: {feat_name}")
+                        enhanced_feats["general_feats"].append(existing_feat)
+                elif isinstance(existing_feat, str):
+                    if is_existing_dnd_feat(existing_feat):
+                        feat_data = get_feat_data(existing_feat)
+                        if feat_data and feat_data.get("category") == "General":
+                            enhanced_feats["general_feats"].append({
+                                "name": existing_feat,
+                                "level": 4,  # Default to first ASI level
+                                "grants_asi": feat_data.get("asi_bonus", False)
+                            })
+                            logger.info(f"Validated existing D&D 5e general feat: {existing_feat}")
+            
+            # Fill missing general feats
+            while len(enhanced_feats["general_feats"]) < len(asi_levels) and general_suggestions:
+                for suggestion in general_suggestions:
+                    if suggestion["name"] not in [f.get("name", f) if isinstance(f, dict) else f for f in enhanced_feats["general_feats"]]:
+                        enhanced_feats["general_feats"].append({
+                            "name": suggestion["name"],
+                            "level": asi_levels[len(enhanced_feats["general_feats"])],
+                            "grants_asi": suggestion.get("asi_bonus", False)
+                        })
+                        logger.info(f"Added suggested D&D 5e general feat: {suggestion['name']}")
+                        break
+                else:
+                    break
+            
+            # PRIORITY 4: Validate fighting style feats
+            if primary_class in ["Fighter", "Paladin", "Ranger"]:
+                fighting_suggestions = [f for f in suggested_feats if f["category"] == "Fighting Style"]
+                
+                if existing_fighting_style_feats:
+                    for existing_feat in existing_fighting_style_feats:
+                        feat_name = existing_feat if isinstance(existing_feat, str) else existing_feat.get("name", "")
+                        if is_existing_dnd_feat(feat_name):
+                            feat_data = get_feat_data(feat_name)
+                            if feat_data and feat_data.get("category") == "Fighting Style":
+                                enhanced_feats["fighting_style_feats"].append(feat_name)
+                                logger.info(f"Validated existing D&D 5e fighting style feat: {feat_name}")
+                
+                # Add fighting style if missing
+                if not enhanced_feats["fighting_style_feats"] and fighting_suggestions:
+                    enhanced_feats["fighting_style_feats"].append(fighting_suggestions[0]["name"])
+                    logger.info(f"Added suggested D&D 5e fighting style feat: {fighting_suggestions[0]['name']}")
+            
+            # PRIORITY 5: Validate epic boon
+            if level >= 20:
+                if existing_epic_boon:
+                    if is_existing_dnd_feat(existing_epic_boon):
+                        feat_data = get_feat_data(existing_epic_boon)
+                        if feat_data and feat_data.get("category") == "Epic Boon":
+                            enhanced_feats["epic_boon"] = existing_epic_boon
+                            logger.info(f"Validated existing D&D 5e epic boon: {existing_epic_boon}")
+                        else:
+                            logger.warning(f"Invalid epic boon: {existing_epic_boon}")
+                    else:
+                        logger.info(f"Custom epic boon detected: {existing_epic_boon}")
+                        enhanced_feats["epic_boon"] = existing_epic_boon
+                
+                # Add epic boon if missing
+                if not enhanced_feats["epic_boon"]:
+                    epic_suggestions = [f for f in suggested_feats if f["category"] == "Epic Boon"]
+                    if epic_suggestions:
+                        enhanced_feats["epic_boon"] = epic_suggestions[0]["name"]
+                        logger.info(f"Added suggested D&D 5e epic boon: {enhanced_feats['epic_boon']}")
+            
+            # Update character data with enhanced feats
+            character_data.update(enhanced_feats)
+            
+            # Log feat source breakdown
+            dnd_feats = sum([
+                1 if is_existing_dnd_feat(enhanced_feats["origin_feat"]) else 0,
+                len([f for f in enhanced_feats["general_feats"] if is_existing_dnd_feat(f.get("name", f) if isinstance(f, dict) else f)]),
+                len([f for f in enhanced_feats["fighting_style_feats"] if is_existing_dnd_feat(f)]),
+                1 if enhanced_feats["epic_boon"] and is_existing_dnd_feat(enhanced_feats["epic_boon"]) else 0
+            ])
+            
+            total_feats = sum([
+                1 if enhanced_feats["origin_feat"] else 0,
+                len(enhanced_feats["general_feats"]),
+                len(enhanced_feats["fighting_style_feats"]),
+                1 if enhanced_feats["epic_boon"] else 0
+            ])
+            
+            custom_feats = total_feats - dnd_feats
+            
+            logger.info(f"Enhanced character with {total_feats} feats ({dnd_feats} D&D 5e feats, {custom_feats} custom feats)")
+            
+            return character_data
+            
+        except Exception as e:
+            logger.warning(f"Feat enhancement failed: {e}")
+            return character_data
+    
+    def _calculate_spell_slots(self, character_data: Dict[str, Any]) -> Dict[int, int]:
+        """Calculate spell slots for a character based on their classes and level."""
+        classes = character_data.get("classes", {})
+        total_level = character_data.get("level", 1)
+        
+        # Simplified spell slot calculation
+        # In a full implementation, this would handle multiclassing properly
+        spell_slots = {}
+        
+        for class_name, class_level in classes.items():
+            if class_name in ["Wizard", "Sorcerer", "Warlock", "Cleric", "Druid", "Bard"]:
+                # Full casters
+                for slot_level in range(1, min(10, (class_level + 1) // 2 + 1)):
+                    if slot_level <= 9:
+                        if slot_level == 1:
+                            spell_slots[slot_level] = spell_slots.get(slot_level, 0) + min(4, class_level + 1)
+                        elif slot_level == 2:
+                            spell_slots[slot_level] = spell_slots.get(slot_level, 0) + max(0, min(3, class_level - 2))
+                        else:
+                            spell_slots[slot_level] = spell_slots.get(slot_level, 0) + max(0, min(3, class_level - slot_level * 2))
+            
+            elif class_name in ["Paladin", "Ranger"]:
+                # Half casters
+                if class_level >= 2:
+                    for slot_level in range(1, min(6, (class_level - 1) // 2 + 1)):
+                        if slot_level <= 5:
+                            spell_slots[slot_level] = spell_slots.get(slot_level, 0) + max(0, min(4, class_level - slot_level))
+        
+        return spell_slots
+    
     def _create_final_character(self, character_data: Dict[str, Any], character_core: CharacterCore) -> Dict[str, Any]:
         """Create the final character representation."""
         try:
@@ -510,13 +1387,20 @@ Match the character concept exactly. Return complete JSON only."""
                 primary_class = "Fighter"
                 level = character_data.get("level", 1)
             
-            # Create character sheet using the quick method
-            character_sheet = self._quick_character_sheet(name, species, primary_class, level)
+            # Create character representation without CharacterSheet for now
+            character_representation = {
+                "core": character_core,
+                "name": name,
+                "species": species,
+                "primary_class": primary_class,
+                "level": level,
+                "raw_data": character_data
+            }
             
             # Combine all character information
             final_character = {
                 "core": character_core,
-                "sheet": character_sheet,
+                "character": character_representation,
                 "raw_data": character_data,
                 "creation_metadata": {
                     "created_at": time.time(),
@@ -530,26 +1414,6 @@ Match the character concept exactly. Return complete JSON only."""
         except Exception as e:
             logger.error(f"Failed to create final character: {e}")
             return character_data
-    
-    def _quick_character_sheet(self, name: str, species: str = "Human", 
-                              character_class: str = "Fighter", level: int = 1) -> CharacterSheet:
-        """Create a simple character sheet quickly."""
-        character_sheet = CharacterSheet(name)
-        character_sheet.core.species = species
-        character_sheet.core.character_classes = {character_class: level}
-        
-        # Set default ability scores
-        character_sheet.core.strength = AbilityScore(15)
-        character_sheet.core.dexterity = AbilityScore(13)
-        character_sheet.core.constitution = AbilityScore(14)
-        character_sheet.core.intelligence = AbilityScore(12)
-        character_sheet.core.wisdom = AbilityScore(10)
-        character_sheet.core.charisma = AbilityScore(8)
-        
-        # Calculate derived stats
-        character_sheet.calculate_all_derived_stats()
-        
-        return character_sheet
 
 # ============================================================================
 # NPC CREATOR - SUBSET OF CHARACTER CREATION
@@ -720,6 +1584,7 @@ class CreatureCreator(BaseCreator):
             creature_prompt = f"""Create D&D 5e 2024 creature. Return ONLY JSON:
 
 DESCRIPTION: {description}
+
 CHALLENGE RATING: {challenge_rating}
 CREATURE TYPE: {creature_type}
 
@@ -826,15 +1691,39 @@ CHARACTER LEVEL: {character_level}
 CHARACTER CONCEPT: {character_concept}
 RARITY: {rarity.value}
 
-{{"name":"Item Name","type":"{item_type.value}","rarity":"{rarity.value}","description":"Item description","properties":["property1"],"requires_attunement":false,"weight":1.0,"value":100}}
+{{"name":"Item Name","type":"{item_type.value}","rarity":"{rarity.value}","description":"Item description","properties":["property1"],"requires_attunement":false,"weight":1.0,"value":100,"magic":true,"cursed":false}}
 
-Match description and character concept. Return complete JSON only."""
+D&D 5e ITEM RARITY GUIDELINES:
+- Common: Minor magical effects, 50-100 gp value
+- Uncommon: Useful magical effects, 101-500 gp value  
+- Rare: Significant magical effects, 501-5,000 gp value
+- Very Rare: Powerful magical effects, 5,001-50,000 gp value
+- Legendary: Extraordinary magical effects, 50,001+ gp value
+- Artifact: Unique items with extensive history and lore
+
+ATTUNEMENT RULES:
+- Most magic items don't require attunement
+- Powerful items (usually rare+) often require attunement
+- Characters can attune to maximum 3 items at once
+- Attunement takes a short rest and requires the character to focus on the item
+
+Match description and character concept. Set requires_attunement to true for powerful magical items. Return complete JSON only."""
         
         item_data = await self._generate_with_llm(item_prompt, f"{item_type.value}_item")
         return item_data
     
     def _determine_rarity_for_level(self, level: int) -> ItemRarity:
-        """Determine appropriate item rarity for character level."""
+        """
+        Determine appropriate item rarity for character level based on D&D 5e guidelines.
+        
+        D&D 5e Rarity by Level Guidelines:
+        - Levels 1-4: Common to Uncommon items
+        - Levels 5-8: Uncommon items  
+        - Levels 9-12: Rare items
+        - Levels 13-16: Very Rare items
+        - Levels 17-20: Legendary items
+        - Artifacts: Special, unique items regardless of level
+        """
         if level <= 4:
             return ItemRarity.COMMON
         elif level <= 8:
@@ -843,30 +1732,8 @@ Match description and character concept. Return complete JSON only."""
             return ItemRarity.RARE
         elif level <= 16:
             return ItemRarity.VERY_RARE
-        else:
+        elif level <= 20:
             return ItemRarity.LEGENDARY
-
-# ============================================================================
-# UTILITY FUNCTIONS FOR BACKWARDS COMPATIBILITY
-# ============================================================================
-
-async def create_character_from_prompt(prompt: str, level: int = 1) -> CreationResult:
-    """Utility function for simple character creation."""
-    creator = CharacterCreator()
-    return await creator.create_character(prompt, {"level": level})
-
-async def create_npc_from_prompt(prompt: str, npc_type: NPCType = NPCType.MAJOR) -> CreationResult:
-    """Utility function for simple NPC creation."""
-    creator = NPCCreator()
-    return await creator.create_npc(prompt, npc_type)
-
-async def create_creature_from_prompt(prompt: str, challenge_rating: float = 1.0) -> CreationResult:
-    """Utility function for simple creature creation."""
-    creator = CreatureCreator()
-    return await creator.create_creature(prompt, challenge_rating)
-
-async def create_item_from_prompt(prompt: str, item_type: ItemType = ItemType.MAGIC_ITEM,
-                                 character_level: int = 1) -> CreationResult:
-    """Utility function for simple item creation."""
-    creator = ItemCreator()
-    return await creator.create_item(prompt, item_type, character_level)
+        else:
+            # Epic levels could theoretically access artifacts
+            return ItemRarity.ARTIFACT

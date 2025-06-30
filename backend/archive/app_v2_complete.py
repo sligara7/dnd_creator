@@ -24,7 +24,7 @@ import json
 import logging
 from contextlib import asynccontextmanager
 from typing import List, Dict, Any, Optional
-from fastapi import FastAPI, HTTPException, Depends, Query
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -57,13 +57,12 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Initialize services on startup, cleanup on shutdown."""
     try:
-        # Initialize database with proper database URL
-        database_url = settings.effective_database_url
-        init_database(database_url)
+        # Initialize database
+        init_database()
         logger.info("Database initialized successfully")
         
         # Initialize LLM service
-        llm_service = create_llm_service()
+        llm_service = await create_llm_service()
         app.state.llm_service = llm_service
         logger.info("LLM service initialized successfully")
         
@@ -181,46 +180,6 @@ class CharacterVersionRequest(BaseModel):
     session_notes: Optional[str] = None
 
 # ============================================================================
-# INVENTORY MANAGEMENT MODELS
-# ============================================================================
-
-class InventoryItemRequest(BaseModel):
-    """Request model for adding an item to character inventory."""
-    name: str
-    description: Optional[str] = None
-    quantity: int = 1
-    weight: Optional[float] = None
-    value: Optional[float] = None  # in gold pieces
-    item_type: Optional[str] = None  # "weapon", "armor", "tool", "consumable", "magic_item", etc.
-    rarity: Optional[str] = None  # "common", "uncommon", "rare", "very_rare", "legendary", "artifact"
-    requires_attunement: bool = False  # Whether the item can be attuned to
-    attuned: bool = False  # Whether the item is currently attuned (for magical items)
-    properties: Optional[Dict[str, Any]] = None  # Additional item properties
-
-class InventoryUpdateRequest(BaseModel):
-    """Request model for updating an existing inventory item."""
-    quantity: Optional[int] = None
-    description: Optional[str] = None
-    rarity: Optional[str] = None
-    requires_attunement: Optional[bool] = None
-    attuned: Optional[bool] = None
-    properties: Optional[Dict[str, Any]] = None
-
-class EquipmentSlotRequest(BaseModel):
-    """Request model for equipping/unequipping items."""
-    item_name: str
-    slot: str  # "main_hand", "off_hand", "armor", "helmet", "boots", etc.
-    action: str  # "equip" or "unequip"
-
-class InventoryResponse(BaseModel):
-    """Response model for inventory operations."""
-    success: bool
-    message: str
-    inventory: List[Dict[str, Any]]
-    equipped_items: Dict[str, str]
-    attuned_items: List[str]
-
-# ============================================================================
 # CORE ENDPOINTS
 # ============================================================================
 
@@ -324,29 +283,24 @@ async def factory_create_from_scratch(request: FactoryCreateRequest, db = Depend
                 else:
                     character_data = result
                 
-                # Extract data from the character sheet structure
-                core_data = character_data.get("core", {})
-                stats_data = character_data.get("stats", {})
-                state_data = character_data.get("state", {})
-                
                 # Create flattened data structure for database
                 db_character_data = {
-                    "name": core_data.get("name", "Generated Character"),
-                    "species": core_data.get("species", "Human"),
-                    "background": core_data.get("background", "Folk Hero"),
-                    "alignment": core_data.get("alignment", "Neutral Good"),
-                    "level": core_data.get("level", 1),
-                    "character_classes": core_data.get("classes", {"Fighter": 1}),
-                    "backstory": core_data.get("backstory", ""),
-                    "abilities": core_data.get("ability_scores", {
+                    "name": character_data.get("core", {}).get("name", "Generated Character"),
+                    "species": character_data.get("core", {}).get("species", "Human"),
+                    "background": character_data.get("core", {}).get("background", "Folk Hero"),
+                    "alignment": " ".join(character_data.get("core", {}).get("alignment", ["Neutral", "Good"])),
+                    "level": character_data.get("core", {}).get("level", 1),
+                    "character_classes": character_data.get("core", {}).get("character_classes", {"Fighter": 1}),
+                    "backstory": character_data.get("core", {}).get("backstory", ""),
+                    "abilities": character_data.get("core", {}).get("abilities", {
                         "strength": 10, "dexterity": 10, "constitution": 10,
                         "intelligence": 10, "wisdom": 10, "charisma": 10
                     }),
-                    "armor_class": stats_data.get("armor_class", 10),
-                    "hit_points": stats_data.get("max_hit_points", 10),
-                    "proficiency_bonus": stats_data.get("proficiency_bonus", 2),
-                    "skills": stats_data.get("skills", {}),
-                    "equipment": state_data.get("equipment", {})
+                    "armor_class": character_data.get("stats", {}).get("armor_class", 10),
+                    "hit_points": character_data.get("stats", {}).get("max_hit_points", 10),
+                    "proficiency_bonus": character_data.get("stats", {}).get("proficiency_bonus", 2),
+                    "skills": character_data.get("stats", {}).get("skills", {}),
+                    "equipment": character_data.get("state", {}).get("equipment", {})
                 }
                 
                 db_character = CharacterDB.create_character(db, db_character_data)
@@ -966,229 +920,6 @@ async def list_character_versions(character_id: str, db = Depends(get_db)):
     except Exception as e:
         logger.error(f"Failed to list character versions {character_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve character versions")
-
-# ============================================================================
-# INVENTORY MANAGEMENT ENDPOINTS
-# ============================================================================
-
-@app.get("/api/v2/characters/{character_id}/inventory", response_model=InventoryResponse, tags=["inventory"])
-async def get_character_inventory(character_id: str, db = Depends(get_db)):
-    """Get character's current inventory, equipped items, and attuned items."""
-    try:
-        # Load character to ensure they exist
-        character = CharacterDB.get_character(db, character_id)
-        if not character:
-            raise HTTPException(status_code=404, detail="Character not found")
-        
-        return InventoryResponse(
-            success=True,
-            message="Inventory retrieved successfully",
-            inventory=CharacterDB.get_inventory(db, character_id),
-            equipped_items=CharacterDB.get_equipped_items(db, character_id),
-            attuned_items=CharacterDB.get_attuned_items(db, character_id)
-        )
-        
-    except Exception as e:
-        logger.error(f"Failed to get inventory for character {character_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Get inventory failed: {str(e)}")
-
-@app.post("/api/v2/characters/{character_id}/inventory/items", response_model=InventoryResponse, tags=["inventory"])
-async def add_inventory_item(character_id: str, item_data: InventoryItemRequest, db = Depends(get_db)):
-    """Add an item to character inventory."""
-    try:
-        # Load character to ensure they exist
-        character = CharacterDB.get_character(db, character_id)
-        if not character:
-            raise HTTPException(status_code=404, detail="Character not found")
-        
-        # Add item to inventory
-        CharacterDB.add_inventory_item(db, character_id, item_data.dict())
-        
-        return InventoryResponse(
-            success=True,
-            message="Item added to inventory",
-            inventory=CharacterDB.get_inventory(db, character_id),
-            equipped_items=CharacterDB.get_equipped_items(db, character_id),
-            attuned_items=CharacterDB.get_attuned_items(db, character_id)
-        )
-        
-    except Exception as e:
-        logger.error(f"Failed to add inventory item to character {character_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Add inventory item failed: {str(e)}")
-
-@app.put("/api/v2/characters/{character_id}/inventory/items/{item_name}", response_model=InventoryResponse, tags=["inventory"])
-async def update_inventory_item(character_id: str, item_name: str, item_data: InventoryUpdateRequest, db = Depends(get_db)):
-    """Update an existing inventory item."""
-    try:
-        # Load character to ensure they exist
-        character = CharacterDB.get_character(db, character_id)
-        if not character:
-            raise HTTPException(status_code=404, detail="Character not found")
-        
-        # Update item in inventory
-        CharacterDB.update_inventory_item(db, character_id, item_name, item_data.dict())
-        
-        return InventoryResponse(
-            success=True,
-            message="Inventory item updated",
-            inventory=CharacterDB.get_inventory(db, character_id),
-            equipped_items=CharacterDB.get_equipped_items(db, character_id),
-            attuned_items=CharacterDB.get_attuned_items(db, character_id)
-        )
-        
-    except Exception as e:
-        logger.error(f"Failed to update inventory item for character {character_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Update inventory item failed: {str(e)}")
-
-@app.delete("/api/v2/characters/{character_id}/inventory/items/{item_name}", response_model=InventoryResponse, tags=["inventory"])
-async def delete_inventory_item(character_id: str, item_name: str, db = Depends(get_db)):
-    """Remove an item from character inventory."""
-    try:
-        # Load character to ensure they exist
-        character = CharacterDB.get_character(db, character_id)
-        if not character:
-            raise HTTPException(status_code=404, detail="Character not found")
-        
-        # Remove item from inventory
-        CharacterDB.remove_inventory_item(db, character_id, item_name)
-        
-        return InventoryResponse(
-            success=True,
-            message="Item removed from inventory",
-            inventory=CharacterDB.get_inventory(db, character_id),
-            equipped_items=CharacterDB.get_equipped_items(db, character_id),
-            attuned_items=CharacterDB.get_attuned_items(db, character_id)
-        )
-        
-    except Exception as e:
-        logger.error(f"Failed to remove inventory item from character {character_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Remove inventory item failed: {str(e)}")
-
-@app.post("/api/v2/characters/{character_id}/inventory/equip", response_model=InventoryResponse, tags=["inventory"])
-async def equip_inventory_item(character_id: str, slot_data: EquipmentSlotRequest, db = Depends(get_db)):
-    """Equip an item from inventory to a character's equipment slot."""
-    try:
-        # Load character to ensure they exist
-        character = CharacterDB.get_character(db, character_id)
-        if not character:
-            raise HTTPException(status_code=404, detail="Character not found")
-        
-        # Equip or unequip item
-        if slot_data.action == "equip":
-            CharacterDB.equip_item(db, character_id, slot_data.item_name, slot_data.slot)
-        elif slot_data.action == "unequip":
-            CharacterDB.unequip_item(db, character_id, slot_data.item_name, slot_data.slot)
-        else:
-            raise HTTPException(status_code=400, detail="Invalid action, must be 'equip' or 'unequip'")
-        
-        return InventoryResponse(
-            success=True,
-            message=f"Item {slot_data.action}ped successfully",
-            inventory=CharacterDB.get_inventory(db, character_id),
-            equipped_items=CharacterDB.get_equipped_items(db, character_id),
-            attuned_items=CharacterDB.get_attuned_items(db, character_id)
-        )
-        
-    except Exception as e:
-        logger.error(f"Failed to equip/unequip item for character {character_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Equip/unequip item failed: {str(e)}")
-
-@app.post("/api/v2/characters/{character_id}/inventory/attune", response_model=InventoryResponse, tags=["inventory"])
-async def attune_item(character_id: str, item_name: str = Query(...), action: str = Query(...), db = Depends(get_db)):
-    """Attune or unattune a magical item (max 3 attuned items)."""
-    try:
-        # Load character to ensure they exist
-        character = CharacterDB.get_character(db, character_id)
-        if not character:
-            raise HTTPException(status_code=404, detail="Character not found")
-        
-        if action == "attune":
-            # Get detailed attunement info for better error messages
-            attunement_info = CharacterDB.get_attunement_info(db, character_id)
-            
-            if attunement_info["attunement_slots_used"] >= 3:
-                attuned_list = [item["name"] for item in attunement_info["attuned_items"]]
-                raise HTTPException(
-                    status_code=400, 
-                    detail=f"Cannot attune to {item_name}: Character already has 3 attuned items (D&D 5e limit). Currently attuned: {', '.join(attuned_list)}"
-                )
-            
-            # Check if item exists and requires attunement
-            item_requires_attunement = False
-            for item in attunement_info.get("attuneable_items", []):
-                if item["name"] == item_name:
-                    item_requires_attunement = True
-                    break
-            
-            # Check if already attuned
-            for item in attunement_info.get("attuned_items", []):
-                if item["name"] == item_name:
-                    raise HTTPException(status_code=400, detail=f"Character is already attuned to {item_name}")
-            
-            if not item_requires_attunement:
-                # Check if item exists but doesn't require attunement
-                item_exists = False
-                for item in attunement_info.get("non_attuneable_items", []):
-                    if item["name"] == item_name:
-                        item_exists = True
-                        break
-                
-                if item_exists:
-                    raise HTTPException(
-                        status_code=400, 
-                        detail=f"Cannot attune to {item_name}: This item does not require attunement"
-                    )
-                else:
-                    raise HTTPException(
-                        status_code=404, 
-                        detail=f"Item {item_name} not found in character's inventory"
-                    )
-            
-            success = CharacterDB.add_attuned_item(db, character_id, item_name)
-            if not success:
-                raise HTTPException(status_code=400, detail=f"Failed to attune to {item_name}")
-            message = f"Successfully attuned to {item_name}"
-        elif action == "unattune":
-            success = CharacterDB.remove_attuned_item(db, character_id, item_name)
-            if not success:
-                raise HTTPException(status_code=400, detail="Item not currently attuned")
-            message = f"Unattuned from {item_name}"
-        else:
-            raise HTTPException(status_code=400, detail="Invalid action, must be 'attune' or 'unattune'")
-        
-        return InventoryResponse(
-            success=True,
-            message=message,
-            inventory=CharacterDB.get_inventory(db, character_id),
-            equipped_items=CharacterDB.get_equipped_items(db, character_id),
-            attuned_items=CharacterDB.get_attuned_items(db, character_id)
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to attune/unattune item for character {character_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Attune/unattune item failed: {str(e)}")
-
-@app.get("/api/v2/characters/{character_id}/inventory/attunement", tags=["inventory"])
-async def get_attunement_status(character_id: str, db = Depends(get_db)):
-    """Get character's attunement status and available slots with D&D 5e rules."""
-    try:
-        attunement_info = CharacterDB.get_attunement_info(db, character_id)
-        
-        if "error" in attunement_info:
-            raise HTTPException(status_code=404, detail=attunement_info["error"])
-        
-        return {
-            "success": True,
-            **attunement_info
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to get attunement status for character {character_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Get attunement status failed: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

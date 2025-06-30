@@ -25,7 +25,7 @@ from core_models import (
 )
 
 # Import from centralized enums
-from enums import DnDCondition
+from enums import DnDCondition, FeatureType, FeatureCategory, FeatureUsage, SpeciesTraitType, ClassFeatureType
 
 # ============================================================================
 # D&D 5E 2024 CONDITIONS
@@ -62,6 +62,289 @@ logger = logging.getLogger(__name__)
 # CHARACTER DATA MODELS
 # ============================================================================
 
+class CharacterFeature:
+    """Represents a single character feature or trait."""
+    
+    def __init__(self, name: str, description: str, feature_type: FeatureType, 
+                 category: FeatureCategory = FeatureCategory.PASSIVE,
+                 usage: FeatureUsage = FeatureUsage.ALWAYS):
+        self.name = name
+        self.description = description
+        self.feature_type = feature_type
+        self.category = category
+        self.usage = usage
+        self.source = ""  # What granted this feature (class name, species, background, etc.)
+        self.level_gained = 1  # What level this feature was gained
+        self.prerequisites = []  # Any prerequisites for this feature
+        self.mechanical_effects = {}  # Concrete mechanical benefits
+        self.active = True  # Whether the feature is currently active
+        self.uses_remaining = None  # For limited-use features
+        self.max_uses = None  # Maximum uses per rest/day
+        
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert feature to dictionary for API responses."""
+        return {
+            "name": self.name,
+            "description": self.description,
+            "type": self.feature_type.value,
+            "category": self.category.value,
+            "usage": self.usage.value,
+            "source": self.source,
+            "level_gained": self.level_gained,
+            "prerequisites": self.prerequisites,
+            "mechanical_effects": self.mechanical_effects,
+            "active": self.active,
+            "uses_remaining": self.uses_remaining,
+            "max_uses": self.max_uses
+        }
+
+class FeaturesAndTraitsManager:
+    """Manages all character features and traits from various sources."""
+    
+    def __init__(self, character_core: 'CharacterCore'):
+        self.character_core = character_core
+        self.features: List[CharacterFeature] = []
+        self.species_traits: List[CharacterFeature] = []
+        self.class_features: Dict[str, List[CharacterFeature]] = {}  # class_name -> features
+        self.background_features: List[CharacterFeature] = []
+        self.feat_features: List[CharacterFeature] = []
+        self.item_features: List[CharacterFeature] = []
+        self.temporary_features: List[CharacterFeature] = []
+        
+    def add_species_trait(self, trait_name: str, description: str, trait_type: SpeciesTraitType,
+                         category: FeatureCategory = FeatureCategory.PASSIVE) -> CharacterFeature:
+        """Add a species trait to the character."""
+        feature = CharacterFeature(
+            name=trait_name,
+            description=description,
+            feature_type=FeatureType.SPECIES_TRAIT,
+            category=category
+        )
+        feature.source = self.character_core.species
+        feature.level_gained = 1  # Species traits are gained at character creation
+        
+        self.species_traits.append(feature)
+        self.features.append(feature)
+        
+        logger.info(f"Added species trait: {trait_name} from {self.character_core.species}")
+        return feature
+    
+    def add_class_feature(self, class_name: str, feature_name: str, description: str,
+                         level_gained: int, feature_type: ClassFeatureType,
+                         category: FeatureCategory = FeatureCategory.PASSIVE,
+                         usage: FeatureUsage = FeatureUsage.ALWAYS) -> CharacterFeature:
+        """Add a class feature to the character."""
+        feature = CharacterFeature(
+            name=feature_name,
+            description=description,
+            feature_type=FeatureType.CLASS_FEATURE,
+            category=category,
+            usage=usage
+        )
+        feature.source = class_name
+        feature.level_gained = level_gained
+        
+        if class_name not in self.class_features:
+            self.class_features[class_name] = []
+        
+        self.class_features[class_name].append(feature)
+        self.features.append(feature)
+        
+        logger.info(f"Added class feature: {feature_name} from {class_name} at level {level_gained}")
+        return feature
+    
+    def add_background_feature(self, feature_name: str, description: str,
+                              category: FeatureCategory = FeatureCategory.SOCIAL) -> CharacterFeature:
+        """Add a background feature to the character."""
+        feature = CharacterFeature(
+            name=feature_name,
+            description=description,
+            feature_type=FeatureType.BACKGROUND_FEATURE,
+            category=category
+        )
+        feature.source = self.character_core.background
+        feature.level_gained = 1  # Background features are gained at character creation
+        
+        self.background_features.append(feature)
+        self.features.append(feature)
+        
+        logger.info(f"Added background feature: {feature_name} from {self.character_core.background}")
+        return feature
+    
+    def add_feat_feature(self, feat_name: str, feature_name: str, description: str,
+                        category: FeatureCategory = FeatureCategory.UTILITY,
+                        usage: FeatureUsage = FeatureUsage.ALWAYS) -> CharacterFeature:
+        """Add a feat-granted feature to the character."""
+        feature = CharacterFeature(
+            name=feature_name,
+            description=description,
+            feature_type=FeatureType.FEAT_ABILITY,
+            category=category,
+            usage=usage
+        )
+        feature.source = f"Feat: {feat_name}"
+        
+        self.feat_features.append(feature)
+        self.features.append(feature)
+        
+        logger.info(f"Added feat feature: {feature_name} from feat {feat_name}")
+        return feature
+    
+    def add_item_feature(self, item_name: str, feature_name: str, description: str,
+                        category: FeatureCategory = FeatureCategory.UTILITY,
+                        temporary: bool = False) -> CharacterFeature:
+        """Add a magic item granted feature to the character."""
+        feature = CharacterFeature(
+            name=feature_name,
+            description=description,
+            feature_type=FeatureType.MAGIC_ITEM_PROPERTY,
+            category=category
+        )
+        feature.source = f"Item: {item_name}"
+        
+        if temporary:
+            self.temporary_features.append(feature)
+        else:
+            self.item_features.append(feature)
+        
+        self.features.append(feature)
+        
+        logger.info(f"Added item feature: {feature_name} from {item_name} (temporary: {temporary})")
+        return feature
+    
+    def get_features_by_type(self, feature_type: FeatureType) -> List[CharacterFeature]:
+        """Get all features of a specific type."""
+        return [f for f in self.features if f.feature_type == feature_type]
+    
+    def get_features_by_category(self, category: FeatureCategory) -> List[CharacterFeature]:
+        """Get all features of a specific category."""
+        return [f for f in self.features if f.category == category]
+    
+    def get_features_by_source(self, source: str) -> List[CharacterFeature]:
+        """Get all features from a specific source."""
+        return [f for f in self.features if f.source == source]
+    
+    def get_features_at_level(self, level: int) -> List[CharacterFeature]:
+        """Get all features gained at a specific level."""
+        return [f for f in self.features if f.level_gained == level]
+    
+    def get_active_features(self) -> List[CharacterFeature]:
+        """Get all currently active features."""
+        return [f for f in self.features if f.active]
+    
+    def get_combat_features(self) -> List[CharacterFeature]:
+        """Get all combat-related features."""
+        return self.get_features_by_category(FeatureCategory.COMBAT)
+    
+    def get_exploration_features(self) -> List[CharacterFeature]:
+        """Get all exploration-related features."""
+        return self.get_features_by_category(FeatureCategory.EXPLORATION)
+    
+    def get_social_features(self) -> List[CharacterFeature]:
+        """Get all social interaction features."""
+        return self.get_features_by_category(FeatureCategory.SOCIAL)
+    
+    def get_spellcasting_features(self) -> List[CharacterFeature]:
+        """Get all spellcasting-related features."""
+        return self.get_features_by_category(FeatureCategory.SPELLCASTING)
+    
+    def deactivate_feature(self, feature_name: str) -> bool:
+        """Deactivate a feature (for temporary effects or conditions)."""
+        for feature in self.features:
+            if feature.name == feature_name:
+                feature.active = False
+                logger.info(f"Deactivated feature: {feature_name}")
+                return True
+        return False
+    
+    def reactivate_feature(self, feature_name: str) -> bool:
+        """Reactivate a previously deactivated feature."""
+        for feature in self.features:
+            if feature.name == feature_name:
+                feature.active = True
+                logger.info(f"Reactivated feature: {feature_name}")
+                return True
+        return False
+    
+    def remove_temporary_features(self) -> int:
+        """Remove all temporary features and return count removed."""
+        removed_count = len(self.temporary_features)
+        
+        # Remove from main features list
+        self.features = [f for f in self.features if f not in self.temporary_features]
+        
+        # Clear temporary features
+        self.temporary_features.clear()
+        
+        if removed_count > 0:
+            logger.info(f"Removed {removed_count} temporary features")
+        
+        return removed_count
+    
+    def use_limited_feature(self, feature_name: str) -> bool:
+        """Use a limited-use feature, decreasing its remaining uses."""
+        for feature in self.features:
+            if (feature.name == feature_name and 
+                feature.uses_remaining is not None and 
+                feature.uses_remaining > 0):
+                feature.uses_remaining -= 1
+                logger.info(f"Used feature: {feature_name} ({feature.uses_remaining} uses remaining)")
+                return True
+        return False
+    
+    def reset_feature_uses(self, rest_type: str = "long_rest") -> int:
+        """Reset feature uses based on rest type."""
+        reset_count = 0
+        
+        for feature in self.features:
+            if feature.max_uses is not None:
+                if (rest_type == "long_rest" or 
+                    (rest_type == "short_rest" and feature.usage == FeatureUsage.SHORT_REST)):
+                    feature.uses_remaining = feature.max_uses
+                    reset_count += 1
+        
+        if reset_count > 0:
+            logger.info(f"Reset {reset_count} features after {rest_type}")
+        
+        return reset_count
+    
+    def get_features_summary(self) -> Dict[str, Any]:
+        """Get a comprehensive summary of all features."""
+        return {
+            "total_features": len(self.features),
+            "active_features": len(self.get_active_features()),
+            "species_traits": len(self.species_traits),
+            "class_features": {class_name: len(features) for class_name, features in self.class_features.items()},
+            "background_features": len(self.background_features),
+            "feat_features": len(self.feat_features),
+            "item_features": len(self.item_features),
+            "temporary_features": len(self.temporary_features),
+            "by_category": {
+                category.value: len(self.get_features_by_category(category))
+                for category in FeatureCategory
+            },
+            "by_usage": {
+                usage.value: len([f for f in self.features if f.usage == usage])
+                for usage in FeatureUsage
+            }
+        }
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert all features to dictionary for API responses."""
+        return {
+            "features": [feature.to_dict() for feature in self.features],
+            "species_traits": [feature.to_dict() for feature in self.species_traits],
+            "class_features": {
+                class_name: [feature.to_dict() for feature in features]
+                for class_name, features in self.class_features.items()
+            },
+            "background_features": [feature.to_dict() for feature in self.background_features],
+            "feat_features": [feature.to_dict() for feature in self.feat_features],
+            "item_features": [feature.to_dict() for feature in self.item_features],
+            "temporary_features": [feature.to_dict() for feature in self.temporary_features],
+            "summary": self.get_features_summary()
+        }
+
 class CharacterCore:
     """Enhanced core character data with level and ASI management."""
     
@@ -84,6 +367,7 @@ class CharacterCore:
         # Managers
         self.level_manager = CharacterLevelManager()
         self.magic_item_manager = MagicItemManager()
+        # Features manager will be initialized after class definition
         
         # Proficiencies
         self.skill_proficiencies: Dict[str, ProficiencyLevel] = {}
@@ -107,6 +391,9 @@ class CharacterCore:
         # Spellcasting information (NEW)
         self.spellcasting_info: Dict[str, Any] = {}
         self._update_spellcasting_info()
+        
+        # Initialize features manager after all core attributes are set
+        self.features_manager = FeaturesAndTraitsManager(self)
     
     @property
     def total_level(self) -> int:
@@ -337,1750 +624,72 @@ class CharacterCore:
         """Get detailed backstory elements."""
         return self.detailed_backstory.copy()
     
-    def validate(self) -> Dict[str, Any]:
-        issues = []
-        warnings = []
-        
-        if not self.name.strip():
-            warnings.append("Character name is empty")
-        if not self.species:
-            issues.append("Species is required")
-        if not self.character_classes:
-            issues.append("At least one class is required")
-        
-        return {"valid": len(issues) == 0, "issues": issues, "warnings": warnings}
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert CharacterCore to dictionary representation."""
-        return {
-            "name": self.name,
-            "species": self.species,
-            "level": self.level,
-            "classes": self.character_classes,
-            "background": self.background,
-            "alignment": " ".join(self.alignment) if isinstance(self.alignment, list) else self.alignment,
-            "ability_scores": {
-                "strength": self.strength.total_score,
-                "dexterity": self.dexterity.total_score,
-                "constitution": self.constitution.total_score,
-                "intelligence": self.intelligence.total_score,
-                "wisdom": self.wisdom.total_score,
-                "charisma": self.charisma.total_score
-            },
-            "backstory": self.backstory,
-            "detailed_backstory": self.detailed_backstory,
-            "personality_traits": self.personality_traits,
-            "ideals": self.ideals,
-            "bonds": self.bonds,
-            "flaws": self.flaws,
-            "proficiencies": {
-                "skills": dict(self.skill_proficiencies),
-                "saving_throws": dict(self.saving_throw_proficiencies),
-                "armor": self.armor_proficiency,
-                "weapons": self.weapon_proficiency,
-                "tools": self.tool_proficiency,
-                "languages": self.languages
-            },
-            "spellcasting": self.get_spellcasting_info()
-        }
-    
     # ============================================================================
-    # SETTER METHODS FOR API ACCESS
+    # FEATURES AND TRAITS GETTER METHODS
     # ============================================================================
     
-    def set_name(self, name: str) -> Dict[str, Any]:
-        """
-        Set character name with validation.
-        
-        Args:
-            name: Character name (must be non-empty string)
-            
-        Returns:
-            Dict with success status and any validation messages
-        """
-        if not isinstance(name, str):
-            return {"success": False, "error": "Name must be a string"}
-        
-        name = name.strip()
-        if not name:
-            return {"success": False, "error": "Name cannot be empty"}
-        
-        if len(name) > 100:
-            return {"success": False, "error": "Name cannot exceed 100 characters"}
-        
-        old_name = self.name
-        self.name = name
-        
-        logger.info(f"Character name changed from '{old_name}' to '{name}'")
-        return {"success": True, "old_value": old_name, "new_value": name}
+    def get_all_features(self) -> List[Dict[str, Any]]:
+        """Get all character features and traits."""
+        return [feature.to_dict() for feature in self.features_manager.get_active_features()]
     
-    def set_species(self, species: str) -> Dict[str, Any]:
-        """
-        Set character species with validation.
-        
-        Args:
-            species: Species name (e.g., "Human", "Elf", "Dwarf")
-            
-        Returns:
-            Dict with success status and any validation messages
-        """
-        if not isinstance(species, str):
-            return {"success": False, "error": "Species must be a string"}
-        
-        species = species.strip()
-        if not species:
-            return {"success": False, "error": "Species cannot be empty"}
-        
-        old_species = self.species
-        self.species = species
-        
-        logger.info(f"Character species changed from '{old_species}' to '{species}'")
-        return {"success": True, "old_value": old_species, "new_value": species}
+    def get_species_traits(self) -> List[Dict[str, Any]]:
+        """Get all species traits."""
+        return [feature.to_dict() for feature in self.features_manager.species_traits]
     
-    def set_character_classes(self, character_classes: Dict[str, int]) -> Dict[str, Any]:
-        """
-        Set character classes with validation.
-        
-        Args:
-            character_classes: Dict mapping class names to levels
-            
-        Returns:
-            Dict with success status and any validation messages
-        """
-        if not isinstance(character_classes, dict):
-            return {"success": False, "error": "Character classes must be a dictionary"}
-        
-        if not character_classes:
-            return {"success": False, "error": "At least one class is required"}
-        
-        # Validate class levels
-        for class_name, level in character_classes.items():
-            if not isinstance(class_name, str) or not class_name.strip():
-                return {"success": False, "error": f"Invalid class name: {class_name}"}
-            
-            if not isinstance(level, int) or level < 1 or level > 20:
-                return {"success": False, "error": f"Invalid level for {class_name}: {level} (must be 1-20)"}
-        
-        # Validate total level
-        total_level = sum(character_classes.values())
-        if total_level > 20:
-            return {"success": False, "error": f"Total character level cannot exceed 20 (got {total_level})"}
-        
-        old_classes = self.character_classes.copy()
-        self.character_classes = character_classes.copy()
-        
-        # Update spellcasting information when classes change
-        self._update_spellcasting_info()
-        
-        logger.info(f"Character classes changed from {old_classes} to {character_classes}")
-        return {"success": True, "old_value": old_classes, "new_value": character_classes}
-    
-    def set_background(self, background: str) -> Dict[str, Any]:
-        """
-        Set character background with validation.
-        
-        Args:
-            background: Background name (e.g., "Acolyte", "Criminal", "Folk Hero")
-            
-        Returns:
-            Dict with success status and any validation messages
-        """
-        if not isinstance(background, str):
-            return {"success": False, "error": "Background must be a string"}
-        
-        background = background.strip()
-        # Background can be empty (not required), but if provided should be valid
-        
-        old_background = self.background
-        self.background = background
-        
-        logger.info(f"Character background changed from '{old_background}' to '{background}'")
-        return {"success": True, "old_value": old_background, "new_value": background}
-    
-    def set_alignment(self, alignment: List[str]) -> Dict[str, Any]:
-        """
-        Set character alignment with validation.
-        
-        Args:
-            alignment: Two-element list [lawful/neutral/chaotic, good/neutral/evil]
-            
-        Returns:
-            Dict with success status and any validation messages
-        """
-        if not isinstance(alignment, list) or len(alignment) != 2:
-            return {"success": False, "error": "Alignment must be a list of exactly 2 elements"}
-        
-        valid_ethics = ["Lawful", "Neutral", "Chaotic"]
-        valid_morals = ["Good", "Neutral", "Evil"]
-        
-        ethics, morals = alignment[0], alignment[1]
-        
-        if ethics not in valid_ethics:
-            return {"success": False, "error": f"Invalid ethics value: {ethics}. Must be one of {valid_ethics}"}
-        
-        if morals not in valid_morals:
-            return {"success": False, "error": f"Invalid morals value: {morals}. Must be one of {valid_morals}"}
-        
-        old_alignment = self.alignment.copy()
-        self.alignment = [ethics, morals]
-        
-        logger.info(f"Character alignment changed from {old_alignment} to {alignment}")
-        return {"success": True, "old_value": old_alignment, "new_value": alignment}
-    
-    def set_personality_traits(self, traits: List[str]) -> Dict[str, Any]:
-        """
-        Set personality traits with validation.
-        
-        Args:
-            traits: List of personality trait strings
-            
-        Returns:
-            Dict with success status and any validation messages
-        """
-        if not isinstance(traits, list):
-            return {"success": False, "error": "Personality traits must be a list"}
-        
-        # Validate each trait
-        validated_traits = []
-        for i, trait in enumerate(traits):
-            if not isinstance(trait, str):
-                return {"success": False, "error": f"Trait {i+1} must be a string"}
-            
-            trait = trait.strip()
-            if trait:  # Only add non-empty traits
-                validated_traits.append(trait)
-        
-        if len(validated_traits) > 10:
-            return {"success": False, "error": "Cannot have more than 10 personality traits"}
-        
-        old_traits = self.personality_traits.copy()
-        self.personality_traits = validated_traits
-        
-        logger.info(f"Personality traits updated: {len(old_traits)} -> {len(validated_traits)} traits")
-        return {"success": True, "old_value": old_traits, "new_value": validated_traits}
-    
-    def set_ideals(self, ideals: List[str]) -> Dict[str, Any]:
-        """
-        Set ideals with validation.
-        
-        Args:
-            ideals: List of ideal strings
-            
-        Returns:
-            Dict with success status and any validation messages
-        """
-        if not isinstance(ideals, list):
-            return {"success": False, "error": "Ideals must be a list"}
-        
-        validated_ideals = []
-        for i, ideal in enumerate(ideals):
-            if not isinstance(ideal, str):
-                return {"success": False, "error": f"Ideal {i+1} must be a string"}
-            
-            ideal = ideal.strip()
-            if ideal:
-                validated_ideals.append(ideal)
-        
-        if len(validated_ideals) > 5:
-            return {"success": False, "error": "Cannot have more than 5 ideals"}
-        
-        old_ideals = self.ideals.copy()
-        self.ideals = validated_ideals
-        
-        logger.info(f"Ideals updated: {len(old_ideals)} -> {len(validated_ideals)} ideals")
-        return {"success": True, "old_value": old_ideals, "new_value": validated_ideals}
-    
-    def set_bonds(self, bonds: List[str]) -> Dict[str, Any]:
-        """
-        Set bonds with validation.
-        
-        Args:
-            bonds: List of bond strings
-            
-        Returns:
-            Dict with success status and any validation messages
-        """
-        if not isinstance(bonds, list):
-            return {"success": False, "error": "Bonds must be a list"}
-        
-        validated_bonds = []
-        for i, bond in enumerate(bonds):
-            if not isinstance(bond, str):
-                return {"success": False, "error": f"Bond {i+1} must be a string"}
-            
-            bond = bond.strip()
-            if bond:
-                validated_bonds.append(bond)
-        
-        if len(validated_bonds) > 5:
-            return {"success": False, "error": "Cannot have more than 5 bonds"}
-        
-        old_bonds = self.bonds.copy()
-        self.bonds = validated_bonds
-        
-        logger.info(f"Bonds updated: {len(old_bonds)} -> {len(validated_bonds)} bonds")
-        return {"success": True, "old_value": old_bonds, "new_value": validated_bonds}
-    
-    def set_flaws(self, flaws: List[str]) -> Dict[str, Any]:
-        """
-        Set flaws with validation.
-        
-        Args:
-            flaws: List of flaw strings
-            
-        Returns:
-            Dict with success status and any validation messages
-        """
-        if not isinstance(flaws, list):
-            return {"success": False, "error": "Flaws must be a list"}
-        
-        validated_flaws = []
-        for i, flaw in enumerate(flaws):
-            if not isinstance(flaw, str):
-                return {"success": False, "error": f"Flaw {i+1} must be a string"}
-            
-            flaw = flaw.strip()
-            if flaw:
-                validated_flaws.append(flaw)
-        
-        if len(validated_flaws) > 5:
-            return {"success": False, "error": "Cannot have more than 5 flaws"}
-        
-        old_flaws = self.flaws.copy()
-        self.flaws = validated_flaws
-        
-        logger.info(f"Flaws updated: {len(old_flaws)} -> {len(validated_flaws)} flaws")
-        return {"success": True, "old_value": old_flaws, "new_value": validated_flaws}
-    
-    def set_backstory(self, backstory: str) -> Dict[str, Any]:
-        """
-        Set main backstory with validation.
-        
-        Args:
-            backstory: Main backstory text
-            
-        Returns:
-            Dict with success status and any validation messages
-        """
-        if not isinstance(backstory, str):
-            return {"success": False, "error": "Backstory must be a string"}
-        
-        backstory = backstory.strip()
-        
-        if len(backstory) > 5000:
-            return {"success": False, "error": "Backstory cannot exceed 5000 characters"}
-        
-        old_backstory = self.backstory
-        self.backstory = backstory
-        
-        # Update detailed backstory if it exists
-        if self.detailed_backstory:
-            self.detailed_backstory["main_backstory"] = backstory
-        
-        logger.info(f"Backstory updated: {len(old_backstory)} -> {len(backstory)} characters")
-        return {"success": True, "old_length": len(old_backstory), "new_length": len(backstory)}
-    
-    def set_detailed_backstory_new(self, detailed_backstory: Dict[str, str]) -> Dict[str, Any]:
-        """
-        Set detailed backstory elements with validation.
-        
-        Args:
-            detailed_backstory: Dict of backstory elements
-            
-        Returns:
-            Dict with success status and any validation messages
-        """
-        if not isinstance(detailed_backstory, dict):
-            return {"success": False, "error": "Detailed backstory must be a dictionary"}
-        
-        # Validate each backstory element
-        validated_backstory = {}
-        for key, value in detailed_backstory.items():
-            if not isinstance(key, str) or not isinstance(value, str):
-                return {"success": False, "error": f"Backstory key and value must be strings: {key}"}
-            
-            key = key.strip()
-            value = value.strip()
-            
-            if key and value:  # Only add non-empty elements
-                if len(value) > 2000:
-                    return {"success": False, "error": f"Backstory element '{key}' cannot exceed 2000 characters"}
-                validated_backstory[key] = value
-        
-        old_backstory = self.detailed_backstory.copy()
-        self.detailed_backstory = validated_backstory
-        
-        # Update main backstory if provided
-        if "main_backstory" in validated_backstory:
-            self.backstory = validated_backstory["main_backstory"]
-        
-        logger.info(f"Detailed backstory updated: {len(old_backstory)} -> {len(validated_backstory)} elements")
-        return {"success": True, "old_count": len(old_backstory), "new_count": len(validated_backstory)}
-    
-    def set_ability_score(self, ability: str, base_score: int) -> Dict[str, Any]:
-        """
-        Set base ability score with validation.
-        
-        Args:
-            ability: Ability name (strength, dexterity, etc.)
-            base_score: New base score (1-20 typically)
-            
-        Returns:
-            Dict with success status and any validation messages
-        """
-        if not isinstance(ability, str):
-            return {"success": False, "error": "Ability must be a string"}
-        
-        ability = ability.lower().strip()
-        ability_obj = self.get_ability_score(ability)
-        
-        if not ability_obj:
-            return {"success": False, "error": f"Invalid ability: {ability}"}
-        
-        if not isinstance(base_score, int) or base_score < 1 or base_score > 20:
-            return {"success": False, "error": f"Base score must be between 1 and 20 (got {base_score})"}
-        
-        old_score = ability_obj.base_score
-        old_total = ability_obj.total_score
-        
-        ability_obj.base_score = base_score
-        ability_obj._invalidate_cache()  # Force cache invalidation
-        
-        new_total = ability_obj.total_score
-        
-        logger.info(f"Ability {ability} base score changed: {old_score} -> {base_score} (total: {old_total} -> {new_total})")
-        
-        return {
-            "success": True,
-            "ability": ability,
-            "old_base_score": old_score,
-            "new_base_score": base_score,
-            "old_total_score": old_total,
-            "new_total_score": new_total,
-            "modifier": ability_obj.modifier
-        }
-    
-    def set_ability_scores(self, ability_scores: Dict[str, int]) -> Dict[str, Any]:
-        """
-        Set multiple ability scores at once.
-        
-        Args:
-            ability_scores: Dict mapping ability names to base scores
-            
-        Returns:
-            Dict with success status and results for each ability
-        """
-        if not isinstance(ability_scores, dict):
-            return {"success": False, "error": "Ability scores must be a dictionary"}
-        
-        results = {}
-        errors = []
-        
-        for ability, score in ability_scores.items():
-            result = self.set_ability_score(ability, score)
-            results[ability] = result
-            
-            if not result["success"]:
-                errors.append(f"{ability}: {result['error']}")
-        
-        success = len(errors) == 0
-        
-        if success:
-            logger.info(f"Successfully updated {len(ability_scores)} ability scores")
+    def get_class_features(self, class_name: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get class features, optionally filtered by class name."""
+        if class_name:
+            features = self.features_manager.class_features.get(class_name, [])
+            return [feature.to_dict() for feature in features]
         else:
-            logger.error(f"Failed to update some ability scores: {errors}")
-        
-        return {
-            "success": success,
-            "results": results,
-            "errors": errors,
-            "updated_count": len([r for r in results.values() if r["success"]])
-        }
+            all_class_features = []
+            for features in self.features_manager.class_features.values():
+                all_class_features.extend([feature.to_dict() for feature in features])
+            return all_class_features
     
-    # ============================================================================
-    # BULK UPDATE AND UTILITY METHODS
-    # ============================================================================
+    def get_background_features(self) -> List[Dict[str, Any]]:
+        """Get all background features."""
+        return [feature.to_dict() for feature in self.features_manager.background_features]
     
-    def update_character_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Bulk update character data with validation.
-        
-        Args:
-            data: Dictionary containing character data to update
-            
-        Returns:
-            Dict with success status and detailed results for each field
-        """
-        if not isinstance(data, dict):
-            return {"success": False, "error": "Data must be a dictionary"}
-        
-        results = {}
-        errors = []
-        updated_fields = []
-        
-        # Define field mappings to setter methods
-        field_setters = {
-            "name": self.set_name,
-            "species": self.set_species,
-            "character_classes": self.set_character_classes,
-            "background": self.set_background,
-            "alignment": self.set_alignment,
-            "personality_traits": self.set_personality_traits,
-            "ideals": self.set_ideals,
-            "bonds": self.set_bonds,
-            "flaws": self.set_flaws,
-            "backstory": self.set_backstory,
-            "detailed_backstory": self.set_detailed_backstory_new,
-            "ability_scores": self.set_ability_scores
-        }
-        
-        # Process each field in the data
-        for field, value in data.items():
-            if field in field_setters:
-                try:
-                    result = field_setters[field](value)
-                    results[field] = result
-                    
-                    if result["success"]:
-                        updated_fields.append(field)
-                    else:
-                        errors.append(f"{field}: {result['error']}")
-                        
-                except Exception as e:
-                    error_msg = f"Unexpected error updating {field}: {str(e)}"
-                    results[field] = {"success": False, "error": error_msg}
-                    errors.append(error_msg)
-                    logger.error(error_msg)
-            else:
-                warning_msg = f"Unknown field '{field}' ignored"
-                results[field] = {"success": False, "error": warning_msg}
-                errors.append(warning_msg)
-        
-        success = len(errors) == 0
-        
-        if success:
-            logger.info(f"Successfully updated character data for fields: {updated_fields}")
-        else:
-            logger.warning(f"Character update completed with errors: {errors}")
-        
-        return {
-            "success": success,
-            "updated_fields": updated_fields,
-            "field_results": results,
-            "errors": errors,
-            "total_fields_processed": len(data),
-            "successful_updates": len(updated_fields)
-        }
+    def get_feat_features(self) -> List[Dict[str, Any]]:
+        """Get all feat-granted features."""
+        return [feature.to_dict() for feature in self.features_manager.feat_features]
     
-    def validate_character_data(self) -> Dict[str, Any]:
-        """
-        Comprehensive validation of all character data.
-        
-        Returns:
-            Dict with validation results, issues, and warnings
-        """
-        issues = []
-        warnings = []
-        field_validations = {}
-        
-        # Validate core identity
-        if not self.name.strip():
-            warnings.append("Character name is empty")
-            field_validations["name"] = {"valid": False, "message": "Name is empty"}
-        else:
-            field_validations["name"] = {"valid": True}
-        
-        if not self.species:
-            issues.append("Species is required")
-            field_validations["species"] = {"valid": False, "message": "Species is required"}
-        else:
-            field_validations["species"] = {"valid": True}
-        
-        if not self.character_classes:
-            issues.append("At least one class is required")
-            field_validations["character_classes"] = {"valid": False, "message": "At least one class required"}
-        else:
-            total_level = sum(self.character_classes.values())
-            if total_level > 20:
-                issues.append(f"Total character level exceeds 20 (current: {total_level})")
-                field_validations["character_classes"] = {"valid": False, "message": f"Total level {total_level} > 20"}
-            else:
-                field_validations["character_classes"] = {"valid": True, "total_level": total_level}
-        
-        # Validate alignment
-        valid_ethics = ["Lawful", "Neutral", "Chaotic"]
-        valid_morals = ["Good", "Neutral", "Evil"]
-        
-        if len(self.alignment) != 2:
-            issues.append("Alignment must have exactly 2 components")
-            field_validations["alignment"] = {"valid": False, "message": "Invalid alignment format"}
-        elif self.alignment[0] not in valid_ethics or self.alignment[1] not in valid_morals:
-            issues.append(f"Invalid alignment: {self.alignment}")
-            field_validations["alignment"] = {"valid": False, "message": "Invalid alignment values"}
-        else:
-            field_validations["alignment"] = {"valid": True}
-        
-        # Validate ability scores
-        ability_issues = []
-        for ability_name in ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]:
-            ability_obj = self.get_ability_score(ability_name)
-            if ability_obj:
-                if ability_obj.base_score < 1 or ability_obj.base_score > 20:
-                    ability_issues.append(f"{ability_name} base score out of range: {ability_obj.base_score}")
-                if ability_obj.total_score > 30:
-                    warnings.append(f"{ability_name} total score very high: {ability_obj.total_score}")
-        
-        if ability_issues:
-            issues.extend(ability_issues)
-            field_validations["ability_scores"] = {"valid": False, "issues": ability_issues}
-        else:
-            field_validations["ability_scores"] = {"valid": True}
-        
-        # Validate personality elements
-        personality_warnings = []
-        if len(self.personality_traits) > 10:
-            personality_warnings.append(f"Many personality traits: {len(self.personality_traits)}")
-        if len(self.ideals) > 5:
-            personality_warnings.append(f"Many ideals: {len(self.ideals)}")
-        if len(self.bonds) > 5:
-            personality_warnings.append(f"Many bonds: {len(self.bonds)}")
-        if len(self.flaws) > 5:
-            personality_warnings.append(f"Many flaws: {len(self.flaws)}")
-        
-        if personality_warnings:
-            warnings.extend(personality_warnings)
-        
-        field_validations["personality"] = {
-            "valid": True,
-            "traits_count": len(self.personality_traits),
-            "ideals_count": len(self.ideals),
-            "bonds_count": len(self.bonds),
-            "flaws_count": len(self.flaws)
-        }
-        
-        # Validate backstory length
-        if len(self.backstory) > 5000:
-            issues.append(f"Backstory too long: {len(self.backstory)} characters (max 5000)")
-            field_validations["backstory"] = {"valid": False, "message": "Backstory too long"}
-        else:
-            field_validations["backstory"] = {"valid": True, "length": len(self.backstory)}
-        
-        # Overall validation status
-        is_valid = len(issues) == 0
-        completeness_score = self._calculate_completeness_score()
-        
-        return {
-            "valid": is_valid,
-            "issues": issues,
-            "warnings": warnings,
-            "field_validations": field_validations,
-            "completeness_score": completeness_score,
-            "validation_timestamp": datetime.now().isoformat()
-        }
+    def get_item_features(self) -> List[Dict[str, Any]]:
+        """Get all magic item features."""
+        return [feature.to_dict() for feature in self.features_manager.item_features]
     
-    def _calculate_completeness_score(self) -> float:
-        """Calculate a completeness score (0.0 to 1.0) for the character."""
-        score = 0.0
-        total_possible = 10.0
-        
-        # Core identity (4 points)
-        if self.name.strip():
-            score += 1.0
-        if self.species:
-            score += 1.0
-        if self.character_classes:
-            score += 1.0
-        if self.background:
-            score += 1.0
-        
-        # Personality (4 points)
-        if self.personality_traits:
-            score += 1.0
-        if self.ideals:
-            score += 1.0
-        if self.bonds:
-            score += 1.0
-        if self.flaws:
-            score += 1.0
-        
-        # Backstory (2 points)
-        if self.backstory.strip():
-            score += 1.0
-        if self.detailed_backstory:
-            score += 1.0
-        
-        return score / total_possible
-    
-    def get_character_summary(self) -> Dict[str, Any]:
-        """
-        Get a comprehensive summary of the character for API responses.
-        
-        Returns:
-            Dict with character summary including validation and completeness
-        """
-        validation = self.validate_character_data()
-        
-        return {
-            "identity": {
-                "name": self.name,
-                "species": self.species,
-                "classes": self.character_classes,
-                "level": self.level,
-                "background": self.background,
-                "alignment": self.alignment
-            },
-            "ability_scores": self.get_ability_scores(),
-            "ability_modifiers": self.get_ability_modifiers(),
-            "initiative": self.initiative,  # <-- Added initiative for frontend/API
-            "personality": {
-                "traits": self.personality_traits,
-                "ideals": self.ideals,
-                "bonds": self.bonds,
-                "flaws": self.flaws,
-                "backstory_length": len(self.backstory),
-                "detailed_backstory_elements": len(self.detailed_backstory)
-            },
-            "proficiencies": self.get_proficiencies(),
-            "validation": {
-                "is_valid": validation["valid"],
-                "completeness_score": validation["completeness_score"],
-                "issue_count": len(validation["issues"]),
-                "warning_count": len(validation["warnings"])
-            },
-            "last_updated": datetime.now().isoformat()
-        }
-
-
-# ============================================================================
-# CHARACTER STATE (IN-GAME DATA)
-# ============================================================================
-
-class CharacterState:
-    """
-    Current character state - changes during gameplay.
-    This includes HP, XP, equipment, conditions, currency, and other mutable data.
-    """
-    
-    def __init__(self, character_core: CharacterCore):
-        self.character_core = character_core
-        
-        # Hit Points and Health
-        self.current_hit_points: int = 0
-        self.max_hit_points: int = 0
-        self.temporary_hit_points: int = 0
-        self.hit_dice_remaining: Dict[str, int] = {}  # e.g., {"d8": 3, "d10": 2}
-        
-        # Experience Points and Leveling
-        self.experience_points: int = 0
-        self.milestone_progress: int = 0  # For milestone leveling systems
-        self.pending_level_ups: List[Dict[str, Any]] = []  # Classes that can level up
-        self.xp_history: List[Dict[str, Any]] = []  # XP awards history
-        
-        # Conditions and Status Effects
-        self.conditions: List[DnDCondition] = []
-        self.exhaustion_level: int = 0
-        self.temporary_conditions: Dict[str, Dict[str, Any]] = {}  # Time-limited conditions
-        
-        # Currency
-        self.currency: Dict[str, int] = {
-            "copper": 0,
-            "silver": 0,
-            "electrum": 0,
-            "gold": 0,
-            "platinum": 0
-        }
-        
-        # Equipment State
-        self.equipped_items: Dict[str, str] = {}  # slot -> item_id mapping
-        self.inventory: List[Dict[str, Any]] = []
-        self.attuned_items: List[str] = []  # Max 3 items
-        
-        # Simple equipment lists (for compatibility with character creation)
-        self.equipment: List[str] = []  # General equipment list
-        self.armor: str = ""  # Currently equipped armor
-        self.weapons: List[str] = []  # Weapon list
-        
-        # Spell Slots and Resources
-        self.spell_slots_remaining: Dict[int, int] = {}  # spell_level -> remaining_slots
-        self.spell_slots_max: Dict[int, int] = {}
-        self.class_resources: Dict[str, Dict[str, Any]] = {}  # Class-specific resources
-        
-        # Journal and Notes
-        self.session_notes: List[Dict[str, Any]] = []
-        self.campaign_journal: List[str] = []
-        self.character_goals: List[str] = []
-        self.journal_entries: List[Dict[str, Any]] = []
-        self.character_evolution_notes: List[str] = []
-        self.session_count: int = 0
-        self.creation_iterations: int = 0
-        self.user_feedback: List[str] = []
-        self.modification_history: List[str] = []
-        
-        # Initiative and Combat
-        self.initiative_modifier: int = 0
-        self.death_save_successes: int = 0
-        self.death_save_failures: int = 0
-        
-        # Rest tracking
-        self.last_short_rest: Optional[str] = None
-        self.last_long_rest: Optional[str] = None
-        
-        # Initialize based on character level
-        self._initialize_from_character_core()
-    
-    def _initialize_from_character_core(self):
-        """Initialize state based on character core data."""
-        if self.character_core:
-            # Calculate initial HP (minimum for level 1)
-            con_modifier = self.character_core.constitution.modifier
-            total_level = self.character_core.level
-            
-            if total_level >= 1:
-                # Estimate HP based on average hit die + con modifier per level
-                # This is a simplified calculation - should be improved with class hit dice data
-                estimated_hp = 8 + con_modifier + ((total_level - 1) * (5 + con_modifier))
-                self.max_hit_points = max(1, estimated_hp)
-                self.current_hit_points = self.max_hit_points
-            
-            # Set XP based on current level
-            self.experience_points = self.calculate_xp_for_level(total_level)
-    
-    # ============================================================================
-    # D&D 5E XP TABLE AND LEVEL MANAGEMENT
-    # ============================================================================
-    
-    @staticmethod
-    def get_xp_table() -> Dict[int, int]:
-        """Get the D&D 5e experience point table."""
-        return {
-            1: 0,
-            2: 300,
-            3: 900,
-            4: 2700,
-            5: 6500,
-            6: 14000,
-            7: 23000,
-            8: 34000,
-            9: 48000,
-            10: 64000,
-            11: 85000,
-            12: 100000,
-            13: 120000,
-            14: 140000,
-            15: 165000,
-            16: 195000,
-            17: 225000,
-            18: 265000,
-            19: 305000,
-            20: 355000
-        }
-    
-    @staticmethod
-    def calculate_xp_for_level(level: int) -> int:
-        """Calculate XP required for a given level."""
-        xp_table = CharacterState.get_xp_table()
-        return xp_table.get(min(max(level, 1), 20), 0)
-    
-    @staticmethod
-    def get_level_for_xp(xp: int) -> int:
-        """Get character level based on XP."""
-        xp_table = CharacterState.get_xp_table()
-        
-        for level in range(20, 0, -1):  # Check from level 20 down to 1
-            if xp >= xp_table[level]:
-                return level
-        
-        return 1  # Minimum level
-    
-    def get_xp_to_next_level(self) -> Dict[str, int]:
-        """Get XP information for next level."""
-        current_level = self.get_level_for_xp(self.experience_points)
-        
-        if current_level >= 20:
-            return {
-                "current_level": 20,
-                "next_level": 20,
-                "current_xp": self.experience_points,
-                "xp_for_next_level": self.calculate_xp_for_level(20),
-                "xp_needed": 0,
-                "progress_percentage": 100.0
-            }
-        
-        next_level = current_level + 1
-        current_level_xp = self.calculate_xp_for_level(current_level)
-        next_level_xp = self.calculate_xp_for_level(next_level)
-        
-        xp_needed = next_level_xp - self.experience_points
-        xp_in_current_level = self.experience_points - current_level_xp
-        xp_for_level_range = next_level_xp - current_level_xp
-        
-        progress_percentage = (xp_in_current_level / xp_for_level_range) * 100.0 if xp_for_level_range > 0 else 0.0
-        
-        return {
-            "current_level": current_level,
-            "next_level": next_level,
-            "current_xp": self.experience_points,
-            "xp_for_current_level": current_level_xp,
-            "xp_for_next_level": next_level_xp,
-            "xp_needed": xp_needed,
-            "xp_in_current_level": xp_in_current_level,
-            "progress_percentage": round(progress_percentage, 1)
-        }
-    
-    # ============================================================================
-    # XP AND LEVELING SETTER METHODS
-    # ============================================================================
-    
-    def set_experience_points(self, xp: int, reason: str = "Manual adjustment") -> Dict[str, Any]:
-        """
-        Set experience points with validation and level-up detection.
-        
-        Args:
-            xp: New experience point total
-            reason: Reason for XP change (for logging)
-            
-        Returns:
-            Dict with success status and level-up information
-        """
-        if not isinstance(xp, int):
-            return {"success": False, "error": "XP must be an integer"}
-        
-        if xp < 0:
-            return {"success": False, "error": "XP cannot be negative"}
-        
-        if xp > 355000:  # Maximum XP for level 20
-            return {"success": False, "error": "XP cannot exceed 355,000 (level 20 maximum)"}
-        
-        old_xp = self.experience_points
-        old_level = self.get_level_for_xp(old_xp)
-        
-        self.experience_points = xp
-        new_level = self.get_level_for_xp(xp)
-        
-        # Record XP change in history
-        xp_change = {
-            "old_xp": old_xp,
-            "new_xp": xp,
-            "change": xp - old_xp,
-            "reason": reason,
-            "timestamp": datetime.now().isoformat(),
-            "session_date": datetime.now().strftime("%Y-%m-%d")
-        }
-        self.xp_history.append(xp_change)
-        
-        # Check for level up
-        level_up_info = None
-        if new_level > old_level:
-            level_up_info = self._handle_level_up(old_level, new_level)
-            logger.info(f"Character leveled up from {old_level} to {new_level} (XP: {old_xp} -> {xp})")
-        
-        logger.info(f"XP updated: {old_xp} -> {xp} ({reason})")
-        
-        return {
-            "success": True,
-            "old_xp": old_xp,
-            "new_xp": xp,
-            "xp_change": xp - old_xp,
-            "old_level": old_level,
-            "new_level": new_level,
-            "level_up": level_up_info,
-            "xp_to_next_level": self.get_xp_to_next_level()
-        }
-    
-    def add_experience_points(self, xp_gained: int, reason: str = "Session reward") -> Dict[str, Any]:
-        """
-        Add experience points (most common DM operation).
-        
-        Args:
-            xp_gained: Amount of XP to add
-            reason: Reason for XP gain
-            
-        Returns:
-            Dict with success status and level-up information
-        """
-        if not isinstance(xp_gained, int):
-            return {"success": False, "error": "XP gained must be an integer"}
-        
-        if xp_gained < 0:
-            return {"success": False, "error": "XP gained cannot be negative (use set_experience_points for reductions)"}
-        
-        new_total = self.experience_points + xp_gained
-        return self.set_experience_points(new_total, f"{reason} (+{xp_gained} XP)")
-    
-    def _handle_level_up(self, old_level: int, new_level: int) -> Dict[str, Any]:
-        """Handle level up logic and create pending level-up choices."""
-        
-        # Determine which classes can level up
-        # In D&D 5e, players choose which class to level when they gain a level
-        current_classes = self.character_core.character_classes.copy()
-        
-        # For multiclass characters, they need to choose which class to advance
-        available_classes = list(current_classes.keys()) if current_classes else ["Fighter"]  # Default to Fighter if no classes
-        
-        level_up_info = {
-            "old_level": old_level,
-            "new_level": new_level,
-            "levels_gained": new_level - old_level,
-            "available_classes": available_classes,
-            "pending_choices": [],
-            "automatic_benefits": []
-        }
-        
-        # Add pending level-up choices for each level gained
-        for level in range(old_level + 1, new_level + 1):
-            pending_choice = {
-                "target_level": level,
-                "available_classes": available_classes,
-                "requires_asi_choice": False,
-                "requires_spell_choice": False,
-                "requires_feature_choice": False
-            }
-            
-            # Check if any class would grant an ASI at this level
-            for class_name in available_classes:
-                class_level = current_classes.get(class_name, 0) + 1  # Potential new level in this class
-                asi_levels = self.character_core.level_manager.asi_manager.get_asi_levels_for_class(class_name)
-                
-                if class_level in asi_levels:
-                    pending_choice["requires_asi_choice"] = True
-                    pending_choice["asi_class"] = class_name
-                    pending_choice["asi_level"] = class_level
-            
-            level_up_info["pending_choices"].append(pending_choice)
-            self.pending_level_ups.append(pending_choice)
-        
-        # Automatic benefits (can be calculated immediately)
-        level_up_info["automatic_benefits"] = [
-            f"Total character level increased to {new_level}",
-            f"Proficiency bonus may have increased",
-            f"Hit points can be increased when class is chosen"
-        ]
-        
-        return level_up_info
-    
-    def apply_level_up_choice(self, choice_index: int, class_name: str, 
-                            asi_choice: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """
-        Apply a level-up choice for a specific class.
-        
-        Args:
-            choice_index: Index in pending_level_ups list
-            class_name: Class to level up in
-            asi_choice: ASI choice if applicable ({"type": "asi", "improvements": {...}} or {"type": "feat", "feat_name": "..."})
-            
-        Returns:
-            Dict with success status and results
-        """
-        if choice_index >= len(self.pending_level_ups):
-            return {"success": False, "error": f"Invalid choice index: {choice_index}"}
-        
-        pending_choice = self.pending_level_ups[choice_index]
-        
-        if class_name not in pending_choice["available_classes"]:
-            return {"success": False, "error": f"Class {class_name} not available for level up"}
-        
-        # Apply the level up to the character core
+    def get_features_by_category(self, category: str) -> List[Dict[str, Any]]:
+        """Get features by category (combat, exploration, social, etc.)."""
         try:
-            self.character_core.level_up(class_name, asi_choice)
-            
-            # Remove the pending choice
-            resolved_choice = self.pending_level_ups.pop(choice_index)
-            
-            # Update max HP (simplified - should be based on class hit die)
-            con_modifier = self.character_core.constitution.modifier
-            hp_increase = 5 + con_modifier  # Average hit die + con modifier
-            self.max_hit_points += max(1, hp_increase)
-            self.current_hit_points += max(1, hp_increase)
-            
-            logger.info(f"Applied level up: {class_name} (choice {choice_index})")
-            
-            return {
-                "success": True,
-                "class_leveled": class_name,
-                "new_class_level": self.character_core.character_classes.get(class_name, 1),
-                "new_total_level": self.character_core.level,
-                "hp_gained": max(1, hp_increase),
-                "new_max_hp": self.max_hit_points,
-                "asi_applied": asi_choice is not None,
-                "remaining_pending_choices": len(self.pending_level_ups)
-            }
-            
-        except Exception as e:
-            logger.error(f"Error applying level up: {str(e)}")
-            return {"success": False, "error": f"Failed to apply level up: {str(e)}"}
+            feature_category = FeatureCategory(category)
+            features = self.features_manager.get_features_by_category(feature_category)
+            return [feature.to_dict() for feature in features]
+        except ValueError:
+            logger.warning(f"Invalid feature category: {category}")
+            return []
     
-    # ============================================================================
-    # OTHER STATE SETTER METHODS
-    # ============================================================================
+    def get_combat_features(self) -> List[Dict[str, Any]]:
+        """Get all combat-related features."""
+        return [feature.to_dict() for feature in self.features_manager.get_combat_features()]
     
-    def set_hit_points(self, current_hp: int, max_hp: Optional[int] = None) -> Dict[str, Any]:
-        """Set current hit points with validation."""
-        if not isinstance(current_hp, int):
-            return {"success": False, "error": "Hit points must be an integer"}
-        
-        if max_hp is not None:
-            if not isinstance(max_hp, int) or max_hp < 1:
-                return {"success": False, "error": "Max HP must be a positive integer"}
-            
-            old_max_hp = self.max_hit_points
-            self.max_hit_points = max_hp
-        else:
-            old_max_hp = self.max_hit_points
-        
-        # Validate current HP
-        if current_hp > self.max_hit_points:
-            return {"success": False, "error": f"Current HP cannot exceed max HP ({self.max_hit_points})"}
-        
-        old_current_hp = self.current_hit_points
-        self.current_hit_points = max(0, current_hp)  # HP can't go below 0
-        
-        logger.info(f"Hit points updated: {old_current_hp}/{old_max_hp} -> {self.current_hit_points}/{self.max_hit_points}")
-        
-        return {
-            "success": True,
-            "old_current_hp": old_current_hp,
-            "new_current_hp": self.current_hit_points,
-            "old_max_hp": old_max_hp,
-            "new_max_hp": self.max_hit_points,
-            "is_unconscious": self.current_hit_points == 0,
-            "is_dying": self.current_hit_points == 0 and DnDCondition.UNCONSCIOUS not in self.conditions
-        }
+    def get_exploration_features(self) -> List[Dict[str, Any]]:
+        """Get all exploration-related features."""
+        return [feature.to_dict() for feature in self.features_manager.get_exploration_features()]
     
-    def add_condition(self, condition: DnDCondition, duration: Optional[str] = None) -> Dict[str, Any]:
-        """Add a condition to the character."""
-        if condition in self.conditions:
-            return {"success": False, "error": f"Character already has condition: {condition.value}"}
-        
-        self.conditions.append(condition)
-        
-        if duration:
-            self.temporary_conditions[condition.value] = {
-                "duration": duration,
-                "applied_at": datetime.now().isoformat()
-            }
-        
-        logger.info(f"Added condition: {condition.value}" + (f" (duration: {duration})" if duration else ""))
-        
-        return {
-            "success": True,
-            "condition": condition.value,
-            "duration": duration,
-            "active_conditions": [c.value for c in self.conditions]
-        }
+    def get_social_features(self) -> List[Dict[str, Any]]:
+        """Get all social interaction features."""
+        return [feature.to_dict() for feature in self.features_manager.get_social_features()]
     
-    def remove_condition(self, condition: DnDCondition) -> Dict[str, Any]:
-        """Remove a condition from the character."""
-        if condition not in self.conditions:
-            return {"success": False, "error": f"Character does not have condition: {condition.value}"}
-        
-        self.conditions.remove(condition)
-        
-        if condition.value in self.temporary_conditions:
-            del self.temporary_conditions[condition.value]
-        
-        logger.info(f"Removed condition: {condition.value}")
-        
-        return {
-            "success": True,
-            "condition": condition.value,
-            "active_conditions": [c.value for c in self.conditions]
-        }
+    def get_spellcasting_features(self) -> List[Dict[str, Any]]:
+        """Get all spellcasting-related features."""
+        return [feature.to_dict() for feature in self.features_manager.get_spellcasting_features()]
     
-    def set_exhaustion_level(self, level: int) -> Dict[str, Any]:
-        """Set exhaustion level with D&D 5e 2024 rules."""
-        if not isinstance(level, int) or level < 0 or level > 6:
-            return {"success": False, "error": "Exhaustion level must be between 0 and 6"}
-        
-        old_level = self.exhaustion_level
-        self.exhaustion_level = level
-        
-        effects = ExhaustionLevel.get_effects(level)
-        is_dead = ExhaustionLevel.is_dead(level)
-        
-        logger.info(f"Exhaustion level changed: {old_level} -> {level}")
-        
-        return {
-            "success": True,
-            "old_level": old_level,
-            "new_level": level,
-            "effects": effects,
-            "is_dead": is_dead
-        }
+    def get_features_summary(self) -> Dict[str, Any]:
+        """Get a summary of all features and traits."""
+        return self.features_manager.get_features_summary()
     
-    def update_currency(self, currency_changes: Dict[str, int]) -> Dict[str, Any]:
-        """Update currency amounts."""
-        if not isinstance(currency_changes, dict):
-            return {"success": False, "error": "Currency changes must be a dictionary"}
-        
-        old_currency = self.currency.copy()
-        results = {}
-        
-        for coin_type, amount in currency_changes.items():
-            if coin_type not in self.currency:
-                results[coin_type] = {"success": False, "error": f"Invalid coin type: {coin_type}"}
-                continue
-            
-            if not isinstance(amount, int):
-                results[coin_type] = {"success": False, "error": "Amount must be an integer"}
-                continue
-            
-            new_amount = self.currency[coin_type] + amount
-            if new_amount < 0:
-                results[coin_type] = {"success": False, "error": f"Insufficient {coin_type} (have {self.currency[coin_type]}, trying to remove {abs(amount)})"}
-                continue
-            
-            self.currency[coin_type] = new_amount
-            results[coin_type] = {
-                "success": True,
-                "old_amount": old_currency[coin_type],
-                "change": amount,
-                "new_amount": new_amount
-            }
-        
-        logger.info(f"Currency updated: {currency_changes}")
-        
-        return {
-            "success": all(r["success"] for r in results.values()),
-            "results": results,
-            "old_currency": old_currency,
-            "new_currency": self.currency.copy()
-        }
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert CharacterState to dictionary representation."""
-        return {
-            # Hit Points and Health
-            "current_hit_points": self.current_hit_points,
-            "max_hit_points": self.max_hit_points,
-            "temporary_hit_points": self.temporary_hit_points,
-            "hit_dice_remaining": self.hit_dice_remaining.copy(),
-            
-            # Experience and Leveling
-            "experience_points": self.experience_points,
-            "milestone_progress": self.milestone_progress,
-            
-            # Equipment
-            "equipment": self.equipment.copy(),
-            "armor": self.armor,
-            "weapons": self.weapons.copy(),
-            "equipped_items": self.equipped_items.copy(),
-            "attunement_slots_used": self.attunement_slots_used,
-            
-            # Currency
-            "copper_pieces": self.copper_pieces,
-            "silver_pieces": self.silver_pieces,
-            "electrum_pieces": self.electrum_pieces,
-            "gold_pieces": self.gold_pieces,
-            "platinum_pieces": self.platinum_pieces,
-            
-            # Conditions and Effects
-            "conditions": self.conditions.copy(),
-            "exhaustion_level": self.exhaustion_level,
-            "inspiration": self.inspiration,
-            "custom_conditions": self.custom_conditions.copy(),
-            
-            # Combat State
-            "death_save_successes": self.death_save_successes,
-            "death_save_failures": self.death_save_failures,
-            
-            # Spellcasting
-            "spell_slots_used": self.spell_slots_used.copy(),
-            "spells_known": self.spells_known.copy(),
-            "warlock_pact_slots_used": self.warlock_pact_slots_used,
-            
-            # Class Resources
-            "class_resources": self.class_resources.copy(),
-            
-            # Journal and Evolution
-            "journal_entries": [entry.copy() for entry in self.journal_entries],
-            "character_evolution_notes": self.character_evolution_notes.copy(),
-            "session_count": self.session_count,
-            "creation_iterations": self.creation_iterations,
-            "user_feedback": self.user_feedback.copy(),
-            "modification_history": self.modification_history.copy()
-        }
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert CharacterState to dictionary representation."""
-        return {
-            "current_hit_points": self.current_hit_points,
-            "max_hit_points": self.max_hit_points,
-            "temporary_hit_points": self.temporary_hit_points,
-            "experience_points": self.experience_points,
-            "conditions": [condition.name if hasattr(condition, 'name') else str(condition) for condition in self.conditions],
-            "exhaustion_level": self.exhaustion_level,
-            "currency": self.currency.copy(),
-            "equipment": self.equipment.copy(),
-            "armor": self.armor,
-            "weapons": self.weapons.copy(),
-            "equipped_items": self.equipped_items.copy(),
-            "inventory": self.inventory.copy(),
-            "spell_slots_remaining": self.spell_slots_remaining.copy(),
-            "spell_slots_max": self.spell_slots_max.copy(),
-            "death_save_successes": self.death_save_successes,
-            "death_save_failures": self.death_save_failures
-        }
-    
-
-# ============================================================================
-# CHARACTER ITERATION CACHE
-# ============================================================================
-
-class CharacterIterationCache:
-    """Manages character iterations and changes during the creation process."""
-    
-    def __init__(self):
-        self.iterations: List[Dict[str, Any]] = []
-        self.current_character: Dict[str, Any] = {}
-        self.modification_history: List[str] = []
-        self.user_feedback: List[str] = []
-        
-    def add_iteration(self, character_data: Dict[str, Any], modification: str = ""):
-        """Add a new iteration of the character."""
-        self.current_character = character_data.copy()
-        self.iterations.append(character_data.copy())
-        if modification:
-            self.modification_history.append(modification)
-    
-    def get_current_character(self) -> Dict[str, Any]:
-        """Get the current character data."""
-        return self.current_character.copy()
-    
-    def get_iteration_count(self) -> int:
-        """Get the number of iterations."""
-        return len(self.iterations)
-    
-    def add_user_feedback(self, feedback: str):
-        """Add user feedback for the current iteration."""
-        self.user_feedback.append(feedback)
-    
-    def get_modification_history(self) -> List[str]:
-        """Get the history of modifications."""
-        return self.modification_history.copy()
-
-# ============================================================================
-# MODULE SUMMARY
-# ============================================================================
-# This module provides comprehensive character sheet and data model classes:
-#
-# Core Data Classes:
-# - CharacterCore: Core character data with ability scores, classes, and identity
-#   * Enhanced with comprehensive getter methods for API access
-#   * Immutable core attributes (only changed during character creation/updates)
-#
-# - CharacterState: Mutable character state (HP, equipment, conditions, currency, journal)
-#   * Enhanced with D&D 5e 2024 exhaustion rules (6 levels with cumulative penalties)
-#   * Comprehensive condition tracking with mechanical effects
-#   * Journal tracking system for character evolution analysis
-#   * Full getter/setter methods for RESTful API access
-#
-# - CharacterStats: Calculated statistics (AC, max HP, proficiency bonus)
-#   * Caching system for performance
-#
-# Main Interface:
-# - CharacterSheet: Combined character sheet with validation and management methods
-#   * Comprehensive API for frontend integration
-#   * Journal-based character evolution analysis
-#   * Enhanced gameplay methods (long rest, condition management, etc.)
-#   * Automatic journal entry generation for significant events
-#
-# Utility Classes:
-# - CharacterIterationCache: Manages character creation iterations and feedback
-# - DnDCondition: Enum for D&D 5e 2024 conditions
-# - ExhaustionLevel: Handler for D&D 5e 2024 exhaustion mechanics
-#
-# Dependencies: core_models.py (AbilityScore, ASIManager, etc.)
-#
-# Key Features:
-# - Complete D&D 5e 2024 character representation
-# - Journal tracking for character evolution and storytelling
-# - Enhanced condition system with mechanical effect calculations
-# - Comprehensive getter/setter API for frontend integration
-# - Automatic stat calculation and caching
-# - Advanced damage/healing with proper HP management
-# - Equipment and condition tracking
-# - Character progression and validation
-# - Long rest mechanics with exhaustion recovery
-# - Character evolution analysis based on play history
-# ============================================================================
-
-# ============================================================================
-# SIMPLE WRAPPER CLASSES FOR COMPATIBILITY
-# ============================================================================
-
-class CharacterStats:
-    """Comprehensive character statistics storage and calculation."""
-    
-    def __init__(self, character_core: CharacterCore, character_state: CharacterState):
-        self.character_core = character_core
-        self.character_state = character_state
-        
-        # Core stats
-        self.armor_class: int = 10
-        self.max_hit_points: int = 1
-        self.proficiency_bonus: int = 2
-        self.initiative: int = 0
-        
-        # Saving throws
-        self.saving_throws: Dict[str, int] = {
-            "strength": 0, "dexterity": 0, "constitution": 0,
-            "intelligence": 0, "wisdom": 0, "charisma": 0
-        }
-        
-        # Skills
-        self.skills: Dict[str, int] = {}
-        
-        # Spellcasting
-        self.spell_save_dc: int = 8
-        self.spell_attack_bonus: int = 0
-        self.spellcasting_ability: Optional[str] = None
-        
-        # Movement and other stats
-        self.movement_speed: int = 30
-        self.carrying_capacity: int = 0
-        self.passive_perception: int = 10
-        
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert stats to dictionary for API responses."""
-        return {
-            "armor_class": self.armor_class,
-            "max_hit_points": self.max_hit_points,
-            "proficiency_bonus": self.proficiency_bonus,
-            "initiative": self.initiative,
-            "saving_throws": self.saving_throws.copy(),
-            "skills": self.skills.copy(),
-            "spell_save_dc": self.spell_save_dc,
-            "spell_attack_bonus": self.spell_attack_bonus,
-            "spellcasting_ability": self.spellcasting_ability,
-            "movement_speed": self.movement_speed,
-            "carrying_capacity": self.carrying_capacity,
-            "passive_perception": self.passive_perception
-        }
-
-class CharacterSheet:
-    """Simple character sheet combining core and state."""
-    
-    def __init__(self, name: str = ""):
-        self.core = CharacterCore(name)
-        self.state = CharacterState(self.core)
-        self.stats = CharacterStats(self.core, self.state)
-    
-    @property
-    def name(self) -> str:
-        return self.core.name
-    
-    @name.setter
-    def name(self, value: str):
-        self.core.name = value
-    
-    def add_journal_entry(self, text: str, tags: List[str] = None):
-        """Add a journal entry to the character's state."""
-        import datetime
-        entry = {
-            "date": datetime.datetime.now().strftime("%Y-%m-%d"),
-            "text": text,
-            "tags": tags or []
-        }
-        self.state.journal_entries.append(entry)
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary representation."""
-        return {
-            "core": self.core.to_dict(),
-            "state": self.state.to_dict(),
-            "stats": self.stats.to_dict()
-        }
-    
-    def calculate_all_derived_stats(self):
-        """
-        Calculate all derived statistics for the character based on D&D 5e 2024 rules.
-        This includes AC, HP, saving throws, skills, and other derived values.
-        """
-        logger.info(f"Calculating all derived stats for {self.core.name}")
-        
-        # Reset state to ensure clean calculation
-        self._reset_calculated_values()
-        
-        # 1. Calculate Ability Modifiers (these are properties, so always current)
-        self._calculate_ability_modifiers()
-        
-        # 2. Calculate Proficiency Bonus
-        self.stats.proficiency_bonus = self._calculate_proficiency_bonus()
-        
-        # 3. Calculate Armor Class
-        self.stats.armor_class = self._calculate_armor_class()
-        
-        # 4. Calculate Hit Points
-        self.stats.max_hit_points = self._calculate_hit_points()
-        
-        # 5. Calculate Saving Throw Bonuses
-        self._calculate_saving_throws()
-        
-        # 6. Calculate Skill Bonuses
-        self._calculate_skill_bonuses()
-        
-        # 7. Calculate Initiative
-        self.stats.initiative = self.core.dexterity.modifier
-        
-        # 8. Calculate Spell Save DC and Spell Attack Bonus (if applicable)
-        self._calculate_spellcasting_stats()
-        
-        # 9. Calculate Movement Speed
-        self._calculate_movement_speed()
-        
-        # 10. Calculate Carrying Capacity
-        self._calculate_carrying_capacity()
-        
-        # 11. Calculate Passive Perception
-        self._calculate_passive_perception()
-        
-        # 12. Update state values
-        if self.state.current_hit_points <= 0:
-            self.state.current_hit_points = self.stats.max_hit_points
-        
-        logger.info(f"Derived stats calculated: AC={self.stats.armor_class}, HP={self.stats.max_hit_points}, Prof={self.stats.proficiency_bonus}")
-    
-    def _reset_calculated_values(self):
-        """Reset all calculated values to ensure clean recalculation."""
-        # Initialize stats dict if it doesn't exist
-        if not hasattr(self.stats, '__dict__'):
-            self.stats.__dict__ = {}
-        
-        # Reset saving throws
-        self.stats.saving_throws = {
-            "strength": 0, "dexterity": 0, "constitution": 0,
-            "intelligence": 0, "wisdom": 0, "charisma": 0
-        }
-        
-        # Reset skills
-        self.stats.skills = {}
-        
-        # Reset spellcasting
-        self.stats.spell_save_dc = 8
-        self.stats.spell_attack_bonus = 0
-        self.stats.spellcasting_ability = None
-        
-        # Reset movement and other stats
-        self.stats.movement_speed = 30  # Default for most species
-        self.stats.carrying_capacity = 0
-        self.stats.passive_perception = 10
-    
-    def _calculate_ability_modifiers(self):
-        """Calculate ability modifiers (these are properties on AbilityScore objects)."""
-        # Modifiers are calculated automatically by AbilityScore.modifier property
-        pass
-    
-    def _calculate_proficiency_bonus(self) -> int:
-        """Calculate proficiency bonus based on total character level."""
-        total_level = sum(self.core.character_classes.values()) or 1
-        return 2 + ((total_level - 1) // 4)
-    
-    def _calculate_armor_class(self) -> int:
-        """
-        Calculate Armor Class based on equipment and class features.
-        Base calculation: 10 + Dex modifier + armor bonus + shield bonus + other bonuses
-        """
-        base_ac = 10
-        dex_modifier = self.core.dexterity.modifier
-        armor_bonus = 0
-        shield_bonus = 0
-        natural_armor = 0
-        other_bonuses = 0
-        
-        # Check for armor from equipment (if implemented)
-        # This is a simplified version - real implementation would check equipped armor
-        if hasattr(self.state, 'equipped_armor') and self.state.equipped_armor:
-            armor = self.state.equipped_armor
-            if isinstance(armor, dict):
-                armor_bonus = armor.get('ac_bonus', 0)
-                max_dex = armor.get('max_dex_bonus', 10)  # 10 = no limit
-                dex_modifier = min(dex_modifier, max_dex)
-        
-        # Check for shield
-        if hasattr(self.state, 'equipped_shield') and self.state.equipped_shield:
-            shield_bonus = 2  # Standard shield bonus
-        
-        # Check for natural armor (some species/classes)
-        # This would be implemented based on species traits
-        
-        # Check for class-specific AC calculations
-        ac_calculation = self._get_class_ac_calculation()
-        if ac_calculation:
-            return ac_calculation
-        
-        total_ac = base_ac + dex_modifier + armor_bonus + shield_bonus + natural_armor + other_bonuses
-        return max(total_ac, 10)  # Minimum AC is 10
-    
-    def _get_class_ac_calculation(self) -> Optional[int]:
-        """Get class-specific AC calculations (Monk, Barbarian, etc.)."""
-        # Monk: 10 + Dex + Wis (if unarmored)
-        if "Monk" in self.core.character_classes:
-            if not hasattr(self.state, 'equipped_armor') or not self.state.equipped_armor:
-                return 10 + self.core.dexterity.modifier + self.core.wisdom.modifier
-        
-        # Barbarian: 10 + Dex + Con (if unarmored)
-        if "Barbarian" in self.core.character_classes:
-            if not hasattr(self.state, 'equipped_armor') or not self.state.equipped_armor:
-                return 10 + self.core.dexterity.modifier + self.core.constitution.modifier
-        
-        # Sorcerer/Warlock with Draconic Bloodline: 13 + Dex
-        # (This would require checking subclass features)
-        
-        return None
-    
-    def _calculate_hit_points(self) -> int:
-        """
-        Calculate maximum hit points based on class hit dice and Constitution.
-        Uses average HP calculation: (Hit Die average + 1) + Con modifier per level
-        """
-        total_hp = 0
-        
-        # Hit die averages for each class
-        class_hit_dice = {
-            "Barbarian": 12, "Fighter": 10, "Paladin": 10, "Ranger": 10,
-            "Bard": 8, "Cleric": 8, "Druid": 8, "Monk": 8, "Rogue": 8, "Warlock": 8,
-            "Artificer": 8, "Sorcerer": 6, "Wizard": 6
-        }
-        
-        con_modifier = self.core.constitution.modifier
-        
-        for class_name, class_level in self.core.character_classes.items():
-            hit_die = class_hit_dice.get(class_name, 8)  # Default to d8
-            
-            # First level: max hit die + con modifier
-            if class_level >= 1:
-                total_hp += hit_die + con_modifier
-            
-            # Additional levels: average of hit die + 1 + con modifier
-            if class_level > 1:
-                additional_levels = class_level - 1
-                avg_hp_per_level = (hit_die // 2) + 1 + con_modifier
-                total_hp += additional_levels * avg_hp_per_level
-        
-        # Add any bonuses from feats, magic items, etc.
-        # (This would be implemented with proper bonus tracking)
-        
-        return max(total_hp, 1)  # Minimum 1 HP
-    
-    def _calculate_saving_throws(self):
-        """Calculate saving throw bonuses."""
-        abilities = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]
-        
-        for ability in abilities:
-            ability_obj = self.core.get_ability_score(ability)
-            base_bonus = ability_obj.modifier if ability_obj else 0
-            
-            # Add proficiency bonus if proficient
-            proficiency_bonus = 0
-            if ability in self.core.saving_throw_proficiencies:
-                prof_level = self.core.saving_throw_proficiencies[ability]
-                if prof_level == ProficiencyLevel.PROFICIENT:
-                    proficiency_bonus = self.stats.proficiency_bonus
-                elif prof_level == ProficiencyLevel.EXPERT:
-                    proficiency_bonus = self.stats.proficiency_bonus * 2
-            
-            self.stats.saving_throws[ability] = base_bonus + proficiency_bonus
-    
-    def _calculate_skill_bonuses(self):
-        """Calculate skill bonuses based on ability modifiers and proficiencies."""
-        # D&D 5e skill to ability mapping
-        skill_abilities = {
-            "Acrobatics": "dexterity", "Animal Handling": "wisdom", "Arcana": "intelligence",
-            "Athletics": "strength", "Deception": "charisma", "History": "intelligence",
-            "Insight": "wisdom", "Intimidation": "charisma", "Investigation": "intelligence",
-            "Medicine": "wisdom", "Nature": "intelligence", "Perception": "wisdom",
-            "Performance": "charisma", "Persuasion": "charisma", "Religion": "intelligence",
-            "Sleight of Hand": "dexterity", "Stealth": "dexterity", "Survival": "wisdom"
-        }
-        
-        for skill, ability in skill_abilities.items():
-            ability_obj = self.core.get_ability_score(ability)
-            base_bonus = ability_obj.modifier if ability_obj else 0
-            
-            # Add proficiency bonus if proficient
-            proficiency_bonus = 0
-            skill_key = skill.lower().replace(" ", "_")
-            
-            if skill_key in self.core.skill_proficiencies:
-                prof_level = self.core.skill_proficiencies[skill_key]
-                if prof_level == ProficiencyLevel.PROFICIENT:
-                    proficiency_bonus = self.stats.proficiency_bonus
-                elif prof_level == ProficiencyLevel.EXPERT:
-                    proficiency_bonus = self.stats.proficiency_bonus * 2
-            
-            self.stats.skills[skill] = base_bonus + proficiency_bonus
-    
-    def _calculate_spellcasting_stats(self):
-        """Calculate spell save DC and spell attack bonus if character is a spellcaster."""
-        spellcasting_info = self.core.get_spellcasting_info()
-        
-        if not spellcasting_info.get("is_spellcaster", False):
-            return
-        
-        # Determine primary spellcasting ability
-        spellcasting_ability = spellcasting_info.get("primary_ability", "intelligence")
-        self.stats.spellcasting_ability = spellcasting_ability
-        
-        # Get ability modifier
-        ability_obj = self.core.get_ability_score(spellcasting_ability)
-        ability_modifier = ability_obj.modifier if ability_obj else 0
-        
-        # Calculate spell save DC: 8 + proficiency bonus + ability modifier
-        self.stats.spell_save_dc = 8 + self.stats.proficiency_bonus + ability_modifier
-        
-        # Calculate spell attack bonus: proficiency bonus + ability modifier
-        self.stats.spell_attack_bonus = self.stats.proficiency_bonus + ability_modifier
-    
-    def _calculate_movement_speed(self):
-        """Calculate movement speed based on species and class features."""
-        # Default speed for most species
-        base_speed = 30
-        
-        # Species-specific speeds (simplified)
-        species_speeds = {
-            "Elf": 30, "Human": 30, "Dwarf": 25, "Halfling": 25,
-            "Dragonborn": 30, "Gnome": 25, "Half-Elf": 30, "Half-Orc": 30,
-            "Tiefling": 30, "Aarakocra": 25, "Tabaxi": 30, "Wood Elf": 35
-        }
-        
-        base_speed = species_speeds.get(self.core.species, 30)
-        
-        # Class modifications
-        # Monk gets faster movement at higher levels
-        if "Monk" in self.core.character_classes:
-            monk_level = self.core.character_classes["Monk"]
-            if monk_level >= 2:
-                bonus_speed = ((monk_level - 2) // 4 + 1) * 5
-                base_speed += bonus_speed
-        
-        # Barbarian fast movement
-        if "Barbarian" in self.core.character_classes:
-            barb_level = self.core.character_classes["Barbarian"]
-            if barb_level >= 5:
-                base_speed += 10
-        
-        # Apply armor penalties (if wearing heavy armor without proficiency)
-        # This would be more complex in full implementation
-        
-        self.stats.movement_speed = base_speed
-    
-    def _calculate_carrying_capacity(self):
-        """Calculate carrying capacity based on Strength score."""
-        strength_score = self.core.strength.total_score
-        self.stats.carrying_capacity = strength_score * 15  # pounds
-    
-    def _calculate_passive_perception(self):
-        """Calculate passive Perception score."""
-        perception_bonus = self.stats.skills.get("Perception", self.core.wisdom.modifier)
-        self.stats.passive_perception = 10 + perception_bonus
-    
-    def get_ability_modifiers(self) -> Dict[str, int]:
-        """Get all ability modifiers as a dictionary."""
-        return {
-            "strength": self.core.strength.modifier,
-            "dexterity": self.core.dexterity.modifier,
-            "constitution": self.core.constitution.modifier,
-            "intelligence": self.core.intelligence.modifier,
-            "wisdom": self.core.wisdom.modifier,
-            "charisma": self.core.charisma.modifier
-        }
+    def get_features_at_level(self, level: int) -> List[Dict[str, Any]]:
+        """Get all features gained at a specific level."""
+        features = self.features_manager.get_features_at_level(level)
+        return [feature.to_dict() for feature in features]

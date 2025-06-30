@@ -11,6 +11,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.types import TypeDecorator, CHAR
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, Session, sessionmaker
+from sqlalchemy.orm.attributes import flag_modified
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -721,8 +722,297 @@ class CharacterDB:
         character_sheet.calculate_all_derived_stats()
         
         return character_sheet
-
-# ============================================================================
+    
+    # ============================================================================
+    # INVENTORY MANAGEMENT METHODS
+    # ============================================================================
+    
+    @staticmethod
+    def get_inventory(db: Session, character_id: str) -> List[Dict[str, Any]]:
+        """Get character's inventory items."""
+        character = CharacterDB.get_character(db, character_id)
+        if not character:
+            return []
+        
+        # Extract inventory from equipment JSON field
+        equipment_data = character.equipment or {}
+        return equipment_data.get("inventory", [])
+    
+    @staticmethod
+    def add_inventory_item(db: Session, character_id: str, item_data: Dict[str, Any]) -> bool:
+        """Add an item to character's inventory."""
+        character = CharacterDB.get_character(db, character_id)
+        if not character:
+            return False
+        
+        # Initialize equipment if it doesn't exist
+        if not character.equipment:
+            character.equipment = {}
+        
+        # Initialize inventory list if it doesn't exist
+        if "inventory" not in character.equipment:
+            character.equipment["inventory"] = []
+        
+        # Add timestamp and unique ID to item
+        item_data["added_at"] = datetime.utcnow().isoformat()
+        item_data["item_id"] = str(uuid.uuid4())
+        
+        # Add item to inventory
+        character.equipment["inventory"].append(item_data)
+        
+        # Mark the JSON field as modified (SQLAlchemy doesn't auto-detect JSON changes)
+        flag_modified(character, "equipment")
+        
+        db.commit()
+        db.refresh(character)
+        return True
+    
+    @staticmethod
+    def update_inventory_item(db: Session, character_id: str, item_name: str, updates: Dict[str, Any]) -> bool:
+        """Update an existing inventory item."""
+        character = CharacterDB.get_character(db, character_id)
+        if not character or not character.equipment:
+            return False
+        
+        inventory = character.equipment.get("inventory", [])
+        
+        # Find item by name
+        for item in inventory:
+            if item.get("name") == item_name:
+                # Update item fields
+                for key, value in updates.items():
+                    if value is not None:  # Only update non-None values
+                        item[key] = value
+                
+                item["updated_at"] = datetime.utcnow().isoformat()
+                
+                # Mark the JSON field as modified
+                flag_modified(character, "equipment")
+                
+                db.commit()
+                db.refresh(character)
+                return True
+        
+        return False  # Item not found
+    
+    @staticmethod
+    def remove_inventory_item(db: Session, character_id: str, item_name: str) -> bool:
+        """Remove an item from character's inventory."""
+        character = CharacterDB.get_character(db, character_id)
+        if not character or not character.equipment:
+            return False
+        
+        inventory = character.equipment.get("inventory", [])
+        
+        # Find and remove item by name
+        for i, item in enumerate(inventory):
+            if item.get("name") == item_name:
+                inventory.pop(i)
+                
+                # Mark the JSON field as modified
+                flag_modified(character, "equipment")
+                
+                db.commit()
+                db.refresh(character)
+                return True
+        
+        return False  # Item not found
+    
+    @staticmethod
+    def get_equipped_items(db: Session, character_id: str) -> Dict[str, str]:
+        """Get character's equipped items."""
+        character = CharacterDB.get_character(db, character_id)
+        if not character:
+            return {}
+        
+        equipment_data = character.equipment or {}
+        return equipment_data.get("equipped_items", {})
+    
+    @staticmethod
+    def equip_item(db: Session, character_id: str, item_name: str, slot: str) -> bool:
+        """Equip an item to a specific slot."""
+        character = CharacterDB.get_character(db, character_id)
+        if not character:
+            return False
+        
+        # Initialize equipment if it doesn't exist
+        if not character.equipment:
+            character.equipment = {}
+        
+        # Initialize equipped_items if it doesn't exist
+        if "equipped_items" not in character.equipment:
+            character.equipment["equipped_items"] = {}
+        
+        # Equip the item
+        character.equipment["equipped_items"][slot] = item_name
+        
+        # Mark the JSON field as modified
+        flag_modified(character, "equipment")
+        
+        db.commit()
+        db.refresh(character)
+        return True
+    
+    @staticmethod
+    def unequip_item(db: Session, character_id: str, slot: str) -> bool:
+        """Unequip an item from a specific slot."""
+        character = CharacterDB.get_character(db, character_id)
+        if not character or not character.equipment:
+            return False
+        
+        equipped_items = character.equipment.get("equipped_items", {})
+        
+        if slot in equipped_items:
+            del equipped_items[slot]
+            
+            # Mark the JSON field as modified
+            flag_modified(character, "equipment")
+            
+            db.commit()
+            db.refresh(character)
+            return True
+        
+        return False  # Slot not equipped
+    
+    @staticmethod
+    def get_attuned_items(db: Session, character_id: str) -> List[str]:
+        """Get character's attuned items."""
+        character = CharacterDB.get_character(db, character_id)
+        if not character:
+            return []
+        
+        equipment_data = character.equipment or {}
+        return equipment_data.get("attuned_items", [])
+    
+    @staticmethod
+    def add_attuned_item(db: Session, character_id: str, item_name: str) -> bool:
+        """Add an item to attuned items (max 3). Only items that require attunement can be attuned."""
+        character = CharacterDB.get_character(db, character_id)
+        if not character:
+            return False
+        
+        # Initialize equipment if it doesn't exist
+        if not character.equipment:
+            character.equipment = {}
+        
+        # Initialize attuned_items if it doesn't exist
+        if "attuned_items" not in character.equipment:
+            character.equipment["attuned_items"] = []
+        
+        # Check if the item exists in inventory and requires attunement
+        inventory = character.equipment.get("inventory", [])
+        item_found = False
+        requires_attunement = False
+        
+        for item in inventory:
+            if item.get("name") == item_name:
+                item_found = True
+                requires_attunement = item.get("requires_attunement", False)
+                break
+        
+        if not item_found:
+            logger.warning(f"Item {item_name} not found in character's inventory")
+            return False
+        
+        if not requires_attunement:
+            logger.warning(f"Item {item_name} does not require attunement")
+            return False
+        
+        attuned_items = character.equipment["attuned_items"]
+        
+        # Check attunement limit (D&D 5e limit is 3)
+        if len(attuned_items) >= 3:
+            return False
+        
+        # Check if already attuned
+        if item_name in attuned_items:
+            return False
+        
+        # Add to attuned items
+        attuned_items.append(item_name)
+        
+        # Mark the JSON field as modified
+        flag_modified(character, "equipment")
+        
+        db.commit()
+        db.refresh(character)
+        return True
+    
+    @staticmethod
+    def remove_attuned_item(db: Session, character_id: str, item_name: str) -> bool:
+        """Remove an item from attuned items."""
+        character = CharacterDB.get_character(db, character_id)
+        if not character or not character.equipment:
+            return False
+        
+        attuned_items = character.equipment.get("attuned_items", [])
+        
+        if item_name in attuned_items:
+            attuned_items.remove(item_name)
+            
+            # Mark the JSON field as modified
+            flag_modified(character, "equipment")
+            
+            db.commit()
+            db.refresh(character)
+            return True
+        
+        return False
+    
+    @staticmethod
+    def get_attunement_info(db: Session, character_id: str) -> Dict[str, Any]:
+        """Get detailed attunement information for a character."""
+        character = CharacterDB.get_character(db, character_id)
+        if not character:
+            return {"error": "Character not found"}
+        
+        equipment_data = character.equipment or {}
+        attuned_items = equipment_data.get("attuned_items", [])
+        inventory = equipment_data.get("inventory", [])
+        
+        # Categorize inventory items by attunement status
+        attuned_item_details = []
+        attuneable_items = []
+        non_attuneable_items = []
+        
+        for item in inventory:
+            item_name = item.get("name", "Unknown Item")
+            requires_attunement = item.get("requires_attunement", False)
+            is_attuned = item_name in attuned_items
+            
+            item_info = {
+                "name": item_name,
+                "rarity": item.get("rarity", "common"),
+                "requires_attunement": requires_attunement,
+                "is_attuned": is_attuned,
+                "description": item.get("description", "")
+            }
+            
+            if is_attuned:
+                attuned_item_details.append(item_info)
+            elif requires_attunement:
+                attuneable_items.append(item_info)
+            else:
+                non_attuneable_items.append(item_info)
+        
+        return {
+            "character_id": character_id,
+            "attunement_slots_used": len(attuned_items),
+            "attunement_slots_available": max(0, 3 - len(attuned_items)),
+            "max_attunement_slots": 3,
+            "attuned_items": attuned_item_details,
+            "attuneable_items": attuneable_items,
+            "non_attuneable_items": non_attuneable_items,
+            "can_attune_more": len(attuned_items) < 3,
+            "rules": {
+                "attunement_limit": 3,
+                "attunement_process": "Requires a short rest (1 hour) while focusing on the item",
+                "breaking_attunement": "Can be done instantly at any time",
+                "note": "Only magic items that specifically require attunement can be attuned to"
+            }
+        }
+    
+    # ============================================================================
 # CHARACTER SESSION OPERATIONS
 # ============================================================================
 

@@ -59,9 +59,10 @@ from dnd_data import (
     is_existing_dnd_tool, find_similar_tools, get_tool_data, get_appropriate_tools_for_character,
     is_existing_dnd_gear, find_similar_gear, get_gear_data, get_appropriate_equipment_pack_for_character,
     get_weapon_data, get_appropriate_spells_for_character, get_appropriate_weapons_for_character,
-    get_appropriate_feats_for_character, get_available_feats_for_level, validate_feat_prerequisites,
+    get_appropriate_feats_for_character, get_available_feats_for_level,
     get_spell_schools_for_class
 )
+from creation_validation import validate_feat_prerequisites
 
 logger = logging.getLogger(__name__)
 

@@ -600,7 +600,7 @@ DND_WEAPON_DATABASE = {
     },
     "martial_ranged": {
         "Blowgun": {
-            "damage": "1",
+            "damage": "1d4",
             "damage_type": "piercing",
             "properties": ["Ammunition (Range 25/100; Needle)", "Loading"],
             "mastery": "Vex",
@@ -1230,48 +1230,6 @@ def get_appropriate_feats_for_character(character_data: Dict[str, Any], max_feat
     
     return feats[:max_feats]
 
-def validate_feat_prerequisites(feat_name: str, character_data: Dict[str, Any]) -> bool:
-    """Check if a character meets the prerequisites for a specific feat."""
-    feat_data = get_feat_data(feat_name)
-    if not feat_data:
-        return False
-    
-    prerequisites = feat_data.get("prerequisites")
-    if not prerequisites:
-        return True
-    
-    level = character_data.get("level", 1)
-    classes = character_data.get("classes", {})
-    ability_scores = character_data.get("ability_scores", {})
-    
-    for prereq in prerequisites:
-        # Level requirements
-        if "level" in prereq.lower():
-            required_level = int(prereq.split()[0].replace("th", "").replace("st", "").replace("nd", "").replace("rd", ""))
-            if level < required_level:
-                return False
-        
-        # Ability score requirements
-        for ability in ["Strength", "Dexterity", "Constitution", "Intelligence", "Wisdom", "Charisma"]:
-            if ability in prereq:
-                required_score = int(prereq.split()[-1])
-                if ability_scores.get(ability.lower(), 10) < required_score:
-                    return False
-        
-        # Class requirements
-        for class_name in ["Fighter", "Paladin", "Ranger", "Wizard", "Sorcerer", "Cleric"]:
-            if class_name in prereq and class_name not in classes:
-                return False
-        
-        # Spellcasting requirements
-        if "spell" in prereq.lower() and "cast" in prereq.lower():
-            # Check if character is a spellcaster
-            spellcasting_classes = ["Wizard", "Sorcerer", "Warlock", "Cleric", "Druid", "Bard", "Paladin", "Ranger", "Artificer"]
-            if not any(cls in spellcasting_classes for cls in classes.keys()):
-                return False
-    
-    return True
-
 # ============================================================================
 # UTILITY FUNCTIONS FOR D&D DATA
 # ============================================================================
@@ -1461,107 +1419,12 @@ def get_spell_schools_for_class(class_name: str) -> List[str]:
     """Get preferred spell schools for a character class."""
     return CLASS_SPELL_LISTS.get(class_name, CLASS_SPELL_LISTS["Wizard"])["schools"]
 
-# ============================================================================
-# DATA VALIDATION FUNCTIONS
-# ============================================================================
-
-def validate_spell_database() -> bool:
-    """Validate the integrity of the spell database."""
-    try:
-        # Check that all spells in COMPLETE_SPELL_LIST are in the database
-        database_spells = set()
-        for level_data in DND_SPELL_DATABASE.values():
-            for school_spells in level_data.values():
-                database_spells.update(school_spells)
-        
-        list_spells = set(COMPLETE_SPELL_LIST)
-        
-        # Check for missing spells
-        missing_in_database = list_spells - database_spells
-        missing_in_list = database_spells - list_spells
-        
-        if missing_in_database:
-            logger.warning(f"Spells in list but not in database: {missing_in_database}")
-        
-        if missing_in_list:
-            logger.warning(f"Spells in database but not in list: {missing_in_list}")
-        
-        return len(missing_in_database) == 0 and len(missing_in_list) == 0
-        
-    except Exception as e:
-        logger.error(f"Spell database validation failed: {e}")
-        return False
-
-def validate_weapon_database() -> bool:
-    """Validate the integrity of the weapon database."""
-    try:
-        # Check that all weapons have required fields
-        required_fields = ["damage", "damage_type", "properties", "mastery", "weight", "cost", "category", "type"]
-        
-        for category, weapons in DND_WEAPON_DATABASE.items():
-            for weapon_name, weapon_data in weapons.items():
-                for field in required_fields:
-                    if field not in weapon_data:
-                        logger.error(f"Weapon {weapon_name} missing field: {field}")
-                        return False
-        
-        logger.info("Weapon database validation passed")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Weapon database validation failed: {e}")
-        return False
-
-def validate_feat_database() -> bool:
-    """Validate the integrity of the feat database."""
-    try:
-        # Check that all feats have required fields
-        required_fields = ["description", "benefits", "prerequisites", "asi_bonus", "category"]
-        
-        for category, feats in DND_FEAT_DATABASE.items():
-            for feat_name, feat_data in feats.items():
-                for field in required_fields:
-                    if field not in feat_data:
-                        logger.error(f"Feat {feat_name} missing field: {field}")
-                        return False
-        
-        # Validate feat lookup integrity
-        all_feat_names = set()
-        for category_feats in DND_FEAT_DATABASE.values():
-            all_feat_names.update(category_feats.keys())
-        
-        lookup_names = set(ALL_FEATS.keys())
-        
-        if all_feat_names != lookup_names:
-            logger.error("Feat database and lookup mismatch")
-            return False
-        
-        logger.info("Feat database validation passed")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Feat database validation failed: {e}")
-        return False
-
-def validate_feat_database() -> bool:
-    """Validate the integrity of the feat database."""
-    try:
-        # Check that all feats have required fields
-        required_fields = ["description", "benefits", "prerequisites", "asi_bonus", "category"]
-        
-        for category, feats in DND_FEAT_DATABASE.items():
-            for feat_name, feat_data in feats.items():
-                for field in required_fields:
-                    if field not in feat_data:
-                        logger.error(f"Feat {feat_name} missing field: {field}")
-                        return False
-        
-        logger.info("Feat database validation passed")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Feat database validation failed: {e}")
-        return False
+def get_spell_schools_for_class(class_name: str) -> List[str]:
+    """Get preferred spell schools for a character class."""
+    return CLASS_SPELL_LISTS.get(class_name, CLASS_SPELL_LISTS["Wizard"])["schools"]
+def get_spell_schools_for_class(class_name: str) -> List[str]:
+    """Get preferred spell schools for a character class."""
+    return CLASS_SPELL_LISTS.get(class_name, CLASS_SPELL_LISTS["Wizard"])["schools"]
 
 # ============================================================================
 # D&D 5e ARMOR DATABASE - PRIORITIZE EXISTING ARMOR
@@ -2270,6 +2133,26 @@ DND_ADVENTURING_GEAR_DATABASE = {
             "description": "Includes backpack, book of lore, bottle of ink, ink pen, 10 sheets of parchment, little bag of sand, small knife",
             "contents": ["Backpack", "Book of lore", "Ink bottle", "Ink pen", "Parchment (10 sheets)", "Sand bag", "Small knife"]
         }
+    },
+    "adventure_gear": {
+        "Rope (50 feet)": {
+            "cost": "2 GP",
+            "weight": 10.0,
+            "category": "Adventure Gear",
+            "description": "50 feet of hempen rope, useful for climbing and securing equipment"
+        },
+        "Rations (5 days)": {
+            "cost": "10 GP",
+            "weight": 10.0,
+            "category": "Adventure Gear",
+            "description": "Dry foods suitable for extended travel, lasts 5 days"
+        },
+        "Waterskin": {
+            "cost": "2 GP",
+            "weight": 5.0,
+            "category": "Adventure Gear",
+            "description": "A leather pouch that holds 4 pints of liquid"
+        }
     }
 }
 
@@ -2578,282 +2461,3 @@ def get_appropriate_equipment_pack_for_character(character_data: Dict[str, Any])
     pack_name = CLASS_EQUIPMENT_PREFERENCES.get(primary_class, "Explorer's Pack")
     
     return get_gear_data(pack_name)
-
-# ============================================================================
-# VALIDATION FUNCTIONS FOR NEW DATA
-# ============================================================================
-
-def validate_armor_database() -> bool:
-    """Validate the integrity of the armor database."""
-    try:
-        required_fields = ["dex_modifier", "weight", "cost", "category", "properties"]
-        
-        for category, armors in DND_ARMOR_DATABASE.items():
-            for armor_name, armor_data in armors.items():
-                # Check for required fields
-                for field in required_fields:
-                    if field not in armor_data:
-                        logger.error(f"Armor {armor_name} missing field: {field}")
-                        return False
-                
-                # Armor must have either ac_base OR ac_bonus (for shields)
-                if "ac_base" not in armor_data and "ac_bonus" not in armor_data:
-                    logger.error(f"Armor {armor_name} missing both ac_base and ac_bonus")
-                    return False
-        
-        logger.info("Armor database validation passed")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Armor database validation failed: {e}")
-        return False
-
-def validate_tools_database() -> bool:
-    """Validate the integrity of the tools database."""
-    try:
-        required_fields = ["cost", "weight", "category", "description"]
-        
-        for category, tools in DND_TOOLS_DATABASE.items():
-            for tool_name, tool_data in tools.items():
-                for field in required_fields:
-                    if field not in tool_data:
-                        logger.error(f"Tool {tool_name} missing field: {field}")
-                        return False
-        
-        logger.info("Tools database validation passed")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Tools database validation failed: {e}")
-        return False
-
-def validate_gear_database() -> bool:
-    """Validate the integrity of the adventuring gear database."""
-    try:
-        required_fields = ["cost", "weight", "category", "description"]
-        
-        for category, gears in DND_ADVENTURING_GEAR_DATABASE.items():
-            for gear_name, gear_data in gears.items():
-                for field in required_fields:
-                    if field not in gear_data:
-                        logger.error(f"Gear {gear_name} missing field: {field}")
-                        return False
-        
-        logger.info("Adventuring gear database validation passed")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Adventuring gear database validation failed: {e}")
-        return False
- 
-# 48
-# Half Plate Armor
- 
-# 49
-# Ring Mail
- 
-# 50
-# Chain Mail
- 
-# 51
-# Splint Armor
- 
-# 52
-# Plate Armor
- 
-# 53
-# Shield
-
-# standard tools:
-# Tools
- 
-# 55
-# Tool Proficiency
- 
-# 55.1
-# Artisan’s Tools
- 
-# 55.2
-# Other Tools
- 
-# 55.3
-# Gaming Sets
- 
-# 55.4
-# Musical Instruments
- 
-# 55.5
-# Alchemist's Supplies
- 
-# 56
-# Brewer's Supplies
- 
-# 57
-# Calligrapher's Supplies
- 
-# 58
-# Carpenter's Tools
- 
-# 59
-# Cartographer's Tools
- 
-# 60
-# Cobbler's Tools
- 
-# 61
-# Cook's Utensils
- 
-# 62
-# Glassblower's Tools
- 
-# 63
-# Jeweler's Tools
- 
-# 64
-# Leatherworker's Tools
- 
-# 65
-# Mason's Tools
- 
-# 66
-# Painter's Supplies
- 
-# 67
-# Potter's Tools
- 
-# 68
-# Smith's Tools
- 
-# 69
-# Tinker's Tools
- 
-# 70
-# Weaver's Tools
- 
-# 71
-# Woodcarver's Tools
- 
-# 72
-# Disguise Kit
- 
-# 73
-# Forgery Kit
- 
-# 74
-# Dice Set
- 
-# 75
-# Dragonchess Set
- 
-# 76
-# Playing Card Set
- 
-# 77
-# Three-Dragon Ante Set
- 
-# 78
-# Herbalism Kit
- 
-# 79
-# Bagpipes
- 
-# 80
-# Drum
- 
-# 81
-# Dulcimer
- 
-# 82
-# Flute
- 
-# 83
-# Horn
- 
-# 84
-# Lute
- 
-# 85
-# Lyre
- 
-# 86
-# Pan Flute
- 
-# 87
-# Shawm
- 
-# 88
-# Viol
- 
-# 89
-# Navigator's Tools
- 
-# 90
-# Poisoner's Kit
- 
-# 91
-# Thieves' Tools
-
-# Adventuring Gear
- 
-# 93
-# Adventuring Gear
- 
-# 93.1
-# Ammunition
- 
-# 93.2
-# Arcane Focus
- 
-# 93.3
-# Arcane Focuses
- 
-# 93.4
-# Druidic Focus
- 
-# 93.5
-# Druidic Focuses
- 
-# 93.6
-# Holy Symbol
- 
-# 93.7
-# Holy Symbols
-
-# other adventuring gear items:
-# Acid
- 
-# 94
-# Alchemist's Fire
- 
-# 95
-# Arrows
- 
-# 96
-# Bolts
- 
-# 97
-# Firearm Bullets
- 
-# 98
-# Sling Bullets
- 
-# 99
-# Needles
- 
-# 100
-# Antitoxin
- 
-# 101
-# Crystal
- 
-# 102
-# Orb
- 
-# 103
-# Rod
- 
-# 104
-# Wand
- 
-# 105
-# Backpack

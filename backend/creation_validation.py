@@ -24,7 +24,7 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 
 # Import from centralized enums
-from enums import NPCType, NPCRole, ItemRarity
+from .enums import NPCType, NPCRole, ItemRarity
 
 # Import CreationResult class (will be moved to shared module later)
 # For now, we'll define a minimal version to avoid circular imports
@@ -751,3 +751,215 @@ def validate_custom_item_balance(item_data: Dict[str, Any]) -> CreationResult:
         result.add_warning(f"{rarity.title()} items typically require attunement")
     
     return result
+
+# ============================================================================
+# DATABASE VALIDATION FUNCTIONS
+# ============================================================================
+
+def validate_spell_database() -> bool:
+    """Validate the integrity of the spell database."""
+    try:
+        from .dnd_data import DND_SPELL_DATABASE
+        
+        required_fields = ["description", "level", "school", "casting_time", "range", "components", "duration"]
+        
+        for level_key, level_spells in DND_SPELL_DATABASE.items():
+            if isinstance(level_spells, dict):
+                for school, spells in level_spells.items():
+                    for spell_name in spells:
+                        # For now, we just check that spell names are strings
+                        if not isinstance(spell_name, str):
+                            logger.error(f"Invalid spell name type: {type(spell_name)}")
+                            return False
+                        
+                        if len(spell_name.strip()) == 0:
+                            logger.error(f"Empty spell name found in {level_key}/{school}")
+                            return False
+        
+        logger.info("Spell database validation passed")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Spell database validation failed: {e}")
+        return False
+
+def validate_weapon_database() -> bool:
+    """Validate the integrity of the weapon database."""
+    try:
+        from .dnd_data import DND_WEAPON_DATABASE
+        
+        required_fields = ["damage", "damage_type", "properties", "weight", "cost", "category"]
+        
+        for category, weapons in DND_WEAPON_DATABASE.items():
+            for weapon_name, weapon_data in weapons.items():
+                for field in required_fields:
+                    if field not in weapon_data:
+                        logger.error(f"Weapon {weapon_name} missing field: {field}")
+                        return False
+                
+                # Validate damage format
+                damage = weapon_data.get("damage", "")
+                if damage and not any(die in damage for die in ["d4", "d6", "d8", "d10", "d12"]):
+                    logger.error(f"Weapon {weapon_name} has invalid damage format: {damage}")
+                    return False
+        
+        logger.info("Weapon database validation passed")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Weapon database validation failed: {e}")
+        return False
+
+def validate_feat_database() -> bool:
+    """Validate the integrity of the feat database."""
+    try:
+        from .dnd_data import DND_FEAT_DATABASE
+        
+        required_fields = ["description", "benefits", "prerequisites", "asi_bonus", "category"]
+        
+        for category, feats in DND_FEAT_DATABASE.items():
+            for feat_name, feat_data in feats.items():
+                for field in required_fields:
+                    if field not in feat_data:
+                        logger.error(f"Feat {feat_name} missing field: {field}")
+                        return False
+        
+        logger.info("Feat database validation passed")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Feat database validation failed: {e}")
+        return False
+
+def validate_armor_database() -> bool:
+    """Validate the integrity of the armor database."""
+    try:
+        from .dnd_data import DND_ARMOR_DATABASE
+        
+        required_fields = ["dex_modifier", "weight", "cost", "category", "properties"]
+        
+        for category, armors in DND_ARMOR_DATABASE.items():
+            for armor_name, armor_data in armors.items():
+                # Check for required fields
+                for field in required_fields:
+                    if field not in armor_data:
+                        logger.error(f"Armor {armor_name} missing field: {field}")
+                        return False
+                
+                # Armor must have either ac_base OR ac_bonus (for shields)
+                if "ac_base" not in armor_data and "ac_bonus" not in armor_data:
+                    logger.error(f"Armor {armor_name} missing both ac_base and ac_bonus")
+                    return False
+        
+        logger.info("Armor database validation passed")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Armor database validation failed: {e}")
+        return False
+
+def validate_tools_database() -> bool:
+    """Validate the integrity of the tools database."""
+    try:
+        from .dnd_data import DND_TOOLS_DATABASE
+        
+        required_fields = ["cost", "weight", "category", "description"]
+        
+        for category, tools in DND_TOOLS_DATABASE.items():
+            for tool_name, tool_data in tools.items():
+                for field in required_fields:
+                    if field not in tool_data:
+                        logger.error(f"Tool {tool_name} missing field: {field}")
+                        return False
+        
+        logger.info("Tools database validation passed")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Tools database validation failed: {e}")
+        return False
+
+def validate_gear_database() -> bool:
+    """Validate the integrity of the adventuring gear database."""
+    try:
+        from .dnd_data import DND_ADVENTURING_GEAR_DATABASE
+        
+        required_fields = ["cost", "weight", "category", "description"]
+        
+        for category, gears in DND_ADVENTURING_GEAR_DATABASE.items():
+            for gear_name, gear_data in gears.items():
+                for field in required_fields:
+                    if field not in gear_data:
+                        logger.error(f"Gear {gear_name} missing field: {field}")
+                        return False
+        
+        logger.info("Adventuring gear database validation passed")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Adventuring gear database validation failed: {e}")
+        return False
+
+def validate_feat_prerequisites(feat_name: str, character_data: Dict[str, Any]) -> bool:
+    """Validate that a character meets the prerequisites for a specific feat."""
+    try:
+        from .dnd_data import get_feat_data
+        
+        feat_data = get_feat_data(feat_name)
+        if not feat_data:
+            logger.error(f"Feat {feat_name} not found")
+            return False
+        
+        prerequisites = feat_data.get("prerequisites", {})
+        if not prerequisites:
+            return True  # No prerequisites
+        
+        # Check ability score requirements
+        ability_requirements = prerequisites.get("abilities", {})
+        character_abilities = character_data.get("abilities", {})
+        
+        for ability, min_score in ability_requirements.items():
+            character_score = character_abilities.get(ability, 10)
+            if character_score < min_score:
+                logger.warning(f"Character {ability} score {character_score} does not meet feat requirement {min_score}")
+                return False
+        
+        # Check level requirements
+        min_level = prerequisites.get("level", 1)
+        character_level = character_data.get("level", 1)
+        if character_level < min_level:
+            logger.warning(f"Character level {character_level} does not meet feat requirement {min_level}")
+            return False
+        
+        # Check class requirements
+        required_classes = prerequisites.get("classes", [])
+        if required_classes:
+            character_classes = list(character_data.get("classes", {}).keys())
+            if not any(cls in character_classes for cls in required_classes):
+                logger.warning(f"Character classes {character_classes} do not meet feat requirements {required_classes}")
+                return False
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"Feat prerequisite validation failed: {e}")
+        return False
+
+def validate_all_databases() -> bool:
+    """Validate all D&D data databases for integrity."""
+    validations = [
+        validate_spell_database,
+        validate_weapon_database, 
+        validate_feat_database,
+        validate_armor_database,
+        validate_tools_database,
+        validate_gear_database
+    ]
+    
+    for validation_func in validations:
+        if not validation_func():
+            logger.error(f"Database validation failed: {validation_func.__name__}")
+            return False
+    
+    logger.info("All database validations passed")
+    return True

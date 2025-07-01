@@ -17,12 +17,12 @@ import logging
 # Add the backend directory to the Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
 
-from dnd_data import (
+from backend.dnd_data import (
     DND_FEAT_DATABASE, ALL_FEATS, FEAT_LOOKUP, FEAT_AVAILABILITY,
     is_existing_dnd_feat, find_similar_feats, get_feat_data,
-    get_available_feats_for_level, get_appropriate_feats_for_character,
-    validate_feat_prerequisites, validate_feat_database
+    get_available_feats_for_level, get_appropriate_feats_for_character
 )
+from backend.creation_validation import validate_feat_prerequisites, validate_feat_database
 
 def test_feat_database_integrity():
     """Test that the feat database is complete and correctly structured."""

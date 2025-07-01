@@ -1190,6 +1190,380 @@ async def get_attunement_status(character_id: str, db = Depends(get_db)):
         logger.error(f"Failed to get attunement status for character {character_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Get attunement status failed: {str(e)}")
 
+# ============================================================================
+# ITERATIVE REFINEMENT ENDPOINTS - CRITICAL DEV_VISION.MD REQUIREMENT
+# ============================================================================
+
+class CharacterRefinementRequest(BaseModel):
+    """Request model for iterative character refinement."""
+    refinement_prompt: str
+    user_preferences: Optional[Dict[str, Any]] = None
+
+class CharacterFeedbackRequest(BaseModel):
+    """Request model for structured character feedback."""
+    change_type: str  # "modify_ability", "change_class", "add_feat", "modify_equipment", "change_spells"
+    target: str       # What to change (ability name, class name, item name, etc.)
+    new_value: str    # New value to set
+    reason: Optional[str] = None  # User explanation for change
+
+class CharacterLevelUpRequest(BaseModel):
+    """Request model for character level-up."""
+    new_level: int
+    multiclass_option: Optional[str] = None
+    journal_entries: Optional[List[str]] = None
+    story_reason: Optional[str] = None
+    context: Optional[str] = None
+
+@app.post("/api/v2/characters/{character_id}/refine", response_model=FactoryResponse, tags=["iterative-refinement"])
+async def refine_character(character_id: str, request: CharacterRefinementRequest, db = Depends(get_db)):
+    """
+    Apply iterative refinements to a character while maintaining consistency.
+    Critical dev_vision.md requirement for collaborative character development.
+    """
+    import time
+    start_time = time.time()
+    
+    try:
+        # Load existing character
+        existing_character = CharacterDB.get_character(db, character_id)
+        if not existing_character:
+            raise HTTPException(status_code=404, detail="Character not found")
+        
+        # Convert to dict format
+        character_data = existing_character.to_dict()
+        
+        logger.info(f"Refining character {character_id}: {request.refinement_prompt[:100]}...")
+        
+        # Use the factory to refine the character
+        factory = app.state.creation_factory
+        result = await factory.evolve_existing(
+            CreationOptions.CHARACTER,
+            character_data,
+            request.refinement_prompt,
+            evolution_type='refine',
+            user_preferences=request.user_preferences or {}
+        )
+        
+        # Save refined character back to database
+        warnings = []
+        try:
+            CharacterDB.save_character_sheet(db, result, character_id)
+            logger.info(f"Refined character saved back to database")
+        except Exception as e:
+            logger.warning(f"Failed to save refined character: {e}")
+            warnings.append(f"Refinement completed but not saved: {str(e)}")
+        
+        processing_time = time.time() - start_time
+        
+        # Prepare response data
+        if hasattr(result, 'to_dict'):
+            response_data = result.to_dict()
+        else:
+            response_data = result
+        
+        logger.info(f"Character refinement completed in {processing_time:.2f}s")
+        
+        return FactoryResponse(
+            success=True,
+            creation_type="character",
+            object_id=character_id,
+            data=response_data,
+            warnings=warnings if warnings else None,
+            processing_time=processing_time
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        processing_time = time.time() - start_time
+        logger.error(f"Character refinement failed: {e}")
+        return FactoryResponse(
+            success=False,
+            creation_type="character",
+            data={"error": str(e)},
+            processing_time=processing_time
+        )
+
+@app.post("/api/v2/characters/{character_id}/feedback", response_model=FactoryResponse, tags=["iterative-refinement"])
+async def apply_character_feedback(character_id: str, request: CharacterFeedbackRequest, db = Depends(get_db)):
+    """
+    Apply structured user feedback to character (targeted changes).
+    Supports specific changes like ability scores, class changes, feat additions, etc.
+    """
+    import time
+    start_time = time.time()
+    
+    try:
+        # Load existing character
+        existing_character = CharacterDB.get_character(db, character_id)
+        if not existing_character:
+            raise HTTPException(status_code=404, detail="Character not found")
+        
+        # Convert to dict format
+        character_data = existing_character.to_dict()
+        
+        logger.info(f"Applying feedback to character {character_id}: {request.change_type}")
+        
+        # Apply feedback using CharacterCreator
+        from creation import CharacterCreator
+        creator = CharacterCreator(app.state.llm_service)
+        
+        feedback_data = {
+            "change_type": request.change_type,
+            "target": request.target,
+            "new_value": request.new_value,
+            "reason": request.reason or "User requested change"
+        }
+        
+        result = await creator.apply_user_feedback(character_data, feedback_data)
+        
+        if not result.success:
+            raise Exception(result.error)
+        
+        # Save updated character back to database
+        warnings = result.warnings or []
+        try:
+            CharacterDB.save_character_sheet(db, result.data, character_id)
+            logger.info(f"Character feedback applied and saved to database")
+        except Exception as e:
+            logger.warning(f"Failed to save character with feedback: {e}")
+            warnings.append(f"Feedback applied but not saved: {str(e)}")
+        
+        processing_time = time.time() - start_time
+        
+        # Prepare response data
+        response_data = result.data.to_dict() if hasattr(result.data, 'to_dict') else result.data
+        
+        logger.info(f"Character feedback completed in {processing_time:.2f}s")
+        
+        return FactoryResponse(
+            success=True,
+            creation_type="character",
+            object_id=character_id,
+            data=response_data,
+            warnings=warnings if warnings else None,
+            processing_time=processing_time
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        processing_time = time.time() - start_time
+        logger.error(f"Character feedback failed: {e}")
+        return FactoryResponse(
+            success=False,
+            creation_type="character",
+            data={"error": str(e)},
+            processing_time=processing_time
+        )
+
+@app.post("/api/v2/characters/{character_id}/level-up", response_model=FactoryResponse, tags=["character-advancement"])
+async def level_up_character_with_journal(character_id: str, request: CharacterLevelUpRequest, db = Depends(get_db)):
+    """
+    Level up character using journal entries as context for advancement decisions.
+    Critical dev_vision.md requirement for character advancement based on play experience.
+    """
+    import time
+    start_time = time.time()
+    
+    try:
+        # Load existing character
+        existing_character = CharacterDB.get_character(db, character_id)
+        if not existing_character:
+            raise HTTPException(status_code=404, detail="Character not found")
+        
+        # Convert to dict format
+        character_data = existing_character.to_dict()
+        current_level = character_data.get('level', 1)
+        
+        # Validate level progression
+        if request.new_level <= current_level:
+            raise HTTPException(status_code=400, detail=f"New level ({request.new_level}) must be higher than current level ({current_level})")
+        
+        if request.new_level > current_level + 1:
+            raise HTTPException(status_code=400, detail="Can only level up one level at a time")
+        
+        logger.info(f"Leveling up character {character_id} from {current_level} to {request.new_level}")
+        
+        # Use the factory to level up the character
+        factory = app.state.creation_factory
+        level_info = {
+            "new_level": request.new_level,
+            "multiclass": request.multiclass_option,
+            "journal_entries": request.journal_entries or [],
+            "story_reason": request.story_reason,
+            "context": request.context
+        }
+        
+        from creation_factory import level_up_character
+        result = await level_up_character(character_data, level_info, app.state.llm_service)
+        
+        # Save leveled character back to database
+        warnings = [f"Character leveled up from {current_level} to {request.new_level}"]
+        if request.multiclass_option:
+            warnings.append(f"Added multiclass: {request.multiclass_option}")
+        
+        try:
+            CharacterDB.save_character_sheet(db, result, character_id)
+            logger.info(f"Leveled character saved back to database")
+        except Exception as e:
+            logger.warning(f"Failed to save leveled character: {e}")
+            warnings.append(f"Level-up completed but not saved: {str(e)}")
+        
+        processing_time = time.time() - start_time
+        
+        # Prepare response data
+        response_data = result.to_dict() if hasattr(result, 'to_dict') else result
+        
+        logger.info(f"Character level-up completed in {processing_time:.2f}s")
+        
+        return FactoryResponse(
+            success=True,
+            creation_type="character",
+            object_id=character_id,
+            data=response_data,
+            warnings=warnings if warnings else None,
+            processing_time=processing_time
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        processing_time = time.time() - start_time
+        logger.error(f"Character level-up failed: {e}")
+        return FactoryResponse(
+            success=False,
+            creation_type="character",
+            data={"error": str(e)},
+            processing_time=processing_time
+        )
+
+@app.get("/api/v2/characters/{character_id}/level-up/suggestions", tags=["character-advancement"])
+async def get_level_up_suggestions(character_id: str, journal_entries: List[str] = Query(default=[]), db = Depends(get_db)):
+    """
+    Get level-up suggestions based on character's journal entries and current build.
+    Helps users make informed level-up decisions based on play experience.
+    """
+    try:
+        # Load existing character
+        existing_character = CharacterDB.get_character(db, character_id)
+        if not existing_character:
+            raise HTTPException(status_code=404, detail="Character not found")
+        
+        character_data = existing_character.to_dict()
+        current_level = character_data.get('level', 1)
+        
+        if current_level >= 20:
+            return {"message": "Character is already at maximum level (20)"}
+        
+        # Use CharacterCreator to analyze journal for suggestions
+        from creation import CharacterCreator
+        creator = CharacterCreator(app.state.llm_service)
+        
+        suggestions = await creator._analyze_journal_for_levelup(
+            character_data, journal_entries, current_level + 1
+        )
+        
+        return {
+            "character_id": character_id,
+            "current_level": current_level,
+            "next_level": current_level + 1,
+            "suggestions": suggestions,
+            "available_options": {
+                "class_advancement": list(character_data.get('classes', {}).keys()),
+                "multiclass_options": ["Fighter", "Wizard", "Cleric", "Rogue", "Ranger", "Paladin", "Barbarian", "Bard", "Druid", "Sorcerer", "Warlock", "Monk"],
+                "feat_levels": [4, 8, 12, 16, 19]
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get level-up suggestions for character {character_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Get level-up suggestions failed: {str(e)}")
+
+# ============================================================================
+# CHARACTER EVOLUTION & ENHANCEMENT ENDPOINTS
+# ============================================================================
+
+class CharacterEnhancementRequest(BaseModel):
+    """Request model for character enhancement based on story events."""
+    enhancement_prompt: str
+    preserve_backstory: bool = True
+    story_context: Optional[str] = None
+
+@app.post("/api/v2/characters/{character_id}/enhance", response_model=FactoryResponse, tags=["character-advancement"])
+async def enhance_existing_character(character_id: str, request: CharacterEnhancementRequest, db = Depends(get_db)):
+    """
+    Enhance existing character based on story events while preserving core identity.
+    Used for character evolution due to magical effects, artifacts, story events, etc.
+    """
+    import time
+    start_time = time.time()
+    
+    try:
+        # Load existing character
+        existing_character = CharacterDB.get_character(db, character_id)
+        if not existing_character:
+            raise HTTPException(status_code=404, detail="Character not found")
+        
+        character_data = existing_character.to_dict()
+        
+        logger.info(f"Enhancing character {character_id}: {request.enhancement_prompt[:100]}...")
+        
+        # Use CharacterCreator to enhance the character
+        from creation import CharacterCreator
+        creator = CharacterCreator(app.state.llm_service)
+        
+        result = await creator.enhance_existing_character(
+            character_data, 
+            request.enhancement_prompt, 
+            request.preserve_backstory
+        )
+        
+        if not result.success:
+            raise Exception(result.error)
+        
+        # Save enhanced character back to database
+        warnings = ["Character enhanced based on story events"]
+        if request.story_context:
+            warnings.append(f"Story context: {request.story_context}")
+        
+        try:
+            CharacterDB.save_character_sheet(db, result.data, character_id)
+            logger.info(f"Enhanced character saved back to database")
+        except Exception as e:
+            logger.warning(f"Failed to save enhanced character: {e}")
+            warnings.append(f"Enhancement completed but not saved: {str(e)}")
+        
+        processing_time = time.time() - start_time
+        
+        # Prepare response data
+        response_data = result.data.to_dict() if hasattr(result.data, 'to_dict') else result.data
+        
+        logger.info(f"Character enhancement completed in {processing_time:.2f}s")
+        
+        return FactoryResponse(
+            success=True,
+            creation_type="character",
+            object_id=character_id,
+            data=response_data,
+            warnings=warnings if warnings else None,
+            processing_time=processing_time
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        processing_time = time.time() - start_time
+        logger.error(f"Character enhancement failed: {e}")
+        return FactoryResponse(
+            success=False,
+            creation_type="character",
+            data={"error": str(e)},
+            processing_time=processing_time
+        )
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

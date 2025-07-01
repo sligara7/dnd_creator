@@ -40,7 +40,7 @@ from typing import Dict, Any, Optional, Type, List
 from dataclasses import dataclass
 
 from enums import CreationOptions
-from character_models import CharacterSheet
+from character_models import CharacterCore
 from creation import CharacterCreator, NPCCreator, CreatureCreator, ItemCreator
 from generators import CustomContentGenerator
 
@@ -77,7 +77,7 @@ class CreationFactory:
         """Build mapping of creation types to their required components."""
         return {
             CreationOptions.CHARACTER: CreationConfig(
-                models=[CharacterSheet, ItemSheet],  # Characters have equipment/items
+                models=[CharacterCore, ItemSheet],  # Characters have equipment/items
                 generators=[
                     CharacterCreator, 
                     CustomContentGenerator,
@@ -125,7 +125,7 @@ class CreationFactory:
                 }
             ),
             CreationOptions.NPC: CreationConfig(
-                models=[CharacterSheet, CreatureSheet, ItemSheet],  # NPCs can be character-like or creature-like
+                models=[CharacterCore, CreatureSheet, ItemSheet],  # NPCs can be character-like or creature-like
                 generators=[
                     CharacterCreator,   # For character-based NPCs
                     CreatureCreator,    # For creature-based NPCs
@@ -279,7 +279,7 @@ class CreationFactory:
         import asyncio
         return asyncio.run(self.create_from_scratch(creation_type, **kwargs))
     
-    async def _create_character_from_scratch(self, prompt: str, **kwargs) -> CharacterSheet:
+    async def _create_character_from_scratch(self, prompt: str, **kwargs) -> CharacterCore:
         """
         Create a new character from scratch using LLM generation.
         
@@ -299,7 +299,7 @@ class CreationFactory:
                 self.last_verbose_logs = result.verbose_logs
             raise Exception(f"Character creation failed: {result.error}")
     
-    async def _evolve_character(self, existing_data: Dict[str, Any], evolution_prompt: str, **kwargs) -> CharacterSheet:
+    async def _evolve_character(self, existing_data: Dict[str, Any], evolution_prompt: str, **kwargs) -> CharacterCore:
         """
         Evolve an existing character using journal and new prompt.
         
@@ -311,21 +311,40 @@ class CreationFactory:
         """
         creator = CharacterCreator(self.llm_service)
         
-        # Ensure we preserve the existing backstory rather than regenerating it
-        preserve_backstory = kwargs.get('preserve_backstory', True)
-        if preserve_backstory and 'backstory' in existing_data:
-            # Store original backstory to preserve it
-            original_backstory = existing_data['backstory']
-            kwargs['preserve_backstory'] = original_backstory
+        # Determine evolution type
+        evolution_type = kwargs.get('evolution_type', 'enhance')
         
-        result = await creator.create_character(
-            evolution_prompt, 
-            kwargs.get('user_preferences'),
-            import_existing=existing_data
-        )
+        if evolution_type == 'refine':
+            # Iterative refinement
+            result = await creator.refine_character(
+                existing_data, 
+                evolution_prompt, 
+                kwargs.get('user_preferences')
+            )
+        elif evolution_type == 'level_up':
+            # Level up using journal
+            journal_entries = kwargs.get('journal_entries', [])
+            new_level = kwargs.get('new_level', existing_data.get('level', 1) + 1)
+            multiclass = kwargs.get('multiclass_option')
+            result = await creator.level_up_character_with_journal(
+                existing_data, journal_entries, new_level, multiclass
+            )
+        else:
+            # General enhancement
+            preserve_backstory = kwargs.get('preserve_backstory', True)
+            result = await creator.enhance_existing_character(
+                existing_data, evolution_prompt, preserve_backstory
+            )
+        
         if result.success:
+            # Store verbose logs for later retrieval
+            if hasattr(result, 'verbose_logs'):
+                self.last_verbose_logs = result.verbose_logs
             return result.data
         else:
+            # Store verbose logs even on failure
+            if hasattr(result, 'verbose_logs'):
+                self.last_verbose_logs = result.verbose_logs
             raise Exception(f"Character evolution failed: {result.error}")
     
     async def _create_monster_from_scratch(self, prompt: str, **kwargs) -> CreatureSheet:
@@ -341,13 +360,13 @@ class CreationFactory:
         # Implementation would use evolution logic
         pass
     
-    async def _create_npc_from_scratch(self, prompt: str, **kwargs) -> CharacterSheet:
+    async def _create_npc_from_scratch(self, prompt: str, **kwargs) -> CharacterCore:
         """Create a new NPC from scratch using hybrid logic."""
         # NPCs might use both character and creature components
         # Could be character-like (with classes) or creature-like (with CR)
         pass
     
-    async def _evolve_npc(self, existing_data: Dict[str, Any], evolution_prompt: str, **kwargs) -> CharacterSheet:
+    async def _evolve_npc(self, existing_data: Dict[str, Any], evolution_prompt: str, **kwargs) -> CharacterCore:
         """Evolve an existing NPC (level up, story changes, etc.)."""
         # NPCs could evolve similarly to characters based on story events
         pass
@@ -372,13 +391,13 @@ class CreationFactory:
 
 
 # Convenience functions for common creation patterns
-async def create_character_from_scratch(prompt: str, llm_service=None, **kwargs) -> CharacterSheet:
+async def create_character_from_scratch(prompt: str, llm_service=None, **kwargs) -> CharacterCore:
     """Convenience function to create a character from scratch."""
     factory = CreationFactory(llm_service)
     return await factory.create_from_scratch(CreationOptions.CHARACTER, prompt, **kwargs)
 
 
-async def evolve_character(existing_data: Dict[str, Any], evolution_prompt: str, llm_service=None, **kwargs) -> CharacterSheet:
+async def evolve_character(existing_data: Dict[str, Any], evolution_prompt: str, llm_service=None, **kwargs) -> CharacterCore:
     """
     Convenience function to evolve an existing character.
     
@@ -389,7 +408,18 @@ async def evolve_character(existing_data: Dict[str, Any], evolution_prompt: str,
     return await factory.evolve_existing(CreationOptions.CHARACTER, existing_data, evolution_prompt, **kwargs)
 
 
-async def level_up_character(existing_data: Dict[str, Any], level_info: Dict[str, Any], llm_service=None, **kwargs) -> CharacterSheet:
+async def refine_character(existing_data: Dict[str, Any], refinement_prompt: str, llm_service=None, **kwargs) -> CharacterCore:
+    """
+    Convenience function for iterative character refinement.
+    
+    Applies user feedback while maintaining character consistency.
+    """
+    kwargs['evolution_type'] = 'refine'
+    factory = CreationFactory(llm_service)
+    return await factory.evolve_existing(CreationOptions.CHARACTER, existing_data, refinement_prompt, **kwargs)
+
+
+async def level_up_character(existing_data: Dict[str, Any], level_info: Dict[str, Any], llm_service=None, **kwargs) -> CharacterCore:
     """
     Convenience function specifically for leveling up a character.
     
@@ -406,8 +436,33 @@ async def level_up_character(existing_data: Dict[str, Any], level_info: Dict[str
     
     # Always preserve backstory when leveling up
     kwargs['preserve_backstory'] = True
+    kwargs['evolution_type'] = 'level_up'
+    kwargs['new_level'] = level_info.get('new_level')
+    kwargs['multiclass_option'] = level_info.get('multiclass')
+    kwargs['journal_entries'] = level_info.get('journal_entries', [])
     
-    return await evolve_character(existing_data, evolution_prompt, llm_service, **kwargs)
+    factory = CreationFactory(llm_service)
+    return await factory.evolve_existing(CreationOptions.CHARACTER, existing_data, evolution_prompt, **kwargs)
+
+
+async def apply_character_feedback(existing_data: Dict[str, Any], feedback: Dict[str, Any], llm_service=None, **kwargs) -> CharacterCore:
+    """
+    Convenience function for applying structured user feedback.
+    
+    Feedback format:
+    {
+        "change_type": "modify_ability|change_class|add_feat|modify_equipment|change_spells",
+        "target": "strength|wizard|Alert|Longsword|Fireball", 
+        "new_value": "15|Sorcerer|Magic Initiate|Rapier|Lightning Bolt",
+        "reason": "User explanation for change"
+    }
+    """
+    creator = CharacterCreator(llm_service)
+    result = await creator.apply_user_feedback(existing_data, feedback)
+    if result.success:
+        return result.data
+    else:
+        raise Exception(f"Failed to apply feedback: {result.error}")
 
 
 async def create_monster_from_scratch(prompt: str, llm_service=None, **kwargs) -> CreatureSheet:

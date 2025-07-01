@@ -310,16 +310,18 @@ Return ONLY this JSON:
             response = await self.llm_service.generate_content(prompt)
             data = json.loads(self._clean_json_response(response))
             
-            return CustomSpecies(
+            species = CustomSpecies(
                 name=data["name"],
+                description=data["description"],
                 size=data["size"],
-                speed=data["speed"],
-                innate_traits=data["traits"],
-                languages=data["languages"],
-                proficiencies=data["proficiencies"],
-                ability_score_bonuses=data.get("ability_score_bonuses", {}),
-                description=data["description"]
+                speed=data["speed"]
             )
+            
+            # Set additional properties after initialization
+            species.innate_traits = data.get("traits", [])
+            species.languages = data.get("languages", ["Common"])
+            
+            return species
         except Exception as e:
             logger.error(f"Failed to generate custom species: {e}")
             return None
@@ -339,18 +341,22 @@ Return ONLY this JSON:
             response = await self.llm_service.generate_content(prompt)
             data = json.loads(self._clean_json_response(response))
             
-            return CustomClass(
+            custom_class = CustomClass(
                 name=data["name"],
+                description=data["description"],
                 hit_die=data["hit_die"],
-                primary_ability=data["primary_ability"],
-                saving_throw_proficiencies=data["saves"],
-                armor_proficiencies=data["proficiencies"]["armor"],
-                weapon_proficiencies=data["proficiencies"]["weapons"],
-                tool_proficiencies=data["proficiencies"]["tools"],
-                skill_choices=data["proficiencies"]["skills"],
-                features=data["features"],
-                description=data["description"]
+                primary_abilities=[data["primary_ability"]],
+                saving_throws=data["saves"]
             )
+            
+            # Set additional properties after initialization
+            custom_class.armor_proficiencies = data["proficiencies"]["armor"]
+            custom_class.weapon_proficiencies = data["proficiencies"]["weapons"]
+            custom_class.tool_proficiencies = data["proficiencies"]["tools"]
+            custom_class.skill_choices = data["proficiencies"]["skills"]
+            custom_class.features = data["features"]
+            
+            return custom_class
         except Exception as e:
             logger.error(f"Failed to generate custom class: {e}")
             return None
@@ -852,33 +858,6 @@ class CreatureGenerator:
             abilities.append(f"Special: {user_description}")
         return abilities
 
-def detect_spellcasting_type(custom_class: Optional[Any], user_description: str = "") -> str:
-    """
-    Analyze a custom class and/or user description to determine spellcasting type.
-    Returns one of: 'full', 'half', 'pact', 'none'.
-    """
-    # Analyze class name and description for spellcasting cues
-    if not custom_class and not user_description:
-        return 'none'
-    name = getattr(custom_class, 'name', '').lower() if custom_class else ''
-    desc = user_description.lower() if user_description else ''
-    # Full casters
-    full_keywords = ['wizard', 'sorcerer', 'mage', 'druid', 'cleric', 'full caster', 'archmage']
-    # Half casters
-    half_keywords = ['paladin', 'ranger', 'spell-sword', 'warrior-mage', 'half caster']
-    # Pact casters
-    pact_keywords = ['warlock', 'pact', 'fiend', 'patron']
-    if any(k in name or k in desc for k in full_keywords):
-        return 'full'
-    if any(k in name or k in desc for k in half_keywords):
-        return 'half'
-    if any(k in name or k in desc for k in pact_keywords):
-        return 'pact'
-    # If description mentions magic or spells, default to full
-    if 'magic' in name or 'magic' in desc or 'spell' in name or 'spell' in desc:
-        return 'full'
-    return 'none'
-
     def _extract_simple_themes(self, description: str) -> List[str]:
         """Extract simple themes from user description for content generation."""
         description_lower = description.lower()
@@ -909,3 +888,141 @@ def detect_spellcasting_type(custom_class: Optional[Any], user_description: str 
             themes.append("adventurous")
         
         return themes
+
+    def _determine_custom_spellcasting_type(self, custom_class: Optional[Any], user_description: str) -> Dict[str, Any]:
+        """Determine spellcasting type and mechanics for a custom class."""
+        spellcasting_type = detect_spellcasting_type(custom_class, user_description)
+        
+        return {
+            "type": spellcasting_type,
+            "ability": self._get_spellcasting_ability(spellcasting_type, user_description),
+            "progression": self._get_spell_progression_type(spellcasting_type),
+            "ritual_casting": spellcasting_type in ["full"],
+            "spell_focus": self._get_spell_focus_type(spellcasting_type, user_description)
+        }
+    
+    def _get_spellcasting_ability(self, spellcasting_type: str, user_description: str) -> str:
+        """Determine appropriate spellcasting ability for custom class."""
+        description_lower = user_description.lower()
+        
+        # Intelligence-based casters
+        if any(word in description_lower for word in ["wizard", "scholar", "study", "research", "knowledge"]):
+            return "intelligence"
+        
+        # Wisdom-based casters
+        if any(word in description_lower for word in ["druid", "cleric", "priest", "nature", "divine", "intuition"]):
+            return "wisdom"
+        
+        # Charisma-based casters
+        if any(word in description_lower for word in ["sorcerer", "warlock", "bard", "innate", "natural", "patron"]):
+            return "charisma"
+        
+        # Default based on spellcasting type
+        if spellcasting_type == "full":
+            return "intelligence"  # Default to wizard-like
+        elif spellcasting_type == "half":
+            return "wisdom"  # Default to ranger/paladin-like
+        elif spellcasting_type == "pact":
+            return "charisma"  # Warlock-like
+        else:
+            return "intelligence"
+    
+    def _get_spell_progression_type(self, spellcasting_type: str) -> str:
+        """Get spell slot progression type."""
+        progression_map = {
+            "full": "full_caster",
+            "half": "half_caster", 
+            "pact": "pact_caster",
+            "none": "no_spells"
+        }
+        return progression_map.get(spellcasting_type, "no_spells")
+    
+    def _get_spell_focus_type(self, spellcasting_type: str, user_description: str) -> str:
+        """Determine appropriate spellcasting focus."""
+        description_lower = user_description.lower()
+        
+        if any(word in description_lower for word in ["druid", "nature", "forest", "plant"]):
+            return "druidcraft focus"
+        elif any(word in description_lower for word in ["cleric", "priest", "divine", "holy"]):
+            return "holy symbol"
+        elif any(word in description_lower for word in ["crystal", "gem", "shard"]):
+            return "crystal focus"
+        else:
+            return "arcane focus"
+    
+    def _calculate_spell_level_distribution(self, character_level: int, spell_count: int, spellcasting_info: Dict[str, Any]) -> List[int]:
+        """Calculate appropriate spell level distribution for generated spells."""
+        spell_levels = []
+        spellcasting_type = spellcasting_info.get("type", "none")
+        
+        if spellcasting_type == "none":
+            return [0] * spell_count  # No spells
+        
+        # Determine max spell level available
+        if spellcasting_type == "full":
+            max_spell_level = min(9, (character_level + 1) // 2)
+        elif spellcasting_type == "half":
+            max_spell_level = min(5, max(1, (character_level - 1) // 4))
+        elif spellcasting_type == "pact":
+            max_spell_level = min(5, (character_level + 1) // 4)
+        else:
+            max_spell_level = 1
+        
+        # Distribute spells across levels (weighted toward lower levels)
+        for i in range(spell_count):
+            if max_spell_level <= 1:
+                spell_levels.append(1)
+            elif i < spell_count // 2:
+                # First half: mostly cantrips and 1st level
+                spell_levels.append(1 if i % 3 != 0 else 0)  # 0 = cantrip
+            elif i < spell_count * 3 // 4:
+                # Second quarter: 1st-3rd level
+                spell_levels.append(min(max_spell_level, 1 + (i % 3)))
+            else:
+                # Final quarter: higher level spells
+                spell_levels.append(min(max_spell_level, 2 + (i % 3)))
+        
+        return spell_levels
+    
+    def _build_spellcasting_mechanics_context(self, spellcasting_info: Dict[str, Any]) -> str:
+        """Build context string for spell generation prompt."""
+        spellcasting_type = spellcasting_info.get("type", "none")
+        ability = spellcasting_info.get("ability", "intelligence")
+        focus = spellcasting_info.get("spell_focus", "arcane focus")
+        
+        context_parts = [
+            f"Spellcasting Ability: {ability.title()}",
+            f"Spell Focus: {focus}",
+            f"Casting Style: {spellcasting_type} caster"
+        ]
+        
+        if spellcasting_info.get("ritual_casting"):
+            context_parts.append("Can cast spells as rituals")
+        
+        return "\n".join(context_parts)
+def detect_spellcasting_type(custom_class: Optional[Any], user_description: str = "") -> str:
+    """
+    Analyze a custom class and/or user description to determine spellcasting type.
+    Returns one of: 'full', 'half', 'pact', 'none'.
+    """
+    # Analyze class name and description for spellcasting cues
+    if not custom_class and not user_description:
+        return 'none'
+    name = getattr(custom_class, 'name', '').lower() if custom_class else ''
+    desc = user_description.lower() if user_description else ''
+    # Full casters
+    full_keywords = ['wizard', 'sorcerer', 'mage', 'druid', 'cleric', 'full caster', 'archmage']
+    # Half casters
+    half_keywords = ['paladin', 'ranger', 'spell-sword', 'warrior-mage', 'half caster']
+    # Pact casters
+    pact_keywords = ['warlock', 'pact', 'fiend', 'patron']
+    if any(k in name or k in desc for k in full_keywords):
+        return 'full'
+    if any(k in name or k in desc for k in half_keywords):
+        return 'half'
+    if any(k in name or k in desc for k in pact_keywords):
+        return 'pact'
+    # If description mentions magic or spells, default to full
+    if 'magic' in name or 'magic' in desc or 'spell' in name or 'spell' in desc:
+        return 'full'
+    return 'none'

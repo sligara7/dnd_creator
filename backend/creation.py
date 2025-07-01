@@ -784,54 +784,6 @@ COMMON D&D 5E WEAPONS BY CLASS:
 - Warlock: Dagger, Light Crossbow, Shortsword
 - Druid: Quarterstaff, Sickle, Sling, Spear, Dart
 
-**CRITICAL**: Only use existing D&D 5e weapon names. Do not invent new weapons.
-
-FEAT SELECTION PRIORITY (VERY IMPORTANT):
-1. **MANDATORY FIRST PRIORITY**: Use ONLY existing D&D 5e feats when possible
-2. **REQUIRED**: Choose from standard D&D feats: Alert, Magic Initiate, Skilled, Tough, Lucky, etc.
-3. **FORBIDDEN**: Do NOT create new feats unless absolutely necessary for character concept
-4. **REQUIRED**: Match feats to character level, class, and concept appropriately
-5. **FEAT FORMAT**: Use exact feat names from D&D 5e: "Alert", "Magic Initiate", "Skilled", etc.
-
-D&D 5e 2024 FEAT CATEGORIES:
-Origin Feats (Level 1): Alert, Magic Initiate, Savage Attacker, Skilled
-General Feats (Levels 4,8,12,16,19): Ability Score Improvement, Grappler, Tough, Lucky, Resilient, Fey Touched, Shadow Touched, War Caster
-Fighting Style Feats (Class Feature): Archery, Defense, Great Weapon Fighting, Two-Weapon Fighting, Dueling, Protection
-Epic Boon Feats (Level 20): Boon of Combat Prowess, Boon of Dimensional Travel, Boon of Fate, Boon of Irresistible Offense, Boon of Spell Recall, Boon of the Night Spirit, Boon of Truesight
-
-COMMON D&D 5E FEATS BY CHARACTER TYPE:
-- Spellcasters: Magic Initiate, War Caster, Fey Touched, Shadow Touched, Resilient
-- Warriors: Alert, Tough, Lucky, Grappler, Great Weapon Fighting, Defense
-- Rogues/Rangers: Alert, Skilled, Lucky, Archery, Fey Touched
-- Social Characters: Skilled, Lucky, Fey Touched, Magic Initiate
-
-FEAT RULES:
-- Origin Feat: Available at level 1 from background, choose one
-- General Feats: Available at levels 4, 8, 12, 16, 19 (ASI levels), most grant +1 ability score
-- Fighting Style Feats: Only for Fighter, Paladin, Ranger classes with Fighting Style feature
-- Epic Boon Feats: Level 20 only, powerful legendary abilities
-
-**CRITICAL**: Only use existing D&D 5e feat names. Do not invent new feats.
-
-ARMOR SELECTION PRIORITY (VERY IMPORTANT):
-1. **MANDATORY FIRST PRIORITY**: Use ONLY existing D&D 5e armor when possible
-2. **REQUIRED**: Choose from standard D&D armor: Leather Armor, Studded Leather, Chain Shirt, Breastplate, Chain Mail, Plate Armor, etc.
-3. **FORBIDDEN**: Do NOT create new armor unless absolutely necessary for character concept
-4. **REQUIRED**: Match armor to class proficiencies (Light/Medium/Heavy) and character abilities
-5. **ARMOR FORMAT**: Use exact armor names from D&D 5e: "Leather Armor", "Chain Mail", "Plate Armor", etc.
-
-D&D 5e 2024 ARMOR CATEGORIES:
-Light Armor: Padded Armor, Leather Armor, Studded Leather Armor
-Medium Armor: Hide Armor, Chain Shirt, Scale Mail, Breastplate, Half Plate Armor
-Heavy Armor: Ring Mail, Chain Mail, Splint Armor, Plate Armor
-Shield: Shield (+2 AC)
-
-ARMOR BY CLASS PROFICIENCY:
-- Light only: Rogue, Bard, Sorcerer, Warlock, Wizard (some have no armor proficiency)
-- Light + Medium: Barbarian, Cleric, Druid, Ranger
-- Light + Medium + Heavy: Fighter, Paladin
-- Special: Monk (Unarmored Defense), Wizard/Sorcerer (no armor proficiency)
-
 **CRITICAL**: Only use existing D&D 5e armor names. Do not invent new armor.
 
 EQUIPMENT & TOOLS SELECTION PRIORITY (VERY IMPORTANT):
@@ -1356,6 +1308,11 @@ Match the character concept exactly. Return complete JSON only."""
             # Validate existing armor or assign default based on class
             existing_armor = character_data.get("armor", "")
             
+            # Handle case where armor might be a list (from custom content)
+            if isinstance(existing_armor, list):
+                existing_armor = existing_armor[0] if existing_armor else ""
+                character_data["armor"] = existing_armor
+            
             if existing_armor:
                 # Keep existing armor
                 logger.info(f"Character has existing armor: {existing_armor}")
@@ -1858,3 +1815,281 @@ Match description and character concept. Set requires_attunement to true for pow
         else:
             # Epic levels could theoretically access artifacts
             return ItemRarity.ARTIFACT
+
+    # ================================================================
+    # ITERATIVE REFINEMENT METHODS (dev_vision.md CRITICAL REQUIREMENT)
+    # ================================================================
+    
+    async def refine_character(self, character_data: Dict[str, Any], refinement_prompt: str, 
+                             user_preferences: Optional[Dict[str, Any]] = None) -> CreationResult:
+        """
+        Iteratively refine an existing character based on user feedback.
+        
+        This is a CRITICAL dev_vision.md requirement for user-driven character improvement.
+        """
+        logger.info(f"Starting character refinement: {refinement_prompt}")
+        
+        try:
+            # Create refinement prompt that preserves character identity
+            character_concept = self._extract_character_concept(character_data)
+            
+            refinement_full_prompt = f"""
+            ORIGINAL CHARACTER: {character_concept}
+            
+            CHARACTER DATA: {json.dumps(character_data, indent=2)}
+            
+            REFINEMENT REQUEST: {refinement_prompt}
+            
+            Create an improved version of this character that:
+            1. Applies the requested refinement changes
+            2. Preserves the character's core identity and backstory
+            3. Maintains D&D 5e 2024 compatibility
+            4. Keeps the same name and background unless specifically requested to change
+            
+            Respond with complete character data in the same format as the original.
+            """
+            
+            # Generate refined character
+            refined_data = await self._generate_character_data(refinement_full_prompt, character_data.get("level", 1))
+            
+            # Enhance the refined character
+            refined_data = await self._enhance_character_spells(refined_data)
+            refined_data = self._enhance_character_weapons(refined_data)
+            refined_data = self._enhance_character_feats(refined_data)
+            refined_data = self._enhance_character_equipment(refined_data)
+            
+            # Build character core
+            character_core = self._build_character_core(refined_data)
+            
+            # Generate enhanced backstory incorporating refinement
+            if self.llm_service:
+                backstory_prompt = f"""
+                ORIGINAL CHARACTER: {character_concept}
+                REFINEMENT APPLIED: {refinement_prompt}
+                
+                Create an enhanced backstory that:
+                1. Incorporates the character refinement changes
+                2. Explains how the character developed these new aspects
+                3. Maintains narrative consistency
+                4. Keeps the core character identity
+                """
+                refined_data = await self._generate_enhanced_backstory(refined_data, backstory_prompt)
+            
+            return CreationResult(
+                success=True,
+                data={
+                    "character_core": character_core,
+                    "raw_data": refined_data,
+                    "refinement_applied": refinement_prompt,
+                    "creation_type": "character_refinement"
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"Character refinement failed: {str(e)}")
+            return CreationResult(success=False, error=f"Character refinement failed: {str(e)}")
+    
+    async def level_up_character_with_journal(self, character_data: Dict[str, Any], 
+                                            journal_entries: List[str],
+                                            new_level: int,
+                                            multiclass_option: Optional[str] = None) -> CreationResult:
+        """
+        Level up a character using journal entries for context.
+        
+        This is a HIGH dev_vision.md requirement for journal-informed character advancement.
+        """
+        logger.info(f"Starting journal-based level up to level {new_level}")
+        
+        try:
+            current_level = character_data.get("level", 1)
+            character_concept = self._extract_character_concept(character_data)
+            
+            # Create journal-informed level-up prompt
+            journal_context = "\n".join([f"- {entry}" for entry in journal_entries])
+            
+            levelup_prompt = f"""
+            EXISTING CHARACTER: {character_concept}
+            CURRENT LEVEL: {current_level}
+            TARGET LEVEL: {new_level}
+            
+            JOURNAL ENTRIES (PLAY EXPERIENCE):
+            {journal_context}
+            
+            CHARACTER DATA: {json.dumps(character_data, indent=2)}
+            
+            Level up this character from level {current_level} to {new_level} based on their actual play experiences.
+            
+            Requirements:
+            1. Preserve character identity, name, and core backstory
+            2. Add appropriate class features for the new level
+            3. Reflect the journal experiences in advancement choices
+            4. Add spells, feats, ability score improvements as appropriate
+            5. {"Consider adding " + multiclass_option + " levels if appropriate" if multiclass_option else "Focus on existing classes"}
+            6. Maintain D&D 5e 2024 compatibility
+            
+            Respond with complete updated character data.
+            """
+            
+            # Generate leveled character
+            leveled_data = await self._generate_character_data(levelup_prompt, new_level)
+            
+            # Ensure level is correct
+            leveled_data["level"] = new_level
+            
+            # Handle multiclass if specified
+            if multiclass_option and multiclass_option not in leveled_data.get("classes", {}):
+                current_classes = leveled_data.get("classes", {})
+                # Add one level of the new class
+                current_classes[multiclass_option] = 1
+                leveled_data["classes"] = current_classes
+            
+            # Enhance the leveled character
+            leveled_data = await self._enhance_character_spells(leveled_data)
+            leveled_data = self._enhance_character_weapons(leveled_data)
+            leveled_data = self._enhance_character_feats(leveled_data)
+            leveled_data = self._enhance_character_equipment(leveled_data)
+            
+            # Build character core
+            character_core = self._build_character_core(leveled_data)
+            
+            # Generate enhanced backstory incorporating play experiences
+            if self.llm_service:
+                backstory_prompt = f"""
+                CHARACTER: {character_concept}
+                LEVEL UP: {current_level} → {new_level}
+                PLAY EXPERIENCES: {journal_context}
+                
+                Create an enhanced backstory that:
+                1. Incorporates the character's actual play experiences
+                2. Explains their growth and new abilities
+                3. Reflects lessons learned in their adventures
+                4. Maintains character consistency and personality
+                """
+                leveled_data = await self._generate_enhanced_backstory(leveled_data, backstory_prompt)
+            
+            return CreationResult(
+                success=True,
+                data={
+                    "character_core": character_core,
+                    "raw_data": leveled_data,
+                    "journal_entries": journal_entries,
+                    "level_progression": f"{current_level} → {new_level}",
+                    "creation_type": "character_levelup"
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"Journal-based level up failed: {str(e)}")
+            return CreationResult(success=False, error=f"Journal-based level up failed: {str(e)}")
+    
+    async def enhance_existing_character(self, character_data: Dict[str, Any], 
+                                       enhancement_prompt: str) -> CreationResult:
+        """
+        Enhance an existing character with story-driven improvements.
+        
+        This supports dev_vision.md requirements for character evolution based on story events.
+        """
+        logger.info(f"Starting character enhancement: {enhancement_prompt}")
+        
+        try:
+            character_concept = self._extract_character_concept(character_data)
+            
+            enhancement_full_prompt = f"""
+            EXISTING CHARACTER: {character_concept}
+            
+            CHARACTER DATA: {json.dumps(character_data, indent=2)}
+            
+            ENHANCEMENT REQUEST: {enhancement_prompt}
+            
+            Enhance this character based on the story event or development described.
+            
+            Requirements:
+            1. Preserve character identity, name, and core backstory
+            2. Add new abilities, knowledge, or traits as appropriate
+            3. Integrate the enhancement into the character's narrative
+            4. Maintain D&D 5e 2024 balance and compatibility
+            5. Explain how the enhancement manifests mechanically
+            
+            Respond with complete enhanced character data.
+            """
+            
+            # Generate enhanced character
+            enhanced_data = await self._generate_character_data(enhancement_full_prompt, character_data.get("level", 1))
+            
+            # Enhance the character
+            enhanced_data = await self._enhance_character_spells(enhanced_data)
+            enhanced_data = self._enhance_character_weapons(enhanced_data)
+            enhanced_data = self._enhance_character_feats(enhanced_data)
+            enhanced_data = self._enhance_character_equipment(enhanced_data)
+            
+            # Build character core
+            character_core = self._build_character_core(enhanced_data)
+            
+            # Generate enhanced backstory
+            if self.llm_service:
+                backstory_prompt = f"""
+                CHARACTER: {character_concept}
+                ENHANCEMENT: {enhancement_prompt}
+                
+                Create an enhanced backstory that:
+                1. Incorporates the character enhancement event
+                2. Explains how they gained new abilities or knowledge
+                3. Shows character growth and development
+                4. Maintains personality and core traits
+                """
+                enhanced_data = await self._generate_enhanced_backstory(enhanced_data, backstory_prompt)
+            
+            return CreationResult(
+                success=True,
+                data={
+                    "character_core": character_core,
+                    "raw_data": enhanced_data,
+                    "enhancement_applied": enhancement_prompt,
+                    "creation_type": "character_enhancement"
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"Character enhancement failed: {str(e)}")
+            return CreationResult(success=False, error=f"Character enhancement failed: {str(e)}")
+    
+    async def apply_user_feedback(self, character_data: Dict[str, Any], 
+                                feedback: Dict[str, Any]) -> CreationResult:
+        """
+        Apply structured user feedback to improve a character.
+        
+        This supports dev_vision.md iterative development requirements.
+        """
+        logger.info("Applying user feedback to character")
+        
+        try:
+            feedback_items = []
+            
+            # Process different types of feedback
+            if "ability_scores" in feedback:
+                feedback_items.append(f"Adjust ability scores: {feedback['ability_scores']}")
+            
+            if "classes" in feedback:
+                feedback_items.append(f"Class changes: {feedback['classes']}")
+            
+            if "equipment" in feedback:
+                feedback_items.append(f"Equipment changes: {feedback['equipment']}")
+            
+            if "personality" in feedback:
+                feedback_items.append(f"Personality adjustments: {feedback['personality']}")
+            
+            if "backstory" in feedback:
+                feedback_items.append(f"Backstory changes: {feedback['backstory']}")
+            
+            if "general" in feedback:
+                feedback_items.append(f"General feedback: {feedback['general']}")
+            
+            # Combine all feedback into a refinement prompt
+            combined_feedback = "; ".join(feedback_items)
+            
+            # Use the refinement system
+            return await self.refine_character(character_data, combined_feedback, {"apply_feedback": True})
+            
+        except Exception as e:
+            logger.error(f"User feedback application failed: {str(e)}")
+            return CreationResult(success=False, error=f"User feedback application failed: {str(e)}")

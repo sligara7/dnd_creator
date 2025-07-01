@@ -1,12 +1,12 @@
-# REFACTORED: Now defaults to Ollama with Llama3 for local testing
-# REFACTORED: No API keys needed for local development
-# ADDRESSED: OpenAI API Key support via .env file for production use
-# ADDRESSED: Proper rate limiting implemented per OpenAI cookbook recommendations
+# REFACTORED: Now defaults to OpenAI with gpt-4.1-nano-2025-04-14 for production
+# ENHANCED: API key loading from environment variables and /etc/environment  
+# ADDRESSED: OpenAI Tier 1 rate limiting (200 RPM, 400K TPM) per official limits
+# MAINTAINED: Fallback to Ollama for local testing without API costs
 
 """
-LLM API service for content generation - defaults to local Ollama for testing.
-Supports both local Ollama service and cloud-based LLM providers.
-Includes comprehensive rate limiting for cloud providers.
+LLM API service for content generation - defaults to OpenAI for production.
+Supports both cloud-based OpenAI service and local Ollama for testing.
+Includes comprehensive Tier 1 rate limiting for OpenAI API.
 """
 import json
 import logging
@@ -38,9 +38,9 @@ logger = logging.getLogger(__name__)
 @dataclass
 class RateLimitConfig:
     """Configuration for API rate limiting."""
-    requests_per_minute: int = 3      # Tier 1 OpenAI free limit
-    requests_per_day: int = 200       # Tier 1 OpenAI free limit
-    tokens_per_minute: int = 40000    # Tier 1 OpenAI free limit
+    requests_per_minute: int = 200    # Tier 1 OpenAI limit (200 RPM)
+    requests_per_day: int = 288000    # Tier 1 OpenAI limit (200 RPM * 60 * 24)
+    tokens_per_minute: int = 400000   # Tier 1 OpenAI limit (400,000 TPM)
     max_retries: int = 3
     base_delay: float = 1.0           # Base exponential backoff delay
     max_delay: float = 60.0           # Maximum delay between retries
@@ -183,13 +183,13 @@ class LLMService(ABC):
 
 
 class OpenAILLMService(LLMService):
-    """OpenAI API-based LLM service with rate limiting and .env support."""
+    """OpenAI API-based LLM service with rate limiting and enhanced environment support."""
     
-    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-3.5-turbo", 
+    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4.1-nano-2025-04-14", 
                  timeout: int = 600, rate_limit_config: Optional[RateLimitConfig] = None):
         
         # Load API key from environment if not provided
-        self.api_key = api_key or os.getenv('OPENAI_API_KEY')
+        self.api_key = api_key or self._load_api_key()
         if not self.api_key:
             raise ValueError(
                 "OpenAI API key not provided. Set OPENAI_API_KEY environment variable "
@@ -199,7 +199,7 @@ class OpenAILLMService(LLMService):
         self.model = model
         self.timeout = timeout
         
-        # Initialize rate limiter
+        # Initialize rate limiter with Tier 1 limits
         self.rate_limit_config = rate_limit_config or RateLimitConfig()
         self.rate_limiter = RateLimiter(self.rate_limit_config)
         
@@ -207,8 +207,19 @@ class OpenAILLMService(LLMService):
         try:
             import openai
             self.client = openai.AsyncOpenAI(api_key=self.api_key)
+            logger.info(f"OpenAI service initialized with model '{model}' (Tier 1 limits: {self.rate_limit_config.requests_per_minute} RPM, {self.rate_limit_config.tokens_per_minute} TPM)")
         except ImportError:
             raise ImportError("OpenAI package not installed. Run: pip install openai")
+    
+    def _load_api_key(self) -> Optional[str]:
+        """Load API key from environment variables."""
+        api_key = os.environ.get('OPENAI_API_KEY')
+        if api_key:
+            logger.info("Loaded OpenAI API key from environment variable")
+            return api_key
+        
+        logger.debug("OPENAI_API_KEY not found in environment variables")
+        return None
     
     async def generate_content(self, prompt: str, **kwargs) -> str:
         """Generate content using OpenAI API with rate limiting."""
@@ -652,23 +663,23 @@ class OllamaLLMService(LLMService):
         }
 
 
-def create_llm_service(provider: str = "ollama", **kwargs) -> LLMService:
+def create_llm_service(provider: str = "openai", **kwargs) -> LLMService:
     """
     Factory function to create LLM service instances with automatic .env loading.
     
     Args:
         provider: LLM provider ("ollama", "openai", "anthropic", "http")
-                 Default: "ollama" for local testing
+                 Default: "openai" with gpt-4.1-nano-2025-04-14 model
         **kwargs: Provider-specific configuration
     
     Returns:
         Configured LLM service instance
         
     Examples:
-        # Default Ollama for testing (no API key needed):
-        llm_service = create_llm_service()  # Uses Ollama with llama3
+        # Default OpenAI for production:
+        llm_service = create_llm_service()  # Uses OpenAI with gpt-4.1-nano-2025-04-14
         
-        # Explicit Ollama with custom model:
+        # Explicit Ollama for testing:
         llm_service = create_llm_service("ollama", model="llama3:8b")
         
         # OpenAI with .env file:
@@ -720,26 +731,26 @@ def create_ollama_service(
 
 def create_rate_limited_openai_service(
     api_key: Optional[str] = None,
-    model: str = "gpt-3.5-turbo",
-    requests_per_minute: int = 3,
-    requests_per_day: int = 200
+    model: str = "gpt-4.1-nano-2025-04-14",
+    requests_per_minute: int = 200,  # Tier 1 limit
+    requests_per_day: int = 288000   # Tier 1 limit (200 RPM * 60 * 24)
 ) -> OpenAILLMService:
     """
-    Convenience function to create OpenAI service with strict Tier 1 rate limits.
+    Convenience function to create OpenAI service with Tier 1 rate limits.
     
     Args:
-        api_key: OpenAI API key (will use .env if not provided)
-        model: Model to use
-        requests_per_minute: Max requests per minute (default: 3 for free tier)
-        requests_per_day: Max requests per day (default: 200 for free tier)
+        api_key: OpenAI API key (will use environment/etc if not provided)
+        model: Model to use (default: gpt-4.1-nano-2025-04-14)
+        requests_per_minute: Max requests per minute (default: 200 for Tier 1)
+        requests_per_day: Max requests per day (default: 288,000 for Tier 1)
         
     Returns:
-        OpenAI service configured for free tier limits
+        OpenAI service configured for Tier 1 limits
     """
     config = RateLimitConfig(
         requests_per_minute=requests_per_minute,
         requests_per_day=requests_per_day,
-        tokens_per_minute=40000,  # Free tier TPM limit
+        tokens_per_minute=400000,  # Tier 1 TPM limit
         max_retries=3,
         base_delay=1.0,
         max_delay=60.0
@@ -759,39 +770,43 @@ def create_rate_limited_openai_service(
 """
 SETUP INSTRUCTIONS:
 
-OPTION 1: LOCAL OLLAMA (RECOMMENDED FOR TESTING)
+OPTION 1: OPENAI (DEFAULT FOR PRODUCTION)
+1. Install required packages:
+   pip install openai httpx python-dotenv
+
+2. Set up API key (choose one):
+   a) Environment variable: export OPENAI_API_KEY=your-key
+   b) Add to /etc/environment: OPENAI_API_KEY=your-key
+   c) Create .env file: OPENAI_API_KEY=your-key
+
+3. Usage:
+   llm_service = create_llm_service()  # Uses OpenAI with gpt-4.1-nano-2025-04-14
+   result = await llm_service.generate_content("Create a D&D character")
+
+OPTION 2: LOCAL OLLAMA (FOR TESTING WITHOUT API COSTS)
 1. Install Ollama: https://ollama.ai/
 2. Start Ollama server: ollama serve
 3. Pull Llama3 model: ollama pull llama3
 4. Use without any API keys:
-   llm_service = create_llm_service()  # Defaults to Ollama with llama3:latest
+   llm_service = create_llm_service("ollama")
    result = await llm_service.generate_content("Create a D&D character")
 
-OPTION 2: CLOUD PROVIDERS (FOR PRODUCTION)
-1. Install required packages:
-   pip install openai anthropic httpx python-dotenv
+USAGE EXAMPLES:
 
-2. Create .env file in your project root:
-   OPENAI_API_KEY=your-openai-api-key-here
-   ANTHROPIC_API_KEY=your-anthropic-api-key-here
-
-3. Usage examples:
-
-   # Default (Ollama for testing):
+   # Default OpenAI with Tier 1 limits:
    llm_service = create_llm_service()
    
-   # OpenAI with .env file:
-   llm_service = create_llm_service("openai")
-   result = await llm_service.generate_content("Create a D&D character")
+   # Explicit OpenAI configuration:
+   llm_service = create_llm_service("openai", model="gpt-4.1-nano-2025-04-14")
    
-   # Custom Ollama model:
-   llm_service = create_llm_service("ollama", model="codellama")
+   # Ollama for local testing:
+   llm_service = create_llm_service("ollama", model="llama3")
    
-   # With custom rate limits for paid tiers:
-   config = RateLimitConfig(requests_per_minute=60, requests_per_day=10000)
+   # Custom rate limits for higher tiers:
+   config = RateLimitConfig(requests_per_minute=500, requests_per_day=1000000)
    llm_service = create_llm_service("openai", rate_limit_config=config)
    
-   # Strict free tier compliance:
+   # Tier 1 compliant service:
    llm_service = create_rate_limited_openai_service()
    
    # Test connection:
@@ -800,18 +815,19 @@ OPTION 2: CLOUD PROVIDERS (FOR PRODUCTION)
        print("LLM service is ready!")
 
 PROVIDER COMPARISON:
+- OpenAI: Fast, cloud-based, requires API key, Tier 1 limits (200 RPM, 400K TPM), good for production
 - Ollama: Free, local, no API keys needed, slower, good for testing
-- OpenAI: Fast, cloud-based, requires API key, rate limited, good for production
 - Anthropic: Fast, cloud-based, requires API key, rate limited, alternative to OpenAI
 
-RATE LIMITING (Cloud providers only):
-- Free tier limits are strictly enforced
+RATE LIMITING (OpenAI Tier 1):
+- 200 requests per minute (RPM)
+- 400,000 tokens per minute (TPM)  
+- 288,000 requests per day (calculated from RPM)
 - Automatic exponential backoff on rate limit errors
 - Token usage estimation and tracking
-- Per-minute and per-day request tracking
 - Comprehensive logging of rate limit status
 
 ENVIRONMENT VARIABLES:
-- OPENAI_API_KEY: Your OpenAI API key
+- OPENAI_API_KEY: Your OpenAI API key (can be in environment or /etc/environment)
 - ANTHROPIC_API_KEY: Your Anthropic API key
 """

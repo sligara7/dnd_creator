@@ -1343,6 +1343,126 @@ Match the character concept exactly. Return complete JSON only."""
             logger.warning(f"Feat enhancement failed: {e}")
             return character_data
     
+    def _enhance_character_armor(self, character_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Enhance character with appropriate D&D 5e armor based on their class and level.
+        STRONGLY prioritizes existing D&D 5e armor over custom armor creation.
+        """
+        try:
+            classes = character_data.get("classes", {})
+            level = character_data.get("level", 1)
+            primary_class = list(classes.keys())[0] if classes else "Fighter"
+            
+            # Validate existing armor or assign default based on class
+            existing_armor = character_data.get("armor", "")
+            
+            if existing_armor:
+                # Keep existing armor
+                logger.info(f"Character has existing armor: {existing_armor}")
+            else:
+                # Assign default armor based on class proficiency
+                if primary_class in ["Fighter", "Paladin"]:
+                    character_data["armor"] = "Chain Mail"
+                elif primary_class in ["Cleric", "Ranger", "Barbarian", "Druid"]:
+                    character_data["armor"] = "Leather Armor"
+                elif primary_class in ["Rogue", "Bard", "Monk"]:
+                    character_data["armor"] = "Leather Armor"
+                else:
+                    character_data["armor"] = "Padded Armor"
+                
+                logger.info(f"Added default armor for {primary_class}: {character_data['armor']}")
+            
+            # Log armor assignment
+            logger.info(f"Character equipped with armor: {character_data['armor']}")
+            
+            return character_data
+            
+        except Exception as e:
+            logger.warning(f"Armor enhancement failed: {e}")
+            return character_data
+    
+    def _enhance_character_equipment(self, character_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Enhance character with appropriate D&D 5e equipment based on their class, background, and level.
+        """
+        try:
+            classes = character_data.get("classes", {})
+            level = character_data.get("level", 1)
+            primary_class = list(classes.keys())[0] if classes else "Fighter"
+            background = character_data.get("background", "Folk Hero")
+            
+            # If character already has equipment, validate and enhance it
+            existing_equipment = character_data.get("equipment", {})
+            if not isinstance(existing_equipment, dict):
+                existing_equipment = {}
+            
+            # Start with existing equipment
+            enhanced_equipment = existing_equipment.copy()
+            existing_item_names = set(existing_equipment.keys())
+            
+            # Add essential class-based equipment if missing
+            class_equipment = {
+                "Fighter": ["Shield", "Rope (50 feet)", "Rations (1 day)"],
+                "Wizard": ["Spellbook", "Component Pouch", "Ink and Quill"],
+                "Cleric": ["Holy Symbol", "Prayer Book", "Incense"],
+                "Rogue": ["Thieves' Tools", "Crowbar", "Dark Cloak"],
+                "Ranger": ["Quiver", "Hunting Trap", "Traveler's Clothes"],
+                "Barbarian": ["Bedroll", "Waterskin", "Belt Pouch"],
+                "Bard": ["Musical Instrument", "Costume", "Sealing Wax"],
+                "Druid": ["Leather Armor", "Druidic Focus", "Herbal Pouch"],
+                "Paladin": ["Holy Symbol", "Chain Mail", "Emblem"],
+                "Sorcerer": ["Component Pouch", "Simple Weapon", "Light Crossbow"],
+                "Warlock": ["Component Pouch", "Leather Armor", "Simple Weapon"],
+                "Monk": ["Monk's Robes", "Prayer Beads", "Rice Paper"]
+            }
+            
+            essential_items = class_equipment.get(primary_class, ["Backpack", "Bedroll", "Rations (1 day)"])
+            for item in essential_items:
+                if item not in existing_item_names:
+                    enhanced_equipment[item] = 1
+                    existing_item_names.add(item)
+                    logger.info(f"Added essential {primary_class} equipment: {item}")
+            
+            # Add background-based equipment if missing
+            background_equipment = {
+                "Folk Hero": ["Smith's Tools", "Artisan's Tools"],
+                "Criminal": ["Thieves' Tools", "Crowbar"],
+                "Acolyte": ["Holy Symbol", "Prayer Book", "Incense"],
+                "Noble": ["Signet Ring", "Fine Clothes", "Purse"],
+                "Sage": ["Ink and Quill", "Parchment", "Small Knife"],
+                "Soldier": ["Playing Cards", "Common Clothes", "Belt Pouch"],
+                "Entertainer": ["Musical Instrument", "Costume", "Makeup"],
+                "Guild Artisan": ["Artisan's Tools", "Letter of Introduction"],
+                "Hermit": ["Herbalism Kit", "Scroll Case", "Winter Blanket"],
+                "Outlander": ["Staff", "Hunting Trap", "Traveler's Clothes"]
+            }
+            
+            bg_items = background_equipment.get(background, ["Common Clothes", "Belt Pouch"])
+            for item in bg_items:
+                if item not in existing_item_names:
+                    enhanced_equipment[item] = 1
+                    existing_item_names.add(item)
+                    logger.info(f"Added {background} background equipment: {item}")
+            
+            # Ensure basic adventuring gear
+            basic_gear = ["Backpack", "Bedroll", "Rations (1 day)", "Waterskin", "Rope (50 feet)", "Torch", "Flint and Steel"]
+            for item in basic_gear:
+                if item not in existing_item_names:
+                    enhanced_equipment[item] = 2 if item == "Torch" else 1
+                    existing_item_names.add(item)
+                    if len(enhanced_equipment) >= 25:  # Final equipment limit
+                        break
+            
+            character_data["equipment"] = enhanced_equipment
+            
+            logger.info(f"Enhanced character with {len(enhanced_equipment)} equipment items")
+            
+            return character_data
+            
+        except Exception as e:
+            logger.warning(f"Equipment enhancement failed: {e}")
+            return character_data
+    
     def _calculate_spell_slots(self, character_data: Dict[str, Any]) -> Dict[int, int]:
         """Calculate spell slots for a character based on their classes and level."""
         classes = character_data.get("classes", {})
@@ -1510,7 +1630,7 @@ Make this NPC memorable and useful for the DM."""
             "npc_role": npc_data.get("npc_role", "civilian"),
             "basic_info": {
                 "species": npc_data.get("species", "Human"),
-                "classes": npc_data.get("classes", {"Commoner": 1}),
+                "classes": npc_data.get("classes", {"Commoner":  1}),
                 "alignment": npc_data.get("alignment", ["Neutral", "Good"])
             },
             "roleplay": {

@@ -693,3 +693,64 @@ class CharacterCore:
         """Get all features gained at a specific level."""
         features = self.features_manager.get_features_at_level(level)
         return [feature.to_dict() for feature in features]
+    
+    def apply_feat_effects(self):
+        """Apply effects from all feats the character has."""
+        try:
+            # Get all feat features from the features manager
+            feat_features = self.get_feat_features()
+            
+            # Process each feat feature for mechanical effects
+            for feat_feature in feat_features:
+                feat_name = feat_feature.get("name", "")
+                feat_description = feat_feature.get("description", "")
+                
+                # Apply common feat effects based on feat name/description
+                self._apply_individual_feat_effects(feat_name, feat_description)
+                
+            logger.debug(f"Applied feat effects for character {self.name}")
+            
+        except Exception as e:
+            logger.warning(f"Error applying feat effects: {e}")
+    
+    def _apply_individual_feat_effects(self, feat_name: str, feat_description: str):
+        """Apply effects from a specific feat."""
+        try:
+            feat_name_lower = feat_name.lower()
+            description_lower = feat_description.lower()
+            
+            # Ability Score Improvement feats
+            if "ability score improvement" in feat_name_lower or "asi" in feat_name_lower:
+                # ASI feats are typically handled by the level manager
+                pass
+            
+            # Alert feat
+            elif "alert" in feat_name_lower:
+                # Alert provides +5 to initiative - handled by initiative calculation
+                pass
+            
+            # Lucky feat  
+            elif "lucky" in feat_name_lower:
+                # Lucky provides luck points - handled by features system
+                pass
+            
+            # Skill-based feats
+            elif "skilled" in feat_name_lower:
+                # Skilled feat provides skill proficiencies - typically handled during feat selection
+                pass
+            
+            # Weapon Master feat
+            elif "weapon master" in feat_name_lower:
+                # Weapon proficiencies would be added during feat selection
+                pass
+            
+            # Magic Initiate feat
+            elif "magic initiate" in feat_name_lower:
+                # Spells would be added to character's spell list during feat selection
+                pass
+            
+            # Most feat effects are handled by the features system or during feat selection
+            # This method serves as a hook for any additional mechanical processing needed
+            
+        except Exception as e:
+            logger.warning(f"Error applying individual feat effect for {feat_name}: {e}")

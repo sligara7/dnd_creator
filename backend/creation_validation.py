@@ -24,7 +24,7 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 
 # Import from centralized enums
-from .enums import NPCType, NPCRole, ItemRarity
+from enums import NPCType, NPCRole, ItemRarity
 
 # Import CreationResult class (will be moved to shared module later)
 # For now, we'll define a minimal version to avoid circular imports
@@ -759,7 +759,7 @@ def validate_custom_item_balance(item_data: Dict[str, Any]) -> CreationResult:
 def validate_spell_database() -> bool:
     """Validate the integrity of the spell database."""
     try:
-        from .dnd_data import DND_SPELL_DATABASE
+        from dnd_data import DND_SPELL_DATABASE
         
         required_fields = ["description", "level", "school", "casting_time", "range", "components", "duration"]
         
@@ -786,7 +786,7 @@ def validate_spell_database() -> bool:
 def validate_weapon_database() -> bool:
     """Validate the integrity of the weapon database."""
     try:
-        from .dnd_data import DND_WEAPON_DATABASE
+        from dnd_data import DND_WEAPON_DATABASE
         
         required_fields = ["damage", "damage_type", "properties", "weight", "cost", "category"]
         
@@ -813,7 +813,7 @@ def validate_weapon_database() -> bool:
 def validate_feat_database() -> bool:
     """Validate the integrity of the feat database."""
     try:
-        from .dnd_data import DND_FEAT_DATABASE
+        from dnd_data import DND_FEAT_DATABASE
         
         required_fields = ["description", "benefits", "prerequisites", "asi_bonus", "category"]
         
@@ -834,7 +834,7 @@ def validate_feat_database() -> bool:
 def validate_armor_database() -> bool:
     """Validate the integrity of the armor database."""
     try:
-        from .dnd_data import DND_ARMOR_DATABASE
+        from dnd_data import DND_ARMOR_DATABASE
         
         required_fields = ["dex_modifier", "weight", "cost", "category", "properties"]
         
@@ -861,7 +861,7 @@ def validate_armor_database() -> bool:
 def validate_tools_database() -> bool:
     """Validate the integrity of the tools database."""
     try:
-        from .dnd_data import DND_TOOLS_DATABASE
+        from dnd_data import DND_TOOLS_DATABASE
         
         required_fields = ["cost", "weight", "category", "description"]
         
@@ -882,7 +882,7 @@ def validate_tools_database() -> bool:
 def validate_gear_database() -> bool:
     """Validate the integrity of the adventuring gear database."""
     try:
-        from .dnd_data import DND_ADVENTURING_GEAR_DATABASE
+        from dnd_data import DND_ADVENTURING_GEAR_DATABASE
         
         required_fields = ["cost", "weight", "category", "description"]
         
@@ -903,7 +903,7 @@ def validate_gear_database() -> bool:
 def validate_feat_prerequisites(feat_name: str, character_data: Dict[str, Any]) -> bool:
     """Validate that a character meets the prerequisites for a specific feat."""
     try:
-        from .dnd_data import get_feat_data
+        from dnd_data import get_feat_data
         
         feat_data = get_feat_data(feat_name)
         if not feat_data:

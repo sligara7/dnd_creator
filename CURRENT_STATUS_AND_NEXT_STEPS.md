@@ -5,6 +5,74 @@
 ## 🎯 MAIN OBJECTIVE
 Debug, refactor, and fully enable the D&D Character Creator backend so that all endpoints—including LLM-powered endpoints—work using Ollama with a local LLM (llama3 or tinyllama), with no dependency on OpenAI/Anthropic keys. Create a user-facing test script for full character creation/versioning workflow.
 
+## 📋 PENDING DEV_VISION.MD COMPLIANCE TASKS
+
+### Task 1: Performance Metrics Endpoint
+**File**: `/backend/app.py`
+**Description**: Add explicit performance monitoring endpoint
+**Requirements**:
+- Add `/api/v2/performance` or `/metrics` endpoint
+- Return performance data from existing `request_performance_tracker`
+- Include metrics like request count, average response time, error rates
+- Support optional filtering by endpoint/time range
+**Acceptance Criteria**:
+- Endpoint returns JSON with performance metrics
+- Data includes at least: total_requests, avg_response_time, error_count, uptime
+- Can filter by date range or specific endpoints
+
+### Task 2: Journal Entry CRUD Endpoints
+**File**: `/backend/app.py`
+**Description**: Add comprehensive journal management endpoints
+**Requirements**:
+- Add `POST /api/v2/characters/{character_id}/journal` - Add journal entry
+- Add `GET /api/v2/characters/{character_id}/journal` - List all entries
+- Add `PUT /api/v2/characters/{character_id}/journal/{entry_id}` - Update entry
+- Add `DELETE /api/v2/characters/{character_id}/journal/{entry_id}` - Delete entry
+- Support rich text, timestamps, session references
+**Acceptance Criteria**:
+- All CRUD operations work for journal entries
+- Entries have timestamps, optional session/adventure tags
+- Proper error handling for invalid character/entry IDs
+
+### Task 3: XP Tracking System
+**File**: `/backend/app.py`, `/backend/character_models.py`
+**Description**: Add explicit XP tracking and level progression
+**Requirements**:
+- Add `POST /api/v2/characters/{character_id}/xp` - Award XP
+- Add `GET /api/v2/characters/{character_id}/xp/history` - XP award history
+- Add automatic level-up detection and notifications
+- Support milestone vs. traditional XP tracking
+**Acceptance Criteria**:
+- Can award XP with source/reason tracking
+- Automatic level-up when XP thresholds met
+- XP history includes timestamps and sources
+
+### Task 4: Advanced Versioning System
+**File**: `/backend/app.py`, `/backend/character_models.py`
+**Description**: Enhance versioning to support git-like operations
+**Requirements**:
+- Add `POST /api/v2/characters/{character_id}/versions/branch` - Create version branch
+- Add `GET /api/v2/characters/{character_id}/versions/history` - Full version tree
+- Add `POST /api/v2/characters/{character_id}/versions/merge` - Merge branches
+- Support version tags, branch names, commit messages
+**Acceptance Criteria**:
+- Can create named branches from any version
+- Version history shows tree structure with branches
+- Can merge branches with conflict detection
+
+### Task 5: Optimization Features
+**File**: `/backend/app.py`
+**Description**: Add performance optimization toggles and caching
+**Requirements**:
+- Add `POST /api/v2/admin/cache/clear` - Clear system caches
+- Add `GET /api/v2/admin/performance/status` - Performance status
+- Add toggle endpoints for expensive features (LLM generation, etc.)
+- Add bulk operation endpoints for batch character updates
+**Acceptance Criteria**:
+- Cache management endpoints work
+- Performance toggles reduce system load when disabled
+- Bulk operations handle multiple characters efficiently
+
 ## ✅ COMPLETED WORK
 
 ### Major Refactoring Completed

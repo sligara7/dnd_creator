@@ -39,10 +39,10 @@ Examples:
 from typing import Dict, Any, Optional, Type, List
 from dataclasses import dataclass
 
-from enums import CreationOptions
-from character_models import CharacterCore
-from creation import CharacterCreator, NPCCreator, CreatureCreator, ItemCreator
-from generators import CustomContentGenerator
+from backend.enums import CreationOptions
+from backend.character_models import CharacterCore
+from backend.creation import CharacterCreator
+from backend.generators import CustomContentGenerator
 
 # For now, we'll use Dict for missing sheet types until they're implemented
 CreatureSheet = Dict[str, Any]  # Placeholder for future CreatureSheet class
@@ -74,140 +74,26 @@ class CreationFactory:
         self.last_verbose_logs = []  # Store verbose logs from last creation
     
     def _build_creation_configs(self) -> Dict[CreationOptions, CreationConfig]:
-        """Build mapping of creation types to their required components."""
+        """Build mapping of creation types to their required components.
+        
+        Simplified version that only supports character creation for now.
+        Other creation types are disabled until missing creator classes are implemented.
+        """
         return {
             CreationOptions.CHARACTER: CreationConfig(
-                models=[CharacterCore, ItemSheet],  # Characters have equipment/items
-                generators=[
-                    CharacterCreator, 
-                    CustomContentGenerator,
-                    ItemCreator  # Characters need item generation for equipment
-                ],
-                validators=[
-                    # CharacterValidator,        # Core character validation
-                    # WeaponValidator,          # Validate character's weapons
-                    # ArmorValidator,           # Validate character's armor
-                    # SpellValidator,           # Validate character's spells
-                    # EquipmentValidator,       # Validate equipment compatibility
-                    # CharacterBalanceValidator # Umbrella validator for overall balance
-                ],
-                formatters=[
-                    # CharacterFormatter,       # Format character sheets
-                    # EquipmentFormatter,       # Format equipment lists
-                    # SpellListFormatter        # Format spell lists
-                ],
-                schemas={
-                    # "character": CharacterCreateRequest,
-                    # "equipment": EquipmentSchema,
-                    # "spells": SpellListSchema
-                }
-            ),
-            CreationOptions.MONSTER: CreationConfig(
-                models=[CreatureSheet, ItemSheet],  # Monsters can have equipment
-                generators=[
-                    CreatureCreator, 
-                    CustomContentGenerator,
-                    ItemCreator  # Monsters may need custom items/abilities
-                ],
-                validators=[
-                    # CreatureValidator,        # Core creature validation
-                    # ChallengeRatingValidator, # Validate CR appropriateness
-                    # AbilityValidator,         # Validate special abilities
-                    # MonsterBalanceValidator   # Umbrella validator for encounter balance
-                ],
-                formatters=[
-                    # CreatureFormatter,        # Format stat blocks
-                    # AbilityFormatter          # Format special abilities
-                ],
-                schemas={
-                    # "creature": CreatureCreateRequest,
-                    # "abilities": AbilitySchema
-                }
-            ),
-            CreationOptions.NPC: CreationConfig(
-                models=[CharacterCore, CreatureSheet, ItemSheet],  # NPCs can be character-like or creature-like
-                generators=[
-                    CharacterCreator,   # For character-based NPCs
-                    CreatureCreator,    # For creature-based NPCs
-                    CustomContentGenerator,
-                    ItemCreator         # NPCs need equipment/items
-                ],
-                validators=[
-                    # NPCValidator,             # Core NPC validation
-                    # CharacterValidator,       # If using character rules
-                    # CreatureValidator,        # If using creature rules
-                    # NPCBalanceValidator       # Umbrella validator for NPC appropriateness
-                ],
-                formatters=[
-                    # NPCFormatter,             # Format NPC sheets
-                    # DialogueFormatter         # Format NPC dialogue/personality
-                ],
-                schemas={
-                    # "npc": NPCCreateRequest,
-                    # "personality": PersonalitySchema
-                }
-            ),
-            CreationOptions.WEAPON: CreationConfig(
-                models=[ItemSheet],
-                generators=[ItemCreator, CustomContentGenerator],
-                validators=[
-                    # WeaponValidator,          # Validate weapon properties
-                    # DamageValidator,          # Validate damage calculations
-                    # BalanceValidator          # Validate weapon balance
-                ],
-                formatters=[
-                    # WeaponFormatter           # Format weapon descriptions
-                ],
-                schemas={
-                    # "weapon": WeaponCreateRequest
-                }
-            ),
-            CreationOptions.ARMOR: CreationConfig(
-                models=[ItemSheet],
-                generators=[ItemCreator, CustomContentGenerator],
-                validators=[
-                    # ArmorValidator,           # Validate armor properties
-                    # ACValidator,              # Validate AC calculations
-                    # BalanceValidator          # Validate armor balance
-                ],
-                formatters=[
-                    # ArmorFormatter            # Format armor descriptions
-                ],
-                schemas={
-                    # "armor": ArmorCreateRequest
-                }
-            ),
-            CreationOptions.SPELL: CreationConfig(
-                models=[ItemSheet],  # Or create SpellSheet
-                generators=[ItemCreator, CustomContentGenerator],
-                validators=[
-                    # SpellValidator,           # Validate spell mechanics
-                    # LevelValidator,           # Validate spell level appropriateness
-                    # ComponentValidator,       # Validate spell components
-                    # BalanceValidator          # Validate spell balance
-                ],
-                formatters=[
-                    # SpellFormatter            # Format spell descriptions
-                ],
-                schemas={
-                    # "spell": SpellCreateRequest
-                }
-            ),
-            CreationOptions.OTHER_ITEM: CreationConfig(
-                models=[ItemSheet],
-                generators=[ItemCreator, CustomContentGenerator],
-                validators=[
-                    # ItemValidator,            # Validate item properties
-                    # RarityValidator,          # Validate item rarity
-                    # BalanceValidator          # Validate item balance
-                ],
-                formatters=[
-                    # ItemFormatter             # Format item descriptions
-                ],
-                schemas={
-                    # "item": ItemCreateRequest
-                }
+                models=[CharacterCore],
+                generators=[CharacterCreator, CustomContentGenerator],
+                validators=[],
+                formatters=[],
+                schemas={}
             )
+            # TODO: Add other creation types when creator classes are implemented:
+            # CreationOptions.MONSTER: CreationConfig(...),
+            # CreationOptions.NPC: CreationConfig(...),
+            # CreationOptions.WEAPON: CreationConfig(...),
+            # CreationOptions.ARMOR: CreationConfig(...),
+            # CreationOptions.SPELL: CreationConfig(...),
+            # CreationOptions.OTHER_ITEM: CreationConfig(...)
         }
     
     def get_config(self, creation_type: CreationOptions) -> CreationConfig:
@@ -347,35 +233,64 @@ class CreationFactory:
                 self.last_verbose_logs = result.verbose_logs
             raise Exception(f"Character evolution failed: {result.error}")
     
-    async def _create_monster_from_scratch(self, prompt: str, **kwargs) -> CreatureSheet:
-        """Create a new monster from scratch using LLM generation."""
-        creator = CreatureCreator(self.llm_service)
-        # Implementation would use creature creation logic
-        pass
+    async def _create_monster_from_scratch(self, prompt: str, **kwargs) -> Dict[str, Any]:
+        """Create a new monster from scratch using LLM generation.
+        
+        TODO: Implement CreatureCreator class. For now, returns a placeholder.
+        """
+        return {
+            "error": "Monster creation not yet implemented",
+            "message": "CreatureCreator class needs to be implemented",
+            "type": "monster",
+            "prompt": prompt
+        }
     
-    async def _evolve_monster(self, existing_data: Dict[str, Any], evolution_prompt: str, **kwargs) -> CreatureSheet:
-        """Evolve an existing monster (e.g., power up, new abilities)."""
-        # Monsters could evolve through story events, power-ups, etc.
-        creator = CreatureCreator(self.llm_service)
-        # Implementation would use evolution logic
-        pass
+    async def _evolve_monster(self, existing_data: Dict[str, Any], evolution_prompt: str, **kwargs) -> Dict[str, Any]:
+        """Evolve an existing monster (e.g., power up, new abilities).
+        
+        TODO: Implement monster evolution logic.
+        """
+        return {
+            "error": "Monster evolution not yet implemented",
+            "message": "Monster evolution logic needs to be implemented",
+            "type": "monster_evolution"
+        }
     
-    async def _create_npc_from_scratch(self, prompt: str, **kwargs) -> CharacterCore:
-        """Create a new NPC from scratch using hybrid logic."""
-        # NPCs might use both character and creature components
-        # Could be character-like (with classes) or creature-like (with CR)
-        pass
+    async def _create_npc_from_scratch(self, prompt: str, **kwargs) -> Dict[str, Any]:
+        """Create a new NPC from scratch using hybrid logic.
+        
+        TODO: Implement NPCCreator class. For now, returns a placeholder.
+        """
+        return {
+            "error": "NPC creation not yet implemented", 
+            "message": "NPCCreator class needs to be implemented",
+            "type": "npc",
+            "prompt": prompt
+        }
     
-    async def _evolve_npc(self, existing_data: Dict[str, Any], evolution_prompt: str, **kwargs) -> CharacterCore:
-        """Evolve an existing NPC (level up, story changes, etc.)."""
-        # NPCs could evolve similarly to characters based on story events
-        pass
+    async def _evolve_npc(self, existing_data: Dict[str, Any], evolution_prompt: str, **kwargs) -> Dict[str, Any]:
+        """Evolve an existing NPC (level up, story changes, etc.).
+        
+        TODO: Implement NPC evolution logic.
+        """
+        return {
+            "error": "NPC evolution not yet implemented",
+            "message": "NPC evolution logic needs to be implemented", 
+            "type": "npc_evolution"
+        }
     
-    async def _create_item_from_scratch(self, item_type: CreationOptions, prompt: str, **kwargs) -> ItemSheet:
-        """Create a new item from scratch using LLM generation."""
-        creator = ItemCreator(self.llm_service)
-        # Implementation would use item creation logic based on item_type
-        pass
+    async def _create_item_from_scratch(self, item_type: CreationOptions, prompt: str, **kwargs) -> Dict[str, Any]:
+        """Create a new item from scratch using LLM generation.
+        
+        TODO: Implement ItemCreator class. For now, returns a placeholder.
+        """
+        return {
+            "error": "Item creation not yet implemented",
+            "message": "ItemCreator class needs to be implemented", 
+            "type": "item",
+            "item_type": item_type.value if hasattr(item_type, 'value') else str(item_type),
+            "prompt": prompt
+        }
     
     def validate(self, creation_type: CreationOptions, obj: Any) -> bool:
         """Validate a created object using the appropriate validators."""

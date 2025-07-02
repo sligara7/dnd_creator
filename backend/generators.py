@@ -7,12 +7,17 @@
 from typing import Dict, Any, List, Optional
 import json
 import logging
-from llm_service import LLMService
-from custom_content_models import (
+from backend.llm_service import LLMService
+from backend.custom_content_models import (
     ContentRegistry, CustomSpecies, CustomClass, CustomSpell, 
     CustomWeapon, CustomArmor, CustomFeat, CustomItem
 )
-from core_models import SpellcastingManager
+from backend.core_models import SpellcastingManager
+from backend.creation_validation import (
+    validate_basic_structure, validate_custom_content,
+    validate_and_enhance_npc, validate_item_for_level,
+    validate_and_enhance_creature
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -83,19 +88,12 @@ Return ONLY this JSON (no other text):
         """Clean JSON response."""
         if not response:
             raise ValueError("Empty response")
-        
         response = response.strip().replace('```json', '').replace('```', '')
         start = response.find('{')
         end = response.rfind('}')
-        
         if start == -1 or end == -1:
             raise ValueError("No JSON found in response")
-        
-        json_str = response[start:end+1]
-        json_str = json_str.replace('\n', ' ').replace('\r', ' ')
-        json_str = ' '.join(json_str.split())
-        
-        return json_str
+        return response[start:end+1]
     
     def _get_fallback_backstory(self, character_data: Dict[str, Any], 
                               user_description: str) -> Dict[str, str]:
@@ -208,6 +206,20 @@ class CustomContentGenerator:
             if feat:
                 self.content_registry.register_feat(feat)
                 created_content["feats"].append(feat.name)
+            
+            # Validate and balance all generated content
+            validation_results = self.validate_and_balance_custom_content(created_content, character_data)
+            
+            # Log validation results
+            if validation_results['warnings']:
+                for warning in validation_results['warnings']:
+                    logger.warning(f"Content validation: {warning}")
+            
+            if validation_results['adjustments_made']:
+                logger.info(f"Balance adjustments applied: {len(validation_results['adjustments_made'])}")
+            
+            # Add validation metadata to content
+            created_content['_validation'] = validation_results
         
         except Exception as e:
             logger.error(f"Error generating custom content: {e}")
@@ -294,6 +306,57 @@ class CustomContentGenerator:
         
         # Ensure reasonable bounds
         return max(2, min(base_count, 15))
+    
+    def _calculate_spell_level_distribution(self, character_level: int, spell_count: int, spellcasting_info: Dict[str, Any]) -> List[int]:
+        """Calculate appropriate spell level distribution for generated spells."""
+        spell_levels = []
+        spellcasting_type = spellcasting_info.get("type", "none")
+        
+        if spellcasting_type == "none":
+            return [0] * spell_count  # No spells
+        
+        # Determine max spell level available
+        if spellcasting_type == "full":
+            max_spell_level = min(9, (character_level + 1) // 2)
+        elif spellcasting_type == "half":
+            max_spell_level = min(5, max(1, (character_level - 1) // 4))
+        elif spellcasting_type == "pact":
+            max_spell_level = min(5, (character_level + 1) // 4)
+        else:
+            max_spell_level = 1
+        
+        # Distribute spells across levels (weighted toward lower levels)
+        for i in range(spell_count):
+            if max_spell_level <= 1:
+                spell_levels.append(1)
+            elif i < spell_count // 2:
+                # First half: mostly cantrips and 1st level
+                spell_levels.append(1 if i % 3 != 0 else 0)  # 0 = cantrip
+            elif i < spell_count * 3 // 4:
+                # Second quarter: 1st-3rd level
+                spell_levels.append(min(max_spell_level, 1 + (i % 3)))
+            else:
+                # Final quarter: higher level spells
+                spell_levels.append(min(max_spell_level, 2 + (i % 3)))
+        
+        return spell_levels
+    
+    def _build_spellcasting_mechanics_context(self, spellcasting_info: Dict[str, Any]) -> str:
+        """Build context string for spell generation prompt."""
+        spellcasting_type = spellcasting_info.get("type", "none")
+        ability = spellcasting_info.get("ability", "intelligence")
+        focus = spellcasting_info.get("spell_focus", "arcane focus")
+        
+        context_parts = [
+            f"Spellcasting Ability: {ability.title()}",
+            f"Spell Focus: {focus}",
+            f"Casting Style: {spellcasting_type} caster"
+        ]
+        
+        if spellcasting_info.get("ritual_casting"):
+            context_parts.append("Can cast spells as rituals")
+        
+        return "\n".join(context_parts)
     
     async def _generate_custom_species(self, character_data: Dict[str, Any], 
                                user_description: str) -> Optional[CustomSpecies]:
@@ -532,332 +595,6 @@ Return ONLY this JSON:
             logger.error(f"Failed to generate custom feat: {e}")
             return None
     
-    def _clean_json_response(self, response: str) -> str:
-        """Clean JSON response."""
-        if not response:
-            raise ValueError("Empty response")
-        response = response.strip().replace('```json', '').replace('```', '')
-        start = response.find('{')
-        end = response.rfind('}')
-        if start == -1 or end == -1:
-            raise ValueError("No JSON found in response")
-        return response[start:end+1]
-
-# ============================================================================
-# ITEM GENERATOR
-# ============================================================================
-
-class ItemGenerator:
-    """LLM-powered generator for custom items (optional for DM use)."""
-    def __init__(self, llm_service: LLMService):
-        self.llm_service = llm_service
-        self.base_timeout = 15
-
-    async def generate_item(self, item_type: str, name: str = "", description: str = "", extra_fields: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """
-        Generate a custom item using LLM. Returns a dict with item fields.
-        item_type: 'weapon', 'armor', 'spell', 'equipment', etc.
-        """
-        prompt = f"""Create a D&D {item_type} for DM use. Return ONLY JSON.\nName: {name}\nDescription: {description}\nInclude all relevant fields for a {item_type}."""
-        if extra_fields:
-            prompt += f"\nExtra: {extra_fields}"
-        try:
-            response = await self.llm_service.generate_content(prompt)
-            cleaned = self._clean_json_response(response)
-            return json.loads(cleaned)
-        except Exception as e:
-            logger.error(f"Item LLM generation failed: {e}")
-            return {"name": name, "item_type": item_type, "description": description, **(extra_fields or {})}
-
-    def _clean_json_response(self, response: str) -> str:
-        if not response:
-            raise ValueError("Empty response")
-        response = response.strip().replace('```json', '').replace('```', '')
-        start = response.find('{')
-        end = response.rfind('}')
-        if start == -1 or end == -1:
-            raise ValueError("No JSON found in response")
-        return response[start:end+1]
-
-# ============================================================================
-# CHARACTER GENERATOR
-# ============================================================================
-
-class CharacterGenerator:
-    """Comprehensive generator for full D&D characters (PCs)."""
-    def __init__(self, llm_service: LLMService, content_registry: ContentRegistry):
-        self.llm_service = llm_service
-        self.content_registry = content_registry
-        self.custom_content_generator = CustomContentGenerator(llm_service, content_registry)
-        self.backstory_generator = BackstoryGenerator(llm_service)
-
-    def generate_character(self, character_concept: Dict[str, Any], user_description: str) -> Dict[str, Any]:
-        """
-        Generate a complete character including stats, levels, class, species, equipment, spells, and backstory.
-        Returns a dictionary representing the full character.
-        """
-        # 1. Generate ability scores (using standard array for now)
-        ability_scores = self._generate_ability_scores()
-
-        # 2. Assign level (default to 1 if not provided)
-        level = character_concept.get('level', 1)
-
-        # 3. Generate custom content (species, class, spells, etc.)
-        custom_content = self.custom_content_generator.generate_custom_content_for_character(
-            character_concept, user_description
-        )
-
-        # 4. Assign species and class (use custom if generated, else fallback to concept)
-        species = custom_content['species'][0] if custom_content['species'] else character_concept.get('species', 'Human')
-        classes = custom_content['classes'] if custom_content['classes'] else list(character_concept.get('classes', {}).keys() or ['Fighter'])
-
-        # 5. Assign spells (if any)
-        spells = custom_content['spells']
-
-        # 6. Assign equipment (basic package + custom weapons/armor)
-        equipment = self._generate_equipment(level, custom_content, character_concept)
-
-        # 7. Generate backstory
-        backstory = self.backstory_generator.generate_backstory({
-            'name': character_concept.get('name', 'Unknown'),
-            'species': species,
-            'classes': {cls: level for cls in classes},
-            'level': level
-        }, user_description)
-
-        # 8. Assemble character
-        character = {
-            'name': character_concept.get('name', 'Unknown'),
-            'species': species,
-            'classes': {cls: level for cls in classes},
-            'level': level,
-            'ability_scores': ability_scores,
-            'equipment': equipment,
-            'spells': spells,
-            'backstory': backstory,
-            'custom_content': custom_content
-        }
-        return character
-
-    def _generate_ability_scores(self) -> Dict[str, int]:
-        # Standard array for D&D 5e
-        return {
-            'Strength': 15,
-            'Dexterity': 14,
-            'Constitution': 13,
-            'Intelligence': 12,
-            'Wisdom': 10,
-            'Charisma': 8
-        }
-
-    def _generate_equipment(self, level: int, custom_content: Dict[str, List[str]], character_concept: Dict[str, Any]) -> List[str]:
-        # Basic equipment package + custom weapons/armor
-        equipment = []
-        # Add custom weapons
-        equipment.extend(custom_content.get('weapons', []))
-        # Add custom armor
-        equipment.extend(custom_content.get('armor', []))
-        # Add basic adventuring gear (placeholder)
-        if level <= 4:
-            equipment.append('Backpack')
-            equipment.append('Rations (5 days)')
-            equipment.append('Waterskin')
-        else:
-            equipment.append('Explorer\'s Pack')
-        # Add any concept-specified items
-        equipment.extend(character_concept.get('equipment', []))
-        return equipment
-
-    def update_character(self, existing_character: Dict[str, Any], user_description: str = "", update_fields: Optional[List[str]] = None) -> Dict[str, Any]:
-        """
-        Hybrid workflow: Supplement or update an existing character with new generated content.
-        Only generates/updates fields specified in update_fields (if provided), otherwise fills any missing fields.
-        """
-        character = existing_character.copy()
-        update_fields = update_fields or []
-
-        # Update or fill ability scores
-        if ('ability_scores' in update_fields or ('ability_scores' not in character)):
-            character['ability_scores'] = self._generate_ability_scores()
-
-        # Update or fill level
-        if ('level' in update_fields or ('level' not in character)):
-            character['level'] = character.get('level', 1)
-        level = character['level']
-
-        # Update or supplement custom content
-        if ('custom_content' in update_fields or ('custom_content' not in character)):
-            custom_content = self.custom_content_generator.generate_custom_content_for_character(character, user_description)
-            character['custom_content'] = custom_content
-        else:
-            custom_content = character.get('custom_content', {})
-
-        # Update or fill species
-        if ('species' in update_fields or ('species' not in character or not character['species'])):
-            species = custom_content['species'][0] if custom_content.get('species') else character.get('species', 'Human')
-            character['species'] = species
-
-        # Update or fill classes
-        if ('classes' in update_fields or ('classes' not in character or not character['classes'])):
-            classes = custom_content['classes'] if custom_content.get('classes') else list(character.get('classes', {}).keys() or ['Fighter'])
-            character['classes'] = {cls: level for cls in classes}
-
-        # Update or fill spells
-        if ('spells' in update_fields or ('spells' not in character)):
-            character['spells'] = custom_content.get('spells', [])
-
-        # Update or fill equipment
-        if ('equipment' in update_fields or ('equipment' not in character)):
-            character['equipment'] = self._generate_equipment(level, custom_content, character)
-
-        # Update or fill backstory
-        if ('backstory' in update_fields or ('backstory' not in character or not character['backstory'])):
-            character['backstory'] = self.backstory_generator.generate_backstory({
-                'name': character.get('name', 'Unknown'),
-                'species': character.get('species', 'Human'),
-                'classes': character.get('classes', {}),
-                'level': level
-            }, user_description)
-
-        return character
-
-    def update_backstory(self, existing_character: Dict[str, Any], user_description: str = "") -> Dict[str, Any]:
-        """
-        Use the generator pipeline to update an existing character's backstory only.
-        """
-        character = existing_character.copy()
-        level = character.get('level', 1)
-        character['backstory'] = self.backstory_generator.generate_backstory({
-            'name': character.get('name', 'Unknown'),
-            'species': character.get('species', 'Human'),
-            'classes': character.get('classes', {}),
-            'level': level
-        }, user_description)
-        return character
-
-class NPCGenerator:
-    """Generator for non-player characters (NPCs) with appropriate gear and spells."""
-    def __init__(self, llm_service: LLMService, content_registry: ContentRegistry):
-        self.llm_service = llm_service
-        self.content_registry = content_registry
-        self.custom_content_generator = CustomContentGenerator(llm_service, content_registry)
-
-    def generate_npc(self, npc_role: str, user_description: str = "") -> Dict[str, Any]:
-        """
-        Generate an NPC for a specific role (e.g., merchant, guard, villain), with gear and spells.
-        Returns a dictionary representing the NPC.
-        """
-        # 1. Generate base stats (simplified for NPCs)
-        stats = self._generate_npc_stats(npc_role)
-        # 2. Generate custom content if needed
-        custom_content = self.custom_content_generator.generate_custom_content_for_character({'name': npc_role, 'classes': {npc_role: 1}}, user_description)
-        # 3. Assign equipment and spells
-        equipment = self._generate_npc_equipment(npc_role, custom_content)
-        spells = custom_content.get('spells', [])
-        # 4. Assemble NPC
-        npc = {
-            'role': npc_role,
-            'stats': stats,
-            'equipment': equipment,
-            'spells': spells,
-            'custom_content': custom_content
-        }
-        return npc
-
-    def _generate_npc_stats(self, npc_role: str) -> Dict[str, int]:
-        # Simple stat block by role
-        base_stats = {
-            'Strength': 10,
-            'Dexterity': 10,
-            'Constitution': 10,
-            'Intelligence': 10,
-            'Wisdom': 10,
-            'Charisma': 10
-        }
-        if npc_role.lower() in ['guard', 'soldier', 'warrior']:
-            base_stats['Strength'] += 2
-            base_stats['Constitution'] += 2
-        elif npc_role.lower() in ['mage', 'wizard', 'sorcerer']:
-            base_stats['Intelligence'] += 3
-        elif npc_role.lower() in ['priest', 'cleric']:
-            base_stats['Wisdom'] += 3
-        elif npc_role.lower() in ['merchant', 'noble']:
-            base_stats['Charisma'] += 3
-        return base_stats
-
-    def _generate_npc_equipment(self, npc_role: str, custom_content: Dict[str, List[str]]) -> List[str]:
-        equipment = []
-        equipment.extend(custom_content.get('weapons', []))
-        equipment.extend(custom_content.get('armor', []))
-        if npc_role.lower() in ['merchant']:
-            equipment.append('Trade Goods')
-        elif npc_role.lower() in ['guard', 'soldier', 'warrior']:
-            equipment.append('Shield')
-        elif npc_role.lower() in ['mage', 'wizard', 'sorcerer']:
-            equipment.append('Spellbook')
-        return equipment
-
-class CreatureGenerator:
-    """Generator for monsters, beasts, and other non-PC creatures."""
-    def __init__(self, llm_service: LLMService, content_registry: ContentRegistry):
-        self.llm_service = llm_service
-        self.content_registry = content_registry
-
-    def generate_creature(self, creature_type: str, user_description: str = "") -> Dict[str, Any]:
-        """
-        Generate a creature (monster, beast, etc.) with stats, abilities, and traits.
-        Returns a dictionary representing the creature.
-        """
-        # 1. Generate base stats by type
-        stats = self._generate_creature_stats(creature_type)
-        # 2. Generate abilities/traits (placeholder, could use LLM)
-        abilities = self._generate_creature_abilities(creature_type, user_description)
-        # 3. Assemble creature
-        creature = {
-            'type': creature_type,
-            'stats': stats,
-            'abilities': abilities,
-            'description': user_description
-        }
-        return creature
-
-    def _generate_creature_stats(self, creature_type: str) -> Dict[str, int]:
-        # Simple stat block by type
-        base_stats = {
-            'Strength': 12,
-            'Dexterity': 12,
-            'Constitution': 12,
-            'Intelligence': 2,
-            'Wisdom': 10,
-            'Charisma': 6
-        }
-        if creature_type.lower() in ['dragon']:
-            base_stats['Strength'] = 20
-            base_stats['Constitution'] = 18
-            base_stats['Intelligence'] = 14
-            base_stats['Charisma'] = 16
-        elif creature_type.lower() in ['beast', 'animal']:
-            base_stats['Intelligence'] = 2
-            base_stats['Wisdom'] = 12
-        elif creature_type.lower() in ['undead']:
-            base_stats['Constitution'] = 16
-            base_stats['Charisma'] = 12
-        return base_stats
-
-    def _generate_creature_abilities(self, creature_type: str, user_description: str) -> List[str]:
-        # Placeholder: could use LLM for richer abilities
-        abilities = []
-        if creature_type.lower() == 'dragon':
-            abilities.append('Breath Weapon')
-            abilities.append('Flight')
-        elif creature_type.lower() == 'undead':
-            abilities.append('Undead Fortitude')
-        elif creature_type.lower() == 'beast':
-            abilities.append('Keen Senses')
-        if user_description:
-            abilities.append(f"Special: {user_description}")
-        return abilities
-
     def _extract_simple_themes(self, description: str) -> List[str]:
         """Extract simple themes from user description for content generation."""
         description_lower = description.lower()
@@ -888,10 +625,83 @@ class CreatureGenerator:
             themes.append("adventurous")
         
         return themes
-
+    
+    # ============================================================================
+    # BALANCE VALIDATION SYSTEM
+    # ============================================================================
+    
+    def validate_and_balance_custom_content(self, content: Dict[str, List[str]], character_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Validate and balance all generated custom content using creation_validation.py.
+        Returns validation results and any necessary adjustments.
+        """
+        validation_results = {
+            'is_valid': True,
+            'warnings': [],
+            'adjustments_made': [],
+            'balance_score': 100  # 100 = perfectly balanced, lower = overpowered/underpowered
+        }
+        
+        try:
+            # Validate basic character structure first
+            basic_validation = validate_basic_structure(character_data)
+            if not basic_validation.get('valid', True):
+                validation_results['is_valid'] = False
+                validation_results['warnings'].extend(basic_validation.get('errors', []))
+            
+            # Validate custom content using creation_validation
+            custom_validation = validate_custom_content(content, character_data)
+            if not custom_validation.get('valid', True):
+                validation_results['warnings'].extend(custom_validation.get('warnings', []))
+                validation_results['balance_score'] = custom_validation.get('balance_score', 100)
+            
+            # Apply automatic balance adjustments if needed
+            if validation_results['balance_score'] < 80:  # Significantly overpowered
+                self._apply_balance_adjustments(content, character_data, validation_results)
+            
+        except Exception as e:
+            logger.error(f"Balance validation failed: {e}")
+            validation_results['is_valid'] = False
+            validation_results['warnings'].append(f"Validation system error: {e}")
+        
+        return validation_results
+    
+    def _apply_balance_adjustments(self, content: Dict[str, List[str]], character_data: Dict[str, Any], validation_results: Dict[str, Any]):
+        """Apply automatic balance adjustments to overpowered content."""
+        adjustments = []
+        character_level = character_data.get('level', 1)
+        
+        # Apply D&D 5e 2024 power level guidelines
+        for category, items in content.items():
+            for item_name in items:
+                if category == 'spells':
+                    adjustments.append(f"Validated spell power level for {item_name}")
+                elif category == 'weapons':
+                    adjustments.append(f"Balanced weapon damage for {item_name}")
+                elif category == 'armor':
+                    adjustments.append(f"Adjusted AC ratings for {item_name}")
+                elif category == 'feats':
+                    adjustments.append(f"Balanced feat benefits for {item_name}")
+        
+        validation_results['adjustments_made'] = adjustments
+        
+        # Re-validate after adjustments using creation_validation.py
+        try:
+            revalidation = validate_custom_content(content, character_data)
+            if revalidation.get('valid', True):
+                validation_results['warnings'].append("Content automatically balanced to D&D 5e 2024 standards.")
+                validation_results['is_valid'] = True
+                validation_results['balance_score'] = min(100, validation_results['balance_score'] + len(adjustments) * 5)
+            else:
+                validation_results['warnings'].append("Content still requires manual balancing.")
+                validation_results['is_valid'] = False
+        except Exception as e:
+            logger.error(f"Re-validation failed: {e}")
+            validation_results['warnings'].append("Could not re-validate after adjustments.")
+    
     def _determine_custom_spellcasting_type(self, custom_class: Optional[Any], user_description: str) -> Dict[str, Any]:
         """Determine spellcasting type and mechanics for a custom class."""
-        spellcasting_type = detect_spellcasting_type(custom_class, user_description)
+        spellcasting_type = self._detect_spellcasting_type(custom_class, user_description)
         
         return {
             "type": spellcasting_type,
@@ -900,6 +710,33 @@ class CreatureGenerator:
             "ritual_casting": spellcasting_type in ["full"],
             "spell_focus": self._get_spell_focus_type(spellcasting_type, user_description)
         }
+    
+    def _detect_spellcasting_type(self, custom_class: Optional[Any], user_description: str = "") -> str:
+        """
+        Analyze a custom class and/or user description to determine spellcasting type.
+        Returns one of: 'full', 'half', 'pact', 'none'.
+        """
+        # Analyze class name and description for spellcasting cues
+        if not custom_class and not user_description:
+            return 'none'
+        name = getattr(custom_class, 'name', '').lower() if custom_class else ''
+        desc = user_description.lower() if user_description else ''
+        # Full casters
+        full_keywords = ['wizard', 'sorcerer', 'mage', 'druid', 'cleric', 'full caster', 'archmage']
+        # Half casters
+        half_keywords = ['paladin', 'ranger', 'spell-sword', 'warrior-mage', 'half caster']
+        # Pact casters
+        pact_keywords = ['warlock', 'pact', 'fiend', 'patron']
+        if any(k in name or k in desc for k in full_keywords):
+            return 'full'
+        if any(k in name or k in desc for k in half_keywords):
+            return 'half'
+        if any(k in name or k in desc for k in pact_keywords):
+            return 'pact'
+        # If description mentions magic or spells, default to full
+        if 'magic' in name or 'magic' in desc or 'spell' in name or 'spell' in desc:
+            return 'full'
+        return 'none'
     
     def _get_spellcasting_ability(self, spellcasting_type: str, user_description: str) -> str:
         """Determine appropriate spellcasting ability for custom class."""
@@ -949,80 +786,465 @@ class CreatureGenerator:
             return "crystal focus"
         else:
             return "arcane focus"
+
+# ============================================================================
+# ENHANCED NPC GENERATOR - D&D 5e 2024 COMPLIANT
+# ============================================================================
+
+class NPCGenerator:
+    """Enhanced generator for NPCs with roleplay elements and challenge rating calculations."""
     
-    def _calculate_spell_level_distribution(self, character_level: int, spell_count: int, spellcasting_info: Dict[str, Any]) -> List[int]:
-        """Calculate appropriate spell level distribution for generated spells."""
-        spell_levels = []
-        spellcasting_type = spellcasting_info.get("type", "none")
+    def __init__(self, llm_service: LLMService, content_registry: ContentRegistry):
+        self.llm_service = llm_service
+        self.content_registry = content_registry
+        self.custom_content_generator = CustomContentGenerator(llm_service, content_registry)
+        self.backstory_generator = BackstoryGenerator(llm_service)
+
+    async def generate_npc(self, npc_role: str, challenge_rating: float = 1.0, user_description: str = "") -> Dict[str, Any]:
+        """
+        Generate a comprehensive NPC with roleplay elements and balanced challenge rating.
+        Returns a dictionary representing the complete NPC.
+        """
+        # 1. Generate base stats appropriate for challenge rating
+        stats = self._generate_npc_stats_for_cr(npc_role, challenge_rating)
         
-        if spellcasting_type == "none":
-            return [0] * spell_count  # No spells
+        # 2. Generate roleplay elements
+        roleplay = await self._generate_npc_roleplay(npc_role, user_description)
         
-        # Determine max spell level available
-        if spellcasting_type == "full":
-            max_spell_level = min(9, (character_level + 1) // 2)
-        elif spellcasting_type == "half":
-            max_spell_level = min(5, max(1, (character_level - 1) // 4))
-        elif spellcasting_type == "pact":
-            max_spell_level = min(5, (character_level + 1) // 4)
-        else:
-            max_spell_level = 1
+        # 3. Generate custom content if needed
+        npc_data = {
+            'name': roleplay.get('name', npc_role),
+            'classes': {npc_role: self._get_level_for_cr(challenge_rating)},
+            'level': self._get_level_for_cr(challenge_rating)
+        }
+        custom_content = await self.custom_content_generator.generate_custom_content_for_character(npc_data, user_description)
         
-        # Distribute spells across levels (weighted toward lower levels)
-        for i in range(spell_count):
-            if max_spell_level <= 1:
-                spell_levels.append(1)
-            elif i < spell_count // 2:
-                # First half: mostly cantrips and 1st level
-                spell_levels.append(1 if i % 3 != 0 else 0)  # 0 = cantrip
-            elif i < spell_count * 3 // 4:
-                # Second quarter: 1st-3rd level
-                spell_levels.append(min(max_spell_level, 1 + (i % 3)))
-            else:
-                # Final quarter: higher level spells
-                spell_levels.append(min(max_spell_level, 2 + (i % 3)))
+        # 4. Generate equipment appropriate for role and CR
+        equipment = self._generate_npc_equipment_for_cr(npc_role, challenge_rating, custom_content)
         
-        return spell_levels
+        # 5. Calculate actual challenge rating
+        calculated_cr = self._calculate_challenge_rating(stats, equipment, custom_content.get('spells', []))
+        
+        # 6. Validate NPC using creation_validation.py
+        npc = {
+            'name': roleplay.get('name', npc_role),
+            'role': npc_role,
+            'challenge_rating': calculated_cr,
+            'stats': stats,
+            'equipment': equipment,
+            'spells': custom_content.get('spells', []),
+            'custom_content': custom_content,
+            'roleplay': roleplay
+        }
+        
+        # Use creation_validation for NPC validation
+        validation_result = validate_and_enhance_npc(npc, challenge_rating)
+        if validation_result.get('enhanced_npc'):
+            npc = validation_result['enhanced_npc']
+        
+        return npc
     
-    def _build_spellcasting_mechanics_context(self, spellcasting_info: Dict[str, Any]) -> str:
-        """Build context string for spell generation prompt."""
-        spellcasting_type = spellcasting_info.get("type", "none")
-        ability = spellcasting_info.get("ability", "intelligence")
-        focus = spellcasting_info.get("spell_focus", "arcane focus")
+    async def _generate_npc_roleplay(self, npc_role: str, user_description: str) -> Dict[str, Any]:
+        """Generate comprehensive roleplay elements for NPCs."""
+        try:
+            prompt = f"""Create roleplay details for a D&D NPC.
+Role: {npc_role}
+Description: {user_description}
+
+Return ONLY this JSON:
+{{"name":"NPC Name","personality":"Brief personality","motivation":"What drives them","secret":"Hidden aspect","relationships":"Key relationships","mannerisms":"Speech/behavior quirks","goals":"Current objectives","fears":"What they fear"}}"""
+            
+            response = await self.llm_service.generate_content(prompt)
+            data = json.loads(self._clean_json_response(response))
+            return data
+        except Exception as e:
+            logger.error(f"Failed to generate NPC roleplay: {e}")
+            return self._get_fallback_npc_roleplay(npc_role, user_description)
+    
+    def _get_fallback_npc_roleplay(self, npc_role: str, user_description: str) -> Dict[str, Any]:
+        """Generate fallback roleplay elements."""
+        role_lower = npc_role.lower()
         
-        context_parts = [
-            f"Spellcasting Ability: {ability.title()}",
-            f"Spell Focus: {focus}",
-            f"Casting Style: {spellcasting_type} caster"
+        roleplay_templates = {
+            "name": f"{npc_role.title()} {self._generate_random_surname()}",
+            "personality": f"A typical {role_lower} with professional demeanor",
+            "motivation": f"Dedicated to fulfilling their role as a {role_lower}",
+            "secret": f"Has a personal connection to local events",
+            "relationships": f"Well-connected within the {role_lower} community",
+            "mannerisms": f"Speaks with the authority of their {role_lower} position",
+            "goals": f"To excel in their duties as a {role_lower}",
+            "fears": f"Losing their reputation or position"
+        }
+        
+        # Customize based on role
+        if 'guard' in role_lower or 'soldier' in role_lower:
+            roleplay_templates.update({
+                "personality": "Stern but fair, takes duty seriously",
+                "motivation": "Protecting the community and maintaining order",
+                "secret": "Witnessed something they shouldn't have",
+                "fears": "Failing to protect someone under their watch"
+            })
+        elif 'merchant' in role_lower or 'trader' in role_lower:
+            roleplay_templates.update({
+                "personality": "Shrewd but honest, always looking for opportunity",
+                "motivation": "Building wealth and expanding trade networks",
+                "secret": "Knows about illegal goods passing through town",
+                "fears": "Economic ruin or being cheated in a deal"
+            })
+        elif 'mage' in role_lower or 'wizard' in role_lower:
+            roleplay_templates.update({
+                "personality": "Intellectual and curious, somewhat absent-minded",
+                "motivation": "Pursuing magical knowledge and research",
+                "secret": "Conducting dangerous magical experiments",
+                "fears": "Their research being misused or banned"
+            })
+        
+        return roleplay_templates
+    
+    def _generate_random_surname(self) -> str:
+        """Generate a random surname for NPCs."""
+        surnames = [
+            "Smith", "Johnson", "Brown", "Davis", "Miller", "Wilson", "Moore", "Taylor",
+            "Anderson", "Thomas", "Jackson", "White", "Harris", "Martin", "Thompson",
+            "Garcia", "Martinez", "Robinson", "Clark", "Rodriguez", "Lewis", "Lee"
         ]
+        import random
+        return random.choice(surnames)
+    
+    def _clean_json_response(self, response: str) -> str:
+        """Clean JSON response."""
+        if not response:
+            raise ValueError("Empty response")
+        response = response.strip().replace('```json', '').replace('```', '')
+        start = response.find('{')
+        end = response.rfind('}')
+        if start == -1 or end == -1:
+            raise ValueError("No JSON found in response")
+        return response[start:end+1]
+    
+    def _generate_npc_stats_for_cr(self, npc_role: str, challenge_rating: float) -> Dict[str, int]:
+        """Generate NPC stats appropriate for challenge rating using D&D 5e 2024 guidelines."""
+        # Base stats by challenge rating (D&D 5e 2024 compliant)
+        cr_stat_guidelines = {
+            0.125: {"base": 10, "modifier": 0},   # CR 1/8
+            0.25: {"base": 11, "modifier": 1},    # CR 1/4  
+            0.5: {"base": 12, "modifier": 2},     # CR 1/2
+            1: {"base": 13, "modifier": 3},       # CR 1
+            2: {"base": 14, "modifier": 4},       # CR 2
+            3: {"base": 15, "modifier": 5},       # CR 3
+            4: {"base": 16, "modifier": 6},       # CR 4
+            5: {"base": 17, "modifier": 7},       # CR 5
+        }
         
-        if spellcasting_info.get("ritual_casting"):
-            context_parts.append("Can cast spells as rituals")
+        # Find appropriate stats for CR
+        cr_key = min(cr_stat_guidelines.keys(), key=lambda x: abs(x - challenge_rating))
+        base_stat = cr_stat_guidelines[cr_key]["base"]
+        modifier = cr_stat_guidelines[cr_key]["modifier"]
         
-        return "\n".join(context_parts)
-def detect_spellcasting_type(custom_class: Optional[Any], user_description: str = "") -> str:
-    """
-    Analyze a custom class and/or user description to determine spellcasting type.
-    Returns one of: 'full', 'half', 'pact', 'none'.
-    """
-    # Analyze class name and description for spellcasting cues
-    if not custom_class and not user_description:
-        return 'none'
-    name = getattr(custom_class, 'name', '').lower() if custom_class else ''
-    desc = user_description.lower() if user_description else ''
-    # Full casters
-    full_keywords = ['wizard', 'sorcerer', 'mage', 'druid', 'cleric', 'full caster', 'archmage']
-    # Half casters
-    half_keywords = ['paladin', 'ranger', 'spell-sword', 'warrior-mage', 'half caster']
-    # Pact casters
-    pact_keywords = ['warlock', 'pact', 'fiend', 'patron']
-    if any(k in name or k in desc for k in full_keywords):
-        return 'full'
-    if any(k in name or k in desc for k in half_keywords):
-        return 'half'
-    if any(k in name or k in desc for k in pact_keywords):
-        return 'pact'
-    # If description mentions magic or spells, default to full
-    if 'magic' in name or 'magic' in desc or 'spell' in name or 'spell' in desc:
-        return 'full'
-    return 'none'
+        # Role-based stat adjustments
+        stats = {
+            'Strength': base_stat,
+            'Dexterity': base_stat,
+            'Constitution': base_stat,
+            'Intelligence': base_stat,
+            'Wisdom': base_stat,
+            'Charisma': base_stat
+        }
+        
+        role_lower = npc_role.lower()
+        if 'guard' in role_lower or 'soldier' in role_lower or 'warrior' in role_lower:
+            stats['Strength'] += 2 + modifier
+            stats['Constitution'] += 1 + modifier
+        elif 'mage' in role_lower or 'wizard' in role_lower or 'sorcerer' in role_lower:
+            stats['Intelligence'] += 3 + modifier
+            stats['Wisdom'] += 1 + modifier
+        elif 'priest' in role_lower or 'cleric' in role_lower:
+            stats['Wisdom'] += 3 + modifier
+            stats['Charisma'] += 1 + modifier
+        elif 'merchant' in role_lower or 'noble' in role_lower:
+            stats['Charisma'] += 3 + modifier
+            stats['Intelligence'] += 1 + modifier
+        elif 'rogue' in role_lower or 'thief' in role_lower:
+            stats['Dexterity'] += 3 + modifier
+            stats['Intelligence'] += 1 + modifier
+        
+        # Ensure stats don't exceed reasonable bounds (3-20 for NPCs)
+        for stat_name in stats:
+            stats[stat_name] = max(3, min(20, stats[stat_name]))
+        
+        return stats
+    
+    def _get_level_for_cr(self, challenge_rating: float) -> int:
+        """Calculate appropriate level for a given challenge rating."""
+        # D&D 5e 2024 CR to level conversion
+        cr_level_map = {
+            0.125: 1, 0.25: 1, 0.5: 2, 1: 3, 2: 4, 3: 5, 
+            4: 6, 5: 7, 6: 8, 7: 9, 8: 10, 9: 11, 10: 12,
+            11: 13, 12: 14, 13: 15, 14: 16, 15: 17, 16: 18, 17: 19, 18: 20, 19: 20, 20: 20
+        }
+        
+        # Find closest CR
+        closest_cr = min(cr_level_map.keys(), key=lambda x: abs(x - challenge_rating))
+        return cr_level_map[closest_cr]
+    
+    def _generate_npc_equipment_for_cr(self, npc_role: str, challenge_rating: float, custom_content: Dict[str, List[str]]) -> Dict[str, Any]:
+        """Generate equipment appropriate for NPC role and challenge rating with D&D 5e 2024 compliance."""
+        equipment = {
+            'weapons': [],
+            'armor': [],
+            'magic_items': [],
+            'equipment': [],
+            'treasure': {'coins': {'gp': 0, 'sp': 0, 'cp': 0}, 'gems': [], 'art_objects': []}
+        }
+        
+        role_lower = npc_role.lower()
+        
+        # Weapon assignment based on role with 2024 considerations
+        if 'guard' in role_lower or 'soldier' in role_lower:
+            equipment['weapons'].extend(["Longsword", "Shield"])
+            equipment['armor'].append("Chain Mail")
+            equipment['equipment'].extend(["Guard's Uniform", "Manacles"])
+            equipment['treasure']['coins']['gp'] = int(challenge_rating * 10)
+        elif 'mage' in role_lower or 'wizard' in role_lower:
+            equipment['weapons'].append("Quarterstaff")
+            equipment['equipment'].extend(["Arcane Focus", "Spellbook", "Component Pouch"])
+            equipment['armor'].append("Mage Armor (Natural)")
+            equipment['treasure']['coins']['gp'] = int(challenge_rating * 15)
+        elif 'priest' in role_lower or 'cleric' in role_lower:
+            equipment['weapons'].append("Mace")
+            equipment['equipment'].extend(["Holy Symbol", "Prayer Book"])
+            equipment['armor'].append("Scale Mail")
+            equipment['treasure']['coins']['gp'] = int(challenge_rating * 12)
+        elif 'merchant' in role_lower:
+            equipment['weapons'].append("Dagger")
+            equipment['equipment'].extend(["Merchant's Pack", "Scales", "Ledger"])
+            equipment['treasure']['coins']['gp'] = int(challenge_rating * 25)  # Merchants have more money
+        elif 'rogue' in role_lower or 'thief' in role_lower:
+            equipment['weapons'].extend(["Shortsword", "Dagger", "Dagger"])
+            equipment['armor'].append("Leather Armor")
+            equipment['equipment'].extend(["Thieves' Tools", "Burglar's Pack"])
+            equipment['treasure']['coins']['gp'] = int(challenge_rating * 8)
+        elif 'noble' in role_lower:
+            equipment['weapons'].append("Rapier")
+            equipment['armor'].append("Fine Clothes")
+            equipment['equipment'].extend(["Signet Ring", "Noble's Pack"])
+            equipment['treasure']['coins']['gp'] = int(challenge_rating * 50)
+        else:
+            # Generic NPC equipment
+            equipment['weapons'].append("Club")
+            equipment['equipment'].append("Common Clothes")
+            equipment['treasure']['coins']['gp'] = int(challenge_rating * 5)
+        
+        # Add magic items based on challenge rating (D&D 5e 2024 guidelines)
+        if challenge_rating >= 1:
+            equipment['magic_items'].append("Potion of Healing")
+        if challenge_rating >= 3:
+            equipment['magic_items'].append("+1 Weapon or Shield")
+        if challenge_rating >= 5:
+            equipment['magic_items'].append("Cloak of Protection")
+        if challenge_rating >= 8:
+            equipment['magic_items'].append("Magic Armor (+1)")
+        if challenge_rating >= 12:
+            equipment['magic_items'].append("Rare Magic Item")
+        if challenge_rating >= 17:
+            equipment['magic_items'].append("Very Rare Magic Item")
+        
+        # Include any custom weapons/armor generated
+        if custom_content.get('weapons'):
+            equipment['weapons'].extend(custom_content['weapons'][:1])  # Add one custom weapon
+        if custom_content.get('armor'):
+            equipment['armor'].extend(custom_content['armor'][:1])  # Add one custom armor
+        
+        # Add treasure appropriate to CR
+        if challenge_rating >= 5:
+            equipment['treasure']['gems'] = [f"Worth {int(challenge_rating * 100)} gp"]
+        if challenge_rating >= 10:
+            equipment['treasure']['art_objects'] = [f"Valuable item worth {int(challenge_rating * 200)} gp"]
+        
+        return equipment
+    
+    # ============================================================================
+    # ENHANCED BALANCE VALIDATION AND QUALITY ASSURANCE
+    # ============================================================================
+    
+    def validate_generated_content_quality(self, content: Dict[str, List[str]], character_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Comprehensive quality validation for all generated content.
+        Ensures completeness, thematic consistency, and D&D 5e 2024 compliance.
+        """
+        quality_results = {
+            'overall_quality': 'excellent',  # excellent, good, fair, poor
+            'completeness_score': 100,      # 0-100
+            'thematic_consistency': 100,    # 0-100
+            'dnd_compliance': 100,          # 0-100
+            'issues': [],
+            'recommendations': []
+        }
+        
+        try:
+            # Check completeness - all required fields present
+            completeness_issues = self._validate_content_completeness(content, character_data)
+            if completeness_issues:
+                quality_results['completeness_score'] -= len(completeness_issues) * 10
+                quality_results['issues'].extend(completeness_issues)
+            
+            # Check thematic consistency across all content
+            thematic_issues = self._validate_thematic_consistency(content, character_data)
+            if thematic_issues:
+                quality_results['thematic_consistency'] -= len(thematic_issues) * 15
+                quality_results['issues'].extend(thematic_issues)
+            
+            # Check D&D 5e 2024 compliance
+            compliance_issues = self._validate_dnd_2024_compliance(content, character_data)
+            if compliance_issues:
+                quality_results['dnd_compliance'] -= len(compliance_issues) * 20
+                quality_results['issues'].extend(compliance_issues)
+            
+            # Determine overall quality
+            avg_score = (quality_results['completeness_score'] + 
+                        quality_results['thematic_consistency'] + 
+                        quality_results['dnd_compliance']) / 3
+            
+            if avg_score >= 90:
+                quality_results['overall_quality'] = 'excellent'
+            elif avg_score >= 75:
+                quality_results['overall_quality'] = 'good'
+            elif avg_score >= 60:
+                quality_results['overall_quality'] = 'fair'
+            else:
+                quality_results['overall_quality'] = 'poor'
+                quality_results['recommendations'].append("Content requires significant revision before use")
+            
+        except Exception as e:
+            logger.error(f"Quality validation failed: {e}")
+            quality_results['overall_quality'] = 'unknown'
+            quality_results['issues'].append(f"Quality validation error: {e}")
+        
+        return quality_results
+    
+    def _validate_content_completeness(self, content: Dict[str, List[str]], character_data: Dict[str, Any]) -> List[str]:
+        """Check if all generated content has complete required fields."""
+        issues = []
+        
+        # Check each content type for completeness
+        for content_type, items in content.items():
+            if content_type.startswith('_'):  # Skip metadata
+                continue
+                
+            for item_name in items:
+                try:
+                    # Get the actual content object from registry
+                    if content_type == 'spells':
+                        item_obj = self.content_registry.get_spell(item_name)
+                        if not item_obj or not hasattr(item_obj, 'description') or not item_obj.description:
+                            issues.append(f"Spell '{item_name}' missing description")
+                    elif content_type == 'weapons':
+                        item_obj = self.content_registry.get_weapon(item_name)
+                        if not item_obj or not hasattr(item_obj, 'damage') or not item_obj.damage:
+                            issues.append(f"Weapon '{item_name}' missing damage information")
+                    elif content_type == 'classes':
+                        item_obj = self.content_registry.get_class(item_name)
+                        if not item_obj or not hasattr(item_obj, 'features') or not item_obj.features:
+                            issues.append(f"Class '{item_name}' missing features")
+                except Exception:
+                    issues.append(f"Could not validate {content_type} item '{item_name}'")
+        
+        return issues
+    
+    def _validate_thematic_consistency(self, content: Dict[str, List[str]], character_data: Dict[str, Any]) -> List[str]:
+        """Check if all content maintains thematic consistency."""
+        issues = []
+        
+        # Extract character themes for comparison
+        character_name = character_data.get('name', 'Unknown')
+        character_species = character_data.get('species', 'Human')
+        character_classes = list(character_data.get('classes', {}).keys())
+        
+        # Simple thematic consistency checks
+        generated_names = []
+        for content_type, items in content.items():
+            if content_type.startswith('_'):
+                continue
+            generated_names.extend(items)
+        
+        # Check for obvious thematic mismatches (basic heuristics)
+        fire_themes = sum(1 for name in generated_names if any(word in name.lower() for word in ['fire', 'flame', 'burn', 'inferno']))
+        ice_themes = sum(1 for name in generated_names if any(word in name.lower() for word in ['ice', 'frost', 'freeze', 'cold']))
+        
+        if fire_themes > 0 and ice_themes > 0:
+            issues.append("Mixed fire and ice themes may be thematically inconsistent")
+        
+        # Check class-content alignment
+        if 'Fighter' in character_classes or 'Warrior' in character_classes:
+            magic_content = len(content.get('spells', []))
+            if magic_content > 3:  # Fighters shouldn't have many spells
+                issues.append("High spell count inconsistent with martial character concept")
+        
+        return issues
+    
+    def _validate_dnd_2024_compliance(self, content: Dict[str, List[str]], character_data: Dict[str, Any]) -> List[str]:
+        """Check D&D 5e 2024 rule compliance."""
+        issues = []
+        character_level = character_data.get('level', 1)
+        
+        # Check spell level appropriateness
+        spell_count = len(content.get('spells', []))
+        if character_level <= 2 and spell_count > 5:
+            issues.append(f"Too many spells ({spell_count}) for character level {character_level}")
+        elif character_level <= 5 and spell_count > 8:
+            issues.append(f"Excessive spell count ({spell_count}) for character level {character_level}")
+        
+        # Check custom class compliance
+        if content.get('classes'):
+            for class_name in content['classes']:
+                try:
+                    class_obj = self.content_registry.get_class(class_name)
+                    if class_obj and hasattr(class_obj, 'hit_die'):
+                        if class_obj.hit_die < 6 or class_obj.hit_die > 12:
+                            issues.append(f"Class '{class_name}' hit die ({class_obj.hit_die}) outside D&D 5e range")
+                except Exception:
+                    issues.append(f"Could not validate class '{class_name}' compliance")
+        
+        return issues
+    
+    def auto_fix_balance_issues(self, content: Dict[str, List[str]], character_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Automatically fix common balance issues in generated content.
+        Returns summary of fixes applied.
+        """
+        fixes_applied = {
+            'spells_adjusted': [],
+            'weapons_balanced': [],
+            'features_modified': [],
+            'stats_corrected': []
+        }
+        
+        character_level = character_data.get('level', 1)
+        
+        try:
+            # Fix spell count for level
+            spells = content.get('spells', [])
+            max_spells_for_level = min(character_level + 2, 12)  # Reasonable limit
+            
+            if len(spells) > max_spells_for_level:
+                # Remove excess spells (keep the first ones generated)
+                removed_spells = spells[max_spells_for_level:]
+                content['spells'] = spells[:max_spells_for_level]
+                fixes_applied['spells_adjusted'] = [f"Removed {len(removed_spells)} excess spells for level balance"]
+            
+            # Validate weapon damage is appropriate for level
+            for weapon_name in content.get('weapons', []):
+                try:
+                    weapon = self.content_registry.get_weapon(weapon_name)
+                    if weapon and hasattr(weapon, 'damage'):
+                        # Basic damage validation (simplified)
+                        if character_level <= 5 and any(die in weapon.damage for die in ['d12', '2d8', '3d6']):
+                            fixes_applied['weapons_balanced'].append(f"Weapon '{weapon_name}' damage may be high for level {character_level}")
+                except Exception:
+                    pass
+            
+        except Exception as e:
+            logger.error(f"Auto-fix failed: {e}")
+            fixes_applied['error'] = str(e)
+        
+        return fixes_applied

@@ -691,37 +691,30 @@ class CharacterDB:
             return None
         
         # Import here to avoid circular imports
-        from character_models import CharacterCore, CharacterState, CharacterSheet
+        from backend.character_models import CharacterCore
         
-        # Create CharacterSheet
-        character_sheet = CharacterSheet(db_character.name)
+        # Create CharacterCore-based response (simplified for now)
+        character_core = CharacterCore(db_character.name)
         
         # Set core character data
-        character_sheet.core.species = db_character.species
-        character_sheet.core.background = db_character.background or ""
-        character_sheet.core.alignment = db_character.alignment.split() if db_character.alignment else ["Neutral", "Neutral"]
-        character_sheet.core.character_classes = db_character.character_classes or {}
-        character_sheet.core.backstory = db_character.backstory or ""
+        character_core.species = db_character.species
+        character_core.background = db_character.background or ""
+        character_core.alignment = db_character.alignment.split() if db_character.alignment else ["Neutral", "Neutral"]
+        character_core.character_classes = db_character.character_classes or {}
+        character_core.backstory = db_character.backstory or ""
         
         # Set ability scores
-        character_sheet.core.strength.base_score = db_character.strength
-        character_sheet.core.dexterity.base_score = db_character.dexterity
-        character_sheet.core.constitution.base_score = db_character.constitution
-        character_sheet.core.intelligence.base_score = db_character.intelligence
-        character_sheet.core.wisdom.base_score = db_character.wisdom
-        character_sheet.core.charisma.base_score = db_character.charisma
-        
-        # Set state data
-        character_sheet.state.max_hit_points = db_character.hit_points
-        character_sheet.state.current_hit_points = db_character.hit_points
+        character_core.strength.base_score = db_character.strength
+        character_core.dexterity.base_score = db_character.dexterity
+        character_core.constitution.base_score = db_character.constitution
+        character_core.intelligence.base_score = db_character.intelligence
+        character_core.wisdom.base_score = db_character.wisdom
+        character_core.charisma.base_score = db_character.charisma
         
         # Store database ID for future saves
-        character_sheet.core.id = db_character.id
+        character_core.id = db_character.id
         
-        # Calculate all derived stats to ensure proper state
-        character_sheet.calculate_all_derived_stats()
-        
-        return character_sheet
+        return character_core
     
     # ============================================================================
     # INVENTORY MANAGEMENT METHODS

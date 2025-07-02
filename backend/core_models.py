@@ -17,7 +17,7 @@ from datetime import datetime
 import logging
 
 # Import from centralized enums
-from enums import (
+from backend.enums import (
     ProficiencyLevel, 
     AbilityScoreSource, 
     SpellcastingType, 
@@ -26,7 +26,7 @@ from enums import (
 )
 
 if TYPE_CHECKING:
-    from character_models import CharacterCore
+    from backend.character_models import CharacterCore
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

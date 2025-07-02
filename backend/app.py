@@ -22,6 +22,7 @@ This replaces the entire v1 API with a cleaner, more consistent v2 design.
 import sys
 import json
 import logging
+import time
 from contextlib import asynccontextmanager
 from typing import List, Dict, Any, Optional
 from fastapi import FastAPI, HTTPException, Depends, Query
@@ -30,24 +31,57 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from pathlib import Path
 
+# Import performance monitoring
+import psutil
+from datetime import datetime
+
 # Add the app directory to Python path
 sys.path.append(str(Path(__file__).parent))
 
 # Import configuration and services
-from config import settings
-from llm_service import create_llm_service
+from backend.config import settings
+from backend.llm_service import create_llm_service
 
 # Import database models and operations
-from database_models import CharacterDB, init_database, get_db
-from character_models import CharacterCore, CharacterSheet
+from backend.database_models import CharacterDB, init_database, get_db
+from backend.character_models import CharacterCore
 
 # Import factory-based creation system
-from creation_factory import CreationFactory
-from enums import CreationOptions
+from backend.creation_factory import CreationFactory
+from backend.enums import CreationOptions
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Add performance tracking
+performance_metrics = {
+    'startup_time': datetime.now(),
+    'total_requests': 0,
+    'total_processing_time': 0.0,
+    'endpoint_metrics': {},
+    'error_count': 0
+}
+
+def track_request_metrics(endpoint: str, processing_time: float, success: bool):
+    """Track metrics for a request"""
+    performance_metrics['total_requests'] += 1
+    performance_metrics['total_processing_time'] += processing_time
+    
+    if endpoint not in performance_metrics['endpoint_metrics']:
+        performance_metrics['endpoint_metrics'][endpoint] = {
+            'requests': 0,
+            'total_time': 0.0,
+            'errors': 0
+        }
+    
+    metrics = performance_metrics['endpoint_metrics'][endpoint]
+    metrics['requests'] += 1
+    metrics['total_time'] += processing_time
+    
+    if not success:
+        metrics['errors'] += 1
+        performance_metrics['error_count'] += 1
 
 # ============================================================================
 # FASTAPI APP INITIALIZATION
@@ -372,6 +406,9 @@ async def factory_create_from_scratch(request: FactoryCreateRequest, db = Depend
         if hasattr(factory, 'last_verbose_logs') and factory.last_verbose_logs:
             verbose_logs = factory.last_verbose_logs
         
+        # Track metrics for this request
+        track_request_metrics("/api/v2/factory/create", processing_time, True)
+        
         return FactoryResponse(
             success=True,
             creation_type=creation_type.value,
@@ -387,6 +424,8 @@ async def factory_create_from_scratch(request: FactoryCreateRequest, db = Depend
     except Exception as e:
         processing_time = time.time() - start_time
         logger.error(f"Factory creation failed: {e}")
+        # Track metrics for this request
+        track_request_metrics("/api/v2/factory/create", processing_time, False)
         return FactoryResponse(
             success=False,
             creation_type=request.creation_type,
@@ -454,6 +493,9 @@ async def factory_evolve_existing(request: FactoryEvolveRequest, db = Depends(ge
         
         logger.info(f"Factory evolution completed in {processing_time:.2f}s")
         
+        # Track metrics for this request
+        track_request_metrics("/api/v2/factory/evolve", processing_time, True)
+        
         return FactoryResponse(
             success=True,
             creation_type=creation_type.value,
@@ -468,6 +510,8 @@ async def factory_evolve_existing(request: FactoryEvolveRequest, db = Depends(ge
     except Exception as e:
         processing_time = time.time() - start_time
         logger.error(f"Factory evolution failed: {e}")
+        # Track metrics for this request
+        track_request_metrics("/api/v2/factory/evolve", processing_time, False)
         return FactoryResponse(
             success=False,
             creation_type=request.creation_type,
@@ -832,30 +876,27 @@ async def apply_rest_effects(character_id: str, rest_data: CharacterRestRequest,
 
 @app.post("/api/v2/validate/character", tags=["validation"])
 async def validate_character(character_data: CharacterCreateRequest):
-    """Validate a character's build for D&D 5e compliance."""
+    """Validate a character's build for D&D 5e compliance using creation_validation.py."""
     try:
-        # Create temporary CharacterCore for validation
-        character_core = CharacterCore(character_data.name)
+        # Convert request to validation format
+        validation_data = {
+            "name": character_data.name,
+            "species": character_data.species,
+            "background": character_data.background,
+            "level": 1,  # Default for new character
+            "classes": character_data.character_classes,
+            "ability_scores": character_data.abilities or {},
+            "backstory": character_data.backstory
+        }
         
-        # Set character properties
-        character_core.species = character_data.species
-        character_core.background = character_data.background
-        character_core.alignment = character_data.alignment
-        character_core.character_classes = character_data.character_classes
-        character_core.backstory = character_data.backstory
-        
-        # Set ability scores
-        if character_data.abilities:
-            for ability, score in character_data.abilities.items():
-                character_core.set_ability_score(ability, score)
-        
-        # Validate the character
-        validation_result = character_core.validate_character_data()
+        # Use creation_validation.py for validation
+        from backend.creation_validation import validate_basic_structure
+        validation_result = validate_basic_structure(validation_data)
         
         return {
-            "valid": validation_result["valid"],
-            "issues": validation_result.get("issues", []),
-            "warnings": validation_result.get("warnings", []),
+            "valid": validation_result.success,
+            "issues": [validation_result.error] if validation_result.error else [],
+            "warnings": validation_result.warnings,
             "character_name": character_data.name
         }
         
@@ -865,20 +906,33 @@ async def validate_character(character_data: CharacterCreateRequest):
 
 @app.get("/api/v2/characters/{character_id}/validate", tags=["validation"])
 async def validate_existing_character(character_id: str, db = Depends(get_db)):
-    """Validate an existing character from the database."""
+    """Validate an existing character from the database using creation_validation.py."""
     try:
-        character_sheet = CharacterDB.load_character_sheet(db, character_id)
-        if not character_sheet:
+        character = CharacterDB.get_character(db, character_id)
+        if not character:
             raise HTTPException(status_code=404, detail="Character not found")
         
-        validation_result = character_sheet.core.validate_character_data()
+        # Convert character to dict format for validation
+        character_data = {
+            "name": character.name,
+            "species": character.species,
+            "background": character.background,
+            "level": character.level if hasattr(character, 'level') else 1,
+            "classes": character.character_classes,
+            "ability_scores": getattr(character, 'ability_scores', {}),
+            "backstory": character.backstory
+        }
+        
+        # Use creation_validation.py for validation
+        from backend.creation_validation import validate_basic_structure
+        validation_result = validate_basic_structure(character_data)
         
         return {
             "character_id": character_id,
-            "character_name": character_sheet.core.name,
-            "valid": validation_result["valid"],
-            "issues": validation_result["issues"],
-            "warnings": validation_result["warnings"]
+            "character_name": character.name,
+            "valid": validation_result.success,
+            "issues": [validation_result.error] if validation_result.error else [],
+            "warnings": validation_result.warnings
         }
         
     except HTTPException:
@@ -1263,6 +1317,9 @@ async def refine_character(character_id: str, request: CharacterRefinementReques
         
         logger.info(f"Character refinement completed in {processing_time:.2f}s")
         
+        # Track metrics for this request
+        track_request_metrics("/api/v2/characters/{character_id}/refine", processing_time, True)
+        
         return FactoryResponse(
             success=True,
             creation_type="character",
@@ -1277,6 +1334,8 @@ async def refine_character(character_id: str, request: CharacterRefinementReques
     except Exception as e:
         processing_time = time.time() - start_time
         logger.error(f"Character refinement failed: {e}")
+        # Track metrics for this request
+        track_request_metrics("/api/v2/characters/{character_id}/refine", processing_time, False)
         return FactoryResponse(
             success=False,
             creation_type="character",
@@ -1336,6 +1395,9 @@ async def apply_character_feedback(character_id: str, request: CharacterFeedback
         
         logger.info(f"Character feedback completed in {processing_time:.2f}s")
         
+        # Track metrics for this request
+        track_request_metrics("/api/v2/characters/{character_id}/feedback", processing_time, True)
+        
         return FactoryResponse(
             success=True,
             creation_type="character",
@@ -1350,6 +1412,8 @@ async def apply_character_feedback(character_id: str, request: CharacterFeedback
     except Exception as e:
         processing_time = time.time() - start_time
         logger.error(f"Character feedback failed: {e}")
+        # Track metrics for this request
+        track_request_metrics("/api/v2/characters/{character_id}/feedback", processing_time, False)
         return FactoryResponse(
             success=False,
             creation_type="character",
@@ -1417,6 +1481,9 @@ async def level_up_character_with_journal(character_id: str, request: CharacterL
         
         logger.info(f"Character level-up completed in {processing_time:.2f}s")
         
+        # Track metrics for this request
+        track_request_metrics("/api/v2/characters/{character_id}/level-up", processing_time, True)
+        
         return FactoryResponse(
             success=True,
             creation_type="character",
@@ -1431,6 +1498,8 @@ async def level_up_character_with_journal(character_id: str, request: CharacterL
     except Exception as e:
         processing_time = time.time() - start_time
         logger.error(f"Character level-up failed: {e}")
+        # Track metrics for this request
+        track_request_metrics("/api/v2/characters/{character_id}/level-up", processing_time, False)
         return FactoryResponse(
             success=False,
             creation_type="character",
@@ -1543,6 +1612,9 @@ async def enhance_existing_character(character_id: str, request: CharacterEnhanc
         
         logger.info(f"Character enhancement completed in {processing_time:.2f}s")
         
+        # Track metrics for this request
+        track_request_metrics("/api/v2/characters/{character_id}/enhance", processing_time, True)
+        
         return FactoryResponse(
             success=True,
             creation_type="character",
@@ -1557,12 +1629,66 @@ async def enhance_existing_character(character_id: str, request: CharacterEnhanc
     except Exception as e:
         processing_time = time.time() - start_time
         logger.error(f"Character enhancement failed: {e}")
+        # Track metrics for this request
+        track_request_metrics("/api/v2/characters/{character_id}/enhance", processing_time, False)
         return FactoryResponse(
             success=False,
             creation_type="character",
             data={"error": str(e)},
             processing_time=processing_time
         )
+
+# ============================================================================
+# PERFORMANCE METRICS ENDPOINTS
+# ============================================================================
+
+@app.get("/api/v2/metrics", tags=["metrics"])
+async def get_performance_metrics():
+    """Get performance metrics for the API."""
+    try:
+        # Calculate uptime
+        uptime = datetime.now() - performance_metrics['startup_time']
+        uptime_seconds = uptime.total_seconds()
+        
+        # Get memory usage
+        memory_usage = psutil.Process().memory_info().rss / (1024 * 1024)  # Convert to MB
+        
+        return {
+            "success": True,
+            "uptime_seconds": uptime_seconds,
+            "total_requests": performance_metrics['total_requests'],
+            "total_processing_time": performance_metrics['total_processing_time'],
+            "average_processing_time": performance_metrics['total_processing_time'] / performance_metrics['total_requests'] if performance_metrics['total_requests'] > 0 else 0,
+            "endpoint_metrics": performance_metrics['endpoint_metrics'],
+            "error_count": performance_metrics['error_count'],
+            "memory_usage_mb": memory_usage
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get performance metrics: {e}")
+        raise HTTPException(status_code=500, detail=f"Metrics retrieval failed: {str(e)}")
+
+@app.get("/api/v2/metrics/reset", tags=["metrics"])
+async def reset_performance_metrics():
+    """Reset performance metrics (for testing or maintenance)."""
+    try:
+        global performance_metrics
+        performance_metrics = {
+            'startup_time': datetime.now(),
+            'total_requests': 0,
+            'total_processing_time': 0.0,
+            'endpoint_metrics': {},
+            'error_count': 0
+        }
+        
+        return {
+            "success": True,
+            "message": "Performance metrics reset successfully"
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to reset performance metrics: {e}")
+        raise HTTPException(status_code=500, detail=f"Metrics reset failed: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

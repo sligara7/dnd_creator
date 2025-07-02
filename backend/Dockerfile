@@ -1,22 +1,37 @@
 # D&D Character Creator Backend API
-# Production-ready container for the unified factory-based architecture
+# Podman-optimized container with complete character creation and refinement system
+# Supports all dev_vision.md requirements: creation, custom content, refinement, advancement
 FROM python:3.11-slim
+
+# Add labels for Podman container management
+LABEL maintainer="D&D Character Creator" \
+      version="1.0" \
+      description="AI-powered D&D 5e 2024 character creation system" \
+      org.opencontainers.image.source="https://github.com/user/dnd_char_creator" \
+      org.opencontainers.image.title="D&D Character Creator Backend" \
+      org.opencontainers.image.description="Complete character creation with refinement system"
 
 # Set working directory
 WORKDIR /app
 
-# Set environment variables for production
+# Set environment variables optimized for Podman and rootless containers
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
-    ENV=production
+    ENV=production \
+    PODMAN_USERNS=keep-id \
+    HOME=/app \
+    TMPDIR=/tmp
 
-# Install system dependencies
+# Install system dependencies for LLM services and data processing
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
         libpq-dev \
         curl \
+        git \
+        sqlite3 \
+        ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
@@ -24,25 +39,29 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
-# Copy application code (production files only)
-COPY *.py ./
-COPY .env.example .env
+# Copy the complete backend architecture
+# Core backend modules (per dev_vision.md architecture)
+COPY . .
+RUN echo "ENV=production" > .env
 
-# Create directories for data and logs
-RUN mkdir -p /app/data /app/logs \
-    && chmod 755 /app/data /app/logs
+# Copy additional backend components if they exist (optional)
+RUN mkdir -p ./docs ./examples
 
-# Create non-root user for security
+# Create directories for data, logs, and character storage with Podman-friendly permissions
+RUN mkdir -p /app/data /app/logs /app/characters /app/custom_content \
+    && chmod 755 /app/data /app/logs /app/characters /app/custom_content
+
+# Create non-root user for Podman rootless containers
 RUN adduser --disabled-password --gecos '' --shell /bin/bash appuser \
     && chown -R appuser:appuser /app
 USER appuser
 
-# Expose port
+# Expose port for Podman
 EXPOSE 8000
 
-# Health check
+# Podman-compatible health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD python -c "import requests; requests.get('http://localhost:8000/health')" || exit 1
 
-# Run the application using uvicorn directly
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+# Run the application using uvicorn with Podman-optimized settings
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--access-log"]

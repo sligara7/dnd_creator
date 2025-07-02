@@ -23,30 +23,33 @@ from dataclasses import dataclass
 from abc import ABC, abstractmethod
 
 # Import validation functions from centralized module
-from creation_validation import (
+from backend.creation_validation import (
     validate_basic_structure, validate_custom_content,
     validate_and_enhance_npc, validate_item_for_level,
     validate_and_enhance_creature
 )
 
 # Import from centralized enums
-from enums import (
+from backend.enums import (
     NPCType, NPCRole, NPCSpecies, NPCClass, CreatureType, CreatureSize, CreatureAlignment,
     ItemType, ItemRarity, WeaponCategory, ArmorCategory, FeatCategory, FeatType, FeatPrerequisite,
     Skill, SkillAbilityMapping, SkillSource
 )
 
 # Import core D&D components
-from core_models import AbilityScore, ProficiencyLevel, ASIManager, MagicItemManager
-from character_models import CharacterCore  # DnDCondition, CharacterSheet, CharacterState, CharacterStats - may not exist yet
-from llm_service import create_llm_service, LLMService
-from database_models import CustomContent
-from ability_management import AdvancedAbilityManager
-from generators import BackstoryGenerator, CustomContentGenerator
-from custom_content_models import ContentRegistry, CustomClass
+from backend.core_models import AbilityScore, ProficiencyLevel, ASIManager, MagicItemManager
+from backend.character_models import CharacterCore  # DnDCondition, CharacterSheet, CharacterState, CharacterStats - may not exist yet
+from backend.llm_service import create_llm_service, LLMService
+from backend.database_models import CustomContent
+from backend.ability_management import AdvancedAbilityManager
+from backend.generators import (
+    BackstoryGenerator, CustomContentGenerator, CharacterGenerator, 
+    NPCGenerator, CreatureGenerator, ItemGenerator
+)
+from backend.custom_content_models import ContentRegistry, CustomClass
 
 # Import D&D 5e official data
-from dnd_data import (
+from backend.dnd_data import (
     DND_SPELL_DATABASE, CLASS_SPELL_LISTS, COMPLETE_SPELL_LIST, SPELL_LOOKUP,
     DND_WEAPON_DATABASE, ALL_WEAPONS, WEAPON_LOOKUP, CLASS_WEAPON_PROFICIENCIES,
     DND_FEAT_DATABASE, ALL_FEATS, FEAT_LOOKUP, FEAT_AVAILABILITY,
@@ -62,7 +65,7 @@ from dnd_data import (
     get_appropriate_feats_for_character, get_available_feats_for_level,
     get_spell_schools_for_class
 )
-from creation_validation import validate_feat_prerequisites
+from backend.creation_validation import validate_feat_prerequisites
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +121,12 @@ class BaseCreator(ABC):
         self.backstory_generator = BackstoryGenerator(self.llm_service)
         self.content_registry = ContentRegistry()
         self.custom_content_generator = CustomContentGenerator(self.llm_service, self.content_registry)
+        
+        # Advanced integrated generators for comprehensive content creation
+        self.character_generator = CharacterGenerator(self.llm_service, self.content_registry)
+        self.npc_generator = NPCGenerator(self.llm_service, self.content_registry)
+        self.creature_generator = CreatureGenerator(self.llm_service, self.content_registry)
+        self.item_generator = ItemGenerator(self.llm_service)
         
         logger.info(f"{self.__class__.__name__} initialized with shared components")
     
@@ -500,8 +509,28 @@ class CharacterCreator(BaseCreator):
         try:
             logger.info(f"Starting complete character creation: {prompt[:100]}...")
             
-            # Step 1: Generate base character data
+            # Check if user prefers generator-based creation (default for dev_vision.md compliance)
+            use_generators = user_preferences.get("use_generators", True) if user_preferences else True
             level = user_preferences.get("level", 1) if user_preferences else 1
+            
+            if use_generators:
+                # Use integrated generators for dev_vision.md compliant character creation
+                logger.info("Using integrated CharacterGenerator for comprehensive character creation")
+                character_data = await self.generate_character_with_generators(prompt, level, user_preferences)
+                
+                result = CreationResult(success=True, data=character_data)
+                result.creation_time = time.time() - start_time
+                
+                if verbose_generation and hasattr(self, 'verbose_logs'):
+                    result.verbose_logs = self.verbose_logs
+                
+                logger.info(f"Character creation completed in {result.creation_time:.2f}s using generators")
+                return result
+            
+            # Fallback to traditional creation method
+            logger.info("Using traditional creation method")
+            
+            # Step 1: Generate base character data
             base_data = await self._generate_character_data(prompt, level)
             
             if verbose_generation and hasattr(self, 'verbose_logs'):
@@ -1492,333 +1521,10 @@ Match the character concept exactly. Return complete JSON only."""
         except Exception as e:
             logger.error(f"Failed to create final character: {e}")
             return character_data
-
-# ============================================================================
-# NPC CREATOR - SUBSET OF CHARACTER CREATION
-# ============================================================================
-
-class NPCCreator(BaseCreator):
-    """
-    NPC creation using a subset of character creation functionality.
-    NPCs don't need the full feature set - just basic stats and roleplay elements.
-    """
     
-    def __init__(self, llm_service: Optional[LLMService] = None, config: Optional[CreationConfig] = None):
-        super().__init__(llm_service, config)
-        
-        # Use the character creator for the foundation
-        self.character_creator = CharacterCreator(llm_service, config)
-        
-        logger.info("NPCCreator initialized using character creation foundation")
-    
-    async def create_npc(self, prompt: str, npc_type: NPCType = NPCType.MAJOR, 
-                        npc_role: NPCRole = NPCRole.CIVILIAN) -> CreationResult:
-        """
-        Create an NPC using simplified character creation.
-        This reuses character creation but focuses on NPC-specific needs.
-        """
-        start_time = time.time()
-        
-        try:
-            logger.info(f"Creating NPC: {prompt[:100]}... (Type: {npc_type.value}, Role: {npc_role.value})")
-            
-            # Step 1: Create base character data (reuse character creation)
-            character_data = await self.character_creator._generate_character_data(prompt, level=5)  # Default level for NPCs
-            
-            # Step 2: Enhance with NPC-specific elements
-            npc_data = await self._enhance_for_npc(character_data, prompt, npc_type, npc_role)
-            
-            # Step 3: Create NPC-appropriate result
-            final_npc = self._create_npc_result(npc_data, npc_type)
-            
-            result = CreationResult(success=True, data=final_npc)
-            result.creation_time = time.time() - start_time
-            
-            logger.info(f"NPC creation completed in {result.creation_time:.2f}s")
-            return result
-            
-        except Exception as e:
-            logger.error(f"NPC creation failed: {str(e)}")
-            result = CreationResult()
-            result.error = f"NPC creation failed: {str(e)}"
-            result.creation_time = time.time() - start_time
-            return result
-    
-    async def _enhance_for_npc(self, character_data: Dict[str, Any], prompt: str, 
-                              npc_type: NPCType, npc_role: NPCRole) -> Dict[str, Any]:
-        """Add NPC-specific enhancements to character data."""
-        try:
-            # Create NPC-specific enhancement prompt
-            npc_prompt = f"""Enhance this character for NPC use. Return ONLY JSON:
-
-BASE CHARACTER: {character_data.get('name', 'Unknown')} - {self._extract_character_concept(character_data)}
-NPC TYPE: {npc_type.value}
-NPC ROLE: {npc_role.value}
-DESCRIPTION: {prompt}
-
-{{"personality": "Detailed personality traits","motivations": ["motivation1", "motivation2"],"secrets": ["secret1"],"relationships": {{"relationship_type": "description"}},"location": "Where they can be found","occupation": "Their job or role","quirks": ["memorable quirk1", "quirk2"],"dm_notes": "Useful DM information"}}
-
-Make this NPC memorable and useful for the DM."""
-            
-            npc_enhancements = await self._generate_with_llm(npc_prompt, "npc_enhancement")
-            
-            # Merge character data with NPC enhancements
-            enhanced_data = character_data.copy()
-            enhanced_data.update(npc_enhancements)
-            enhanced_data["npc_type"] = npc_type.value
-            enhanced_data["npc_role"] = npc_role.value
-            
-            return enhanced_data
-            
-        except Exception as e:
-            logger.warning(f"NPC enhancement failed: {e}")
-            # Return base character data with minimal NPC info
-            character_data["npc_type"] = npc_type.value
-            character_data["npc_role"] = npc_role.value
-            character_data["personality"] = "A typical NPC with standard motivations."
-            return character_data
-    
-    def _create_npc_result(self, npc_data: Dict[str, Any], npc_type: NPCType) -> Dict[str, Any]:
-        """Create final NPC result structure."""
-        return {
-            "name": npc_data.get("name", "Unknown NPC"),
-            "type": "npc",
-            "npc_type": npc_type.value,
-            "npc_role": npc_data.get("npc_role", "civilian"),
-            "basic_info": {
-                "species": npc_data.get("species", "Human"),
-                "classes": npc_data.get("classes", {"Commoner":  1}),
-                "alignment": npc_data.get("alignment", ["Neutral", "Good"])
-            },
-            "roleplay": {
-                "personality": npc_data.get("personality", "Friendly and helpful"),
-                "motivations": npc_data.get("motivations", ["Help others"]),
-                "secrets": npc_data.get("secrets", []),
-                "quirks": npc_data.get("quirks", [])
-            },
-            "location_info": {
-                "location": npc_data.get("location", "Local tavern"),
-                "occupation": npc_data.get("occupation", "Commoner"),
-                "relationships": npc_data.get("relationships", {})
-            },
-            "dm_notes": npc_data.get("dm_notes", "A helpful NPC for the party."),
-            "creation_metadata": {
-                "created_at": time.time(),
-                "version": "2024",
-                "generator": "NPCCreator"
-            }
-        }
-
-# ============================================================================
-# CREATURE CREATOR - BASIC STATS USING CHARACTER FOUNDATION
-# ============================================================================
-
-class CreatureCreator(BaseCreator):
-    """
-    Creature creation using character creation as foundation for stat generation.
-    Creatures need basic stats but not the full character feature set.
-    """
-    
-    def __init__(self, llm_service: Optional[LLMService] = None, config: Optional[CreationConfig] = None):
-        super().__init__(llm_service, config)
-        
-        # Use character creator for stat generation foundation
-        self.character_creator = CharacterCreator(llm_service, config)
-        
-        logger.info("CreatureCreator initialized using character creation foundation")
-    
-    async def create_creature(self, description: str, challenge_rating: float = 1.0, 
-                             creature_type: str = "beast") -> CreationResult:
-        """
-        Create a creature using character creation foundation for stats.
-        """
-        start_time = time.time()
-        
-        try:
-            logger.info(f"Creating creature: {description[:100]}... (CR {challenge_rating})")
-            
-            # Step 1: Generate creature using specialized prompt
-            creature_data = await self._generate_creature_data(description, challenge_rating, creature_type)
-            
-            # Step 2: Validate and enhance
-            creature_data = validate_and_enhance_creature(creature_data, challenge_rating)
-            
-            result = CreationResult(success=True, data=creature_data)
-            result.creation_time = time.time() - start_time
-            
-            logger.info(f"Creature creation completed in {result.creation_time:.2f}s")
-            return result
-            
-        except Exception as e:
-            logger.error(f"Creature creation failed: {str(e)}")
-            result = CreationResult()
-            result.error = f"Creature creation failed: {str(e)}"
-            result.creation_time = time.time() - start_time
-            return result
-    
-    async def _generate_creature_data(self, description: str, challenge_rating: float, creature_type: str) -> Dict[str, Any]:
-        """Generate creature data using specialized prompt."""
-        try:
-            creature_prompt = f"""Create D&D 5e 2024 creature. Return ONLY JSON:
-
-DESCRIPTION: {description}
-
-CHALLENGE RATING: {challenge_rating}
-CREATURE TYPE: {creature_type}
-
-{{"name":"Creature Name","size":"Medium","type":"{creature_type}","challenge_rating":{challenge_rating},"armor_class":12,"hit_points":25,"speed":{{"walk":"30 ft"}},"abilities":{{"strength":15,"dexterity":12,"constitution":14,"intelligence":8,"wisdom":10,"charisma":6}},"saving_throws":[],"skills":["Perception +2"],"damage_resistances":[],"damage_immunities":[],"condition_immunities":[],"senses":["passive Perception 12"],"languages":["Common"],"description":"Creature description","actions":[{{"name":"Attack","description":"Basic attack","attack_bonus":"+4","damage":"1d8+2 slashing"}}],"special_abilities":[]}}
-
-Make this creature unique and balanced for CR {challenge_rating}."""
-            
-            creature_data = await self._generate_with_llm(creature_prompt, "creature")
-            return creature_data
-            
-        except Exception as e:
-            logger.warning(f"Creature generation failed, using fallback: {e}")
-            return self._create_fallback_creature(description, challenge_rating, creature_type)
-    
-    def _create_fallback_creature(self, description: str, challenge_rating: float, creature_type: str) -> Dict[str, Any]:
-        """Create a basic creature when generation fails."""
-        hp = max(10, int(challenge_rating * 20 + 10))
-        ac = max(10, int(challenge_rating + 10))
-        attack_bonus = max(2, int(challenge_rating + 2))
-        
-        return {
-            "name": f"{creature_type.title()} Creature",
-            "size": "Medium",
-            "type": creature_type,
-            "challenge_rating": challenge_rating,
-            "armor_class": ac,
-            "hit_points": hp,
-            "speed": {"walk": "30 ft"},
-            "abilities": {
-                "strength": 12, "dexterity": 12, "constitution": 12,
-                "intelligence": 8, "wisdom": 12, "charisma": 8
-            },
-            "saving_throws": [],
-            "skills": ["Perception +2"],
-            "damage_resistances": [],
-            "damage_immunities": [],
-            "condition_immunities": [],
-            "senses": ["passive Perception 12"],
-            "languages": [],
-            "description": f"A {creature_type} creature",
-            "actions": [
-                {
-                    "name": "Basic Attack",
-                    "description": "A simple attack",
-                    "attack_bonus": f"+{attack_bonus}",
-                    "damage": f"1d6+{challenge_rating//2} bludgeoning"
-                }
-            ],
-            "special_abilities": []
-        }
-
-# ============================================================================
-# ITEM CREATOR - FOCUSED ON ITEMS WITH CHARACTER INTEGRATION
-# ============================================================================
-
-class ItemCreator(BaseCreator):
-    """
-    Item creation with character integration.
-    Uses character concept extraction for appropriate item generation.
-    """
-    
-    def __init__(self, llm_service: Optional[LLMService] = None, config: Optional[CreationConfig] = None):
-        super().__init__(llm_service, config)
-        self.magic_item_manager = MagicItemManager()
-        
-        logger.info("ItemCreator initialized with character integration")
-    
-    async def create_item(self, description: str, item_type: ItemType, 
-                         character_level: int = 1, character_concept: str = "",
-                         rarity: Optional[ItemRarity] = None) -> CreationResult:
-        """Create an item using character-focused approach."""
-        start_time = time.time()
-        
-        try:
-            logger.info(f"Creating {item_type.value}: {description}")
-            
-            # Determine appropriate rarity for level
-            if rarity is None:
-                rarity = self._determine_rarity_for_level(character_level)
-            
-            # Create item-specific prompt
-            item_data = await self._generate_item_data(description, item_type, character_level, character_concept, rarity)
-            
-            result = CreationResult(success=True, data=item_data)
-            result.creation_time = time.time() - start_time
-            
-            logger.info(f"Item creation completed in {result.creation_time:.2f}s")
-            return result
-            
-        except Exception as e:
-            logger.error(f"Item creation failed: {str(e)}")
-            result = CreationResult()
-            result.error = f"Item creation failed: {str(e)}"
-            result.creation_time = time.time() - start_time
-            return result
-    
-    async def _generate_item_data(self, description: str, item_type: ItemType,
-                                 character_level: int, character_concept: str, rarity: ItemRarity) -> Dict[str, Any]:
-        """Generate item data using specialized prompt."""
-        item_prompt = f"""Create D&D 5e 2024 {item_type.value}. Return ONLY JSON:
-
-DESCRIPTION: {description}
-CHARACTER LEVEL: {character_level}
-CHARACTER CONCEPT: {character_concept}
-RARITY: {rarity.value}
-
-{{"name":"Item Name","type":"{item_type.value}","rarity":"{rarity.value}","description":"Item description","properties":["property1"],"requires_attunement":false,"weight":1.0,"value":100,"magic":true,"cursed":false}}
-
-D&D 5e ITEM RARITY GUIDELINES:
-- Common: Minor magical effects, 50-100 gp value
-- Uncommon: Useful magical effects, 101-500 gp value  
-- Rare: Significant magical effects, 501-5,000 gp value
-- Very Rare: Powerful magical effects, 5,001-50,000 gp value
-- Legendary: Extraordinary magical effects, 50,001+ gp value
-- Artifact: Unique items with extensive history and lore
-
-ATTUNEMENT RULES:
-- Most magic items don't require attunement
-- Powerful items (usually rare+) often require attunement
-- Characters can attune to maximum 3 items at once
-- Attunement takes a short rest and requires the character to focus on the item
-
-Match description and character concept. Set requires_attunement to true for powerful magical items. Return complete JSON only."""
-        
-        item_data = await self._generate_with_llm(item_prompt, f"{item_type.value}_item")
-        return item_data
-    
-    def _determine_rarity_for_level(self, level: int) -> ItemRarity:
-        """
-        Determine appropriate item rarity for character level based on D&D 5e guidelines.
-        
-        D&D 5e Rarity by Level Guidelines:
-        - Levels 1-4: Common to Uncommon items
-        - Levels 5-8: Uncommon items  
-        - Levels 9-12: Rare items
-        - Levels 13-16: Very Rare items
-        - Levels 17-20: Legendary items
-        - Artifacts: Special, unique items regardless of level
-        """
-        if level <= 4:
-            return ItemRarity.COMMON
-        elif level <= 8:
-            return ItemRarity.UNCOMMON
-        elif level <= 12:
-            return ItemRarity.RARE
-        elif level <= 16:
-            return ItemRarity.VERY_RARE
-        elif level <= 20:
-            return ItemRarity.LEGENDARY
-        else:
-            # Epic levels could theoretically access artifacts
-            return ItemRarity.ARTIFACT
-
-    # ================================================================
+    # ============================================================================
     # ITERATIVE REFINEMENT METHODS (dev_vision.md CRITICAL REQUIREMENT)
-    # ================================================================
+    # ============================================================================
     
     async def refine_character(self, character_data: Dict[str, Any], refinement_prompt: str, 
                              user_preferences: Optional[Dict[str, Any]] = None) -> CreationResult:
@@ -1853,7 +1559,9 @@ Match description and character concept. Set requires_attunement to true for pow
             refined_data = await self._generate_character_data(refinement_full_prompt, character_data.get("level", 1))
             
             # Enhance the refined character
-            refined_data = await self._enhance_character_spells(refined_data)
+            refined_data = self._enhance_character_spells(refined_data)
+           
+
             refined_data = self._enhance_character_weapons(refined_data)
             refined_data = self._enhance_character_feats(refined_data)
             refined_data = self._enhance_character_equipment(refined_data)
@@ -1944,7 +1652,7 @@ Match description and character concept. Set requires_attunement to true for pow
                 leveled_data["classes"] = current_classes
             
             # Enhance the leveled character
-            leveled_data = await self._enhance_character_spells(leveled_data)
+            leveled_data = self._enhance_character_spells(leveled_data)
             leveled_data = self._enhance_character_weapons(leveled_data)
             leveled_data = self._enhance_character_feats(leveled_data)
             leveled_data = self._enhance_character_equipment(leveled_data)
@@ -2017,7 +1725,7 @@ Match description and character concept. Set requires_attunement to true for pow
             enhanced_data = await self._generate_character_data(enhancement_full_prompt, character_data.get("level", 1))
             
             # Enhance the character
-            enhanced_data = await self._enhance_character_spells(enhanced_data)
+            enhanced_data = self._enhance_character_spells(enhanced_data)
             enhanced_data = self._enhance_character_weapons(enhanced_data)
             enhanced_data = self._enhance_character_feats(enhanced_data)
             enhanced_data = self._enhance_character_equipment(enhanced_data)
@@ -2093,3 +1801,131 @@ Match description and character concept. Set requires_attunement to true for pow
         except Exception as e:
             logger.error(f"User feedback application failed: {str(e)}")
             return CreationResult(success=False, error=f"User feedback application failed: {str(e)}")
+    
+    # ============================================================================
+    # GENERATOR INTEGRATION METHODS
+    # ============================================================================
+    
+    async def generate_character_with_generators(self, prompt: str, level: int = 1, 
+                                               user_preferences: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Use the integrated CharacterGenerator for comprehensive D&D 5e 2024 character creation.
+        This method leverages the full generator pipeline for dev_vision.md compliance.
+        """
+        logger.info(f"Creating character with integrated generators: level {level}")
+        
+        # Parse character concept from prompt
+        character_concept = self._parse_character_concept(prompt, level)
+        
+        # Use CharacterGenerator for complete character creation
+        character_data = await self.character_generator.generate_character(character_concept, prompt)
+        
+        # Apply additional validation and enhancement from creation system
+        character_data = self._enhance_character_spells(character_data)
+        character_data = self._enhance_character_weapons(character_data)
+        character_data = self._enhance_character_feats(character_data)
+        character_data = self._enhance_character_armor(character_data)
+        character_data = self._enhance_character_equipment(character_data)
+        
+        logger.info(f"Character '{character_data.get('name', 'Unknown')}' created successfully with generators")
+        return character_data
+    
+    async def generate_npc_with_generators(self, npc_role: str, user_description: str = "") -> Dict[str, Any]:
+        """Use the integrated NPCGenerator for NPC creation."""
+        logger.info(f"Creating NPC with integrated generators: {npc_role}")
+        
+        npc_data = await self.npc_generator.generate_npc(npc_role, user_description)
+        
+        # Apply NPC-specific validation and enhancement
+        npc_data = validate_and_enhance_npc(npc_data)
+        
+        logger.info(f"NPC '{npc_role}' created successfully with generators")
+        return npc_data
+    
+    async def generate_creature_with_generators(self, creature_type: str, user_description: str = "") -> Dict[str, Any]:
+        """Use the integrated CreatureGenerator for creature creation."""
+        logger.info(f"Creating creature with integrated generators: {creature_type}")
+        
+        creature_data = await self.creature_generator.generate_creature(creature_type, user_description)
+        
+        # Apply creature-specific validation and enhancement
+        creature_data = validate_and_enhance_creature(creature_data)
+        
+        logger.info(f"Creature '{creature_type}' created successfully with generators")
+        return creature_data
+    
+    async def generate_item_with_generators(self, item_type: str, name: str = "", 
+                                          description: str = "", extra_fields: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Use the integrated ItemGenerator for item creation."""
+        logger.info(f"Creating item with integrated generators: {item_type}")
+        
+        item_data = await self.item_generator.generate_item(item_type, name, description, extra_fields)
+        
+        # Apply item-specific validation
+        level = extra_fields.get("level", 1) if extra_fields else 1
+        item_data = validate_item_for_level(item_data, level)
+        
+        logger.info(f"Item '{name or item_type}' created successfully with generators")
+        return item_data
+    
+    def _parse_character_concept(self, prompt: str, level: int) -> Dict[str, Any]:
+        """Parse character concept from user prompt for generator input."""
+        # Extract basic information from prompt
+        prompt_lower = prompt.lower()
+        
+        # Default character concept
+        concept = {
+            "name": "Unknown Adventurer",
+            "level": level,
+            "classes": {},
+            "species": "Human",
+            "background": "Folk Hero",
+            "alignment": ["Neutral", "Good"],
+            "equipment": []
+        }
+        
+        # Extract class hints
+        class_keywords = {
+            "fighter": "Fighter", "warrior": "Fighter", "knight": "Fighter",
+            "wizard": "Wizard", "mage": "Wizard", "sorcerer": "Sorcerer",
+            "cleric": "Cleric", "priest": "Cleric", "paladin": "Paladin",
+            "rogue": "Rogue", "thief": "Rogue", "assassin": "Rogue",
+            "ranger": "Ranger", "hunter": "Ranger", "druid": "Druid",
+            "bard": "Bard", "musician": "Bard", "barbarian": "Barbarian",
+            "monk": "Monk", "warlock": "Warlock"
+        }
+        
+        for keyword, class_name in class_keywords.items():
+            if keyword in prompt_lower:
+                concept["classes"] = {class_name: level}
+                break
+        
+        # If no class found, default to Fighter
+        if not concept["classes"]:
+            concept["classes"] = {"Fighter": level}
+        
+        # Extract species hints
+        species_keywords = {
+            "elf": "Elf", "elven": "Elf", "dwarf": "Dwarf", "dwarven": "Dwarf",
+            "halfling": "Halfling", "tiefling": "Tiefling", "dragonborn": "Dragonborn",
+            "human": "Human", "gnome": "Gnome", "half-orc": "Half-Orc", "orc": "Half-Orc"
+        }
+        
+        for keyword, species_name in species_keywords.items():
+            if keyword in prompt_lower:
+                concept["species"] = species_name
+                break
+        
+        # Extract name if quoted or obvious
+        import re
+        name_match = re.search(r'named? ["\']?([A-Za-z]+)["\']?', prompt)
+        if name_match:
+            concept["name"] = name_match.group(1).title()
+        elif re.search(r'^[A-Z][a-z]+ ', prompt):
+            # If prompt starts with a capitalized word, assume it's a name
+            first_word = prompt.split()[0]
+            if first_word.isalpha() and first_word[0].isupper():
+                concept["name"] = first_word
+        
+        return concept
+

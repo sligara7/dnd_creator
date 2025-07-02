@@ -14,10 +14,9 @@ Handles orchestration of:
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 
-from .enums import CreationOptions
-from .creation_factory import CreationFactory
-from .character_models import CharacterSheet
-from .core_models import CreatureSheet, ItemSheet
+from backend.enums import CreationOptions
+from backend.creation_factory import CreationFactory
+from backend.character_models import CharacterSheet
 
 
 @dataclass

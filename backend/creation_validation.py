@@ -24,7 +24,7 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 
 # Import from centralized enums
-from enums import NPCType, NPCRole, ItemRarity
+from backend.enums import NPCType, NPCRole, ItemRarity
 
 # Import CreationResult class (will be moved to shared module later)
 # For now, we'll define a minimal version to avoid circular imports

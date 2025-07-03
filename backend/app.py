@@ -1,3 +1,5 @@
+
+
 """
 FastAPI main application for D&D Character Creator - COMPLETE V2 API.
 
@@ -33,7 +35,8 @@ from pathlib import Path
 
 # Import performance monitoring
 import psutil
-from datetime import datetime
+import os
+from datetime import datetime, timedelta
 
 # Add the app directory to Python path
 sys.path.append(str(Path(__file__).parent))
@@ -253,6 +256,240 @@ class InventoryResponse(BaseModel):
     inventory: List[Dict[str, Any]]
     equipped_items: Dict[str, str]
     attuned_items: List[str]
+
+
+# ============================================================================
+# JOURNAL MANAGEMENT MODELS
+# ============================================================================
+
+class JournalEntryRequest(BaseModel):
+    """Request model for creating journal entries."""
+    title: str
+    content: str
+    session_date: Optional[str] = None  # ISO date string
+    session_number: Optional[int] = None
+    tags: Optional[List[str]] = None
+    is_private: bool = False  # Whether only the character owner can see this entry
+    experience_gained: Optional[int] = None
+    story_beats: Optional[List[str]] = None  # Key story moments for character development
+
+class JournalEntryUpdateRequest(BaseModel):
+    """Request model for updating journal entries."""
+    title: Optional[str] = None
+    content: Optional[str] = None
+    session_date: Optional[str] = None
+    session_number: Optional[int] = None
+    tags: Optional[List[str]] = None
+    is_private: Optional[bool] = None
+    experience_gained: Optional[int] = None
+    story_beats: Optional[List[str]] = None
+
+
+class JournalEntryResponse(BaseModel):
+    """Response model for journal entries."""
+    id: str
+    character_id: str
+    title: str
+    content: str
+    session_date: Optional[str] = None
+    session_number: Optional[int] = None
+    tags: List[str]
+    is_private: bool
+    experience_gained: Optional[int] = None
+    story_beats: List[str]
+    created_at: str
+    updated_at: str
+
+
+
+# =========================================================================
+# JOURNAL MANAGEMENT ENDPOINTS (CRUD)
+# =========================================================================
+from pydantic import conint
+
+# =========================================================================
+# XP TRACKING MODELS & ENDPOINTS (CRITICAL DEV_VISION.MD REQUIREMENT)
+# =========================================================================
+
+class XPAwardRequest(BaseModel):
+    """Request model for awarding XP to a character."""
+    amount: int = Field(..., gt=0)
+    reason: Optional[str] = None
+    journal_entry_id: Optional[str] = None  # Link to a journal entry if relevant
+
+class XPAwardResponse(BaseModel):
+    """Response model for XP award."""
+    character_id: str
+    new_xp_total: int
+    xp_awarded: int
+    level_up: bool
+    new_level: Optional[int] = None
+    message: str
+    xp_history: Optional[list] = None
+    level_up_notification: Optional[str] = None  # New: notification message if level-up occurred
+
+class XPHistoricalEntry(BaseModel):
+    """Model for a single XP award history entry."""
+    id: str
+    character_id: str
+    amount: int
+    reason: Optional[str] = None
+    journal_entry_id: Optional[str] = None
+    awarded_at: str
+    level_up: bool = False
+    new_level: Optional[int] = None
+
+class XPHistoricalResponse(BaseModel):
+    """Response model for XP award history."""
+    character_id: str
+    xp_history: list
+
+
+# XP Award endpoint
+@app.post("/api/v2/characters/{character_id}/xp", response_model=XPAwardResponse, tags=["xp"])
+async def award_xp(character_id: str, xp_data: XPAwardRequest, db = Depends(get_db)):
+    """Award XP to a character, with automatic level-up detection and milestone/traditional support."""
+    try:
+        # Ensure character exists
+        character = CharacterDB.get_character(db, character_id)
+        if not character:
+            raise HTTPException(status_code=404, detail="Character not found")
+
+        # Award XP using DB model (should handle both milestone/traditional)
+        result = CharacterDB.award_xp(
+            db,
+            character_id=character_id,
+            amount=xp_data.amount,
+            reason=xp_data.reason,
+            journal_entry_id=xp_data.journal_entry_id
+        )
+        # result should include: new_xp_total, level_up (bool), new_level, xp_history (optional)
+        # Prepare level-up notification if level_up is True
+        level_up_notification = None
+        if result.get("level_up", False):
+            new_level = result.get("new_level")
+            level_up_notification = f"Congratulations! Character has leveled up to level {new_level}."
+
+        return XPAwardResponse(
+            character_id=character_id,
+            new_xp_total=result.get("new_xp_total", 0),
+            xp_awarded=xp_data.amount,
+            level_up=result.get("level_up", False),
+            new_level=result.get("new_level"),
+            message=result.get("message", "XP awarded successfully"),
+            xp_history=result.get("xp_history"),
+            level_up_notification=level_up_notification
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to award XP to character {character_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"XP award failed: {str(e)}")
+
+# XP History endpoint
+@app.get("/api/v2/characters/{character_id}/xp/history", response_model=XPHistoricalResponse, tags=["xp"])
+async def get_xp_history(character_id: str, db = Depends(get_db)):
+    """Retrieve XP award history for a character."""
+    try:
+        # Ensure character exists
+        character = CharacterDB.get_character(db, character_id)
+        if not character:
+            raise HTTPException(status_code=404, detail="Character not found")
+
+        xp_history = CharacterDB.get_xp_history(db, character_id)
+        # xp_history should be a list of dicts or XPHistoricalEntry
+        return XPHistoricalResponse(character_id=character_id, xp_history=xp_history)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get XP history for character {character_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve XP history: {str(e)}")
+from fastapi import Path
+
+@app.get("/api/v2/characters/{character_id}/journal/{entry_id}", response_model=JournalEntryResponse, tags=["journal"])
+async def get_journal_entry(character_id: str = Path(...), entry_id: str = Path(...), db = Depends(get_db)):
+    """Retrieve a single journal entry by its ID."""
+    try:
+        # Ensure character exists
+        character = CharacterDB.get_character(db, character_id)
+        if not character:
+            raise HTTPException(status_code=404, detail="Character not found")
+
+        # Retrieve journal entry
+        entry = CharacterDB.get_journal_entry(db, character_id, entry_id)
+        if not entry:
+            raise HTTPException(status_code=404, detail="Journal entry not found")
+
+        return JournalEntryResponse(**entry)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get journal entry {entry_id} for character {character_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve journal entry")
+
+
+
+@app.put("/api/v2/characters/{character_id}/journal/{entry_id}", response_model=JournalEntryResponse, tags=["journal"])
+async def update_journal_entry(
+    character_id: str = Path(...),
+    entry_id: str = Path(...),
+    update_data: JournalEntryUpdateRequest = ...,
+    db = Depends(get_db)
+):
+    """Update a journal entry for a character."""
+    try:
+        # Ensure character exists
+        character = CharacterDB.get_character(db, character_id)
+        if not character:
+            raise HTTPException(status_code=404, detail="Character not found")
+
+        # Ensure journal entry exists
+        entry = CharacterDB.get_journal_entry(db, character_id, entry_id)
+        if not entry:
+            raise HTTPException(status_code=404, detail="Journal entry not found")
+
+        # Update the journal entry
+        updated_entry = CharacterDB.update_journal_entry(db, character_id, entry_id, update_data.dict(exclude_unset=True))
+        if not updated_entry:
+            raise HTTPException(status_code=500, detail="Failed to update journal entry")
+
+        return JournalEntryResponse(**updated_entry)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update journal entry {entry_id} for character {character_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update journal entry")
+
+
+@app.delete("/api/v2/characters/{character_id}/journal/{entry_id}", tags=["journal"])
+async def delete_journal_entry(
+    character_id: str = Path(...),
+    entry_id: str = Path(...),
+    db = Depends(get_db)
+):
+    """Delete a journal entry for a character."""
+    try:
+        # Ensure character exists
+        character = CharacterDB.get_character(db, character_id)
+        if not character:
+            raise HTTPException(status_code=404, detail="Character not found")
+
+        # Ensure journal entry exists
+        entry = CharacterDB.get_journal_entry(db, character_id, entry_id)
+        if not entry:
+            raise HTTPException(status_code=404, detail="Journal entry not found")
+
+        # Delete the journal entry
+        success = CharacterDB.delete_journal_entry(db, character_id, entry_id)
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to delete journal entry")
+
+        return {"message": "Journal entry deleted successfully", "entry_id": entry_id, "character_id": character_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete journal entry {entry_id} for character {character_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete journal entry")
 
 # ============================================================================
 # CORE ENDPOINTS
@@ -941,6 +1178,7 @@ async def validate_existing_character(character_id: str, db = Depends(get_db)):
         logger.error(f"Character validation failed for ID {character_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Validation failed: {str(e)}")
 
+
 # ============================================================================
 # SIMPLIFIED CHARACTER VERSIONING ENDPOINTS
 # ============================================================================
@@ -1020,6 +1258,207 @@ async def list_character_versions(character_id: str, db = Depends(get_db)):
     except Exception as e:
         logger.error(f"Failed to list character versions {character_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve character versions")
+
+
+
+# ============================================================================
+# ADVANCED CHARACTER BRANCHING ENDPOINTS (GIT-LIKE)
+# ============================================================================
+
+class CharacterBranchCreateRequest(BaseModel):
+    """Request model for creating a new character branch."""
+    branch_name: str
+    base_version: Optional[str] = None  # Optional: which version/branch to branch from
+    description: Optional[str] = None
+
+class CharacterBranchResponse(BaseModel):
+    """Response model for character branch creation."""
+    branch_id: str
+    branch_name: str
+    base_version: Optional[str] = None
+    description: Optional[str] = None
+    created_at: str
+    character_id: str
+
+class CharacterBranchListResponse(BaseModel):
+    """Response model for listing character branches."""
+    character_id: str
+    branches: list
+
+class CharacterBranchMergeRequest(BaseModel):
+    """Request model for merging two character branches."""
+    source_branch_id: str
+    target_branch_id: str
+    merge_strategy: Optional[str] = "manual"  # e.g., "manual", "ours", "theirs"
+    message: Optional[str] = None
+
+class CharacterBranchMergeResponse(BaseModel):
+    """Response model for branch merge operation."""
+    success: bool
+    message: str
+    merged_branch_id: Optional[str] = None
+    conflicts: Optional[list] = None
+
+class CharacterBranchApprovalRequest(BaseModel):
+    """Request model for branch approval workflow."""
+    branch_id: str
+    approved: bool
+    reviewer: Optional[str] = None
+    comments: Optional[str] = None
+
+class CharacterBranchApprovalResponse(BaseModel):
+    """Response model for branch approval workflow."""
+    branch_id: str
+    approved: bool
+    reviewer: Optional[str] = None
+    comments: Optional[str] = None
+    message: str
+
+@app.post("/api/v2/characters/{character_id}/branches", response_model=CharacterBranchResponse, tags=["versioning"])
+async def create_character_branch(character_id: str, branch_data: CharacterBranchCreateRequest, db = Depends(get_db)):
+    """Create a new branch for a character (advanced versioning)."""
+    try:
+        # Ensure character exists
+        character = CharacterDB.get_character(db, character_id)
+        if not character:
+            raise HTTPException(status_code=404, detail="Character not found")
+
+        # Create the branch using the database model
+        branch = CharacterDB.create_branch(
+            db,
+            character_id=character_id,
+            branch_name=branch_data.branch_name,
+            base_version=branch_data.base_version,
+            description=branch_data.description
+        )
+        if not branch:
+            raise HTTPException(status_code=500, detail="Failed to create branch")
+
+        return CharacterBranchResponse(
+            branch_id=branch.id,
+            branch_name=branch.branch_name,
+            base_version=branch.base_version,
+            description=branch.description,
+            created_at=branch.created_at.isoformat() if hasattr(branch, 'created_at') else "",
+            character_id=character_id
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to create branch for character {character_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Branch creation failed: {str(e)}")
+
+@app.get("/api/v2/characters/{character_id}/branches", response_model=CharacterBranchListResponse, tags=["versioning"])
+async def list_character_branches(character_id: str, db = Depends(get_db)):
+    """List all branches for a character (advanced versioning)."""
+    try:
+        # Ensure character exists
+        character = CharacterDB.get_character(db, character_id)
+        if not character:
+            raise HTTPException(status_code=404, detail="Character not found")
+
+        # Retrieve all branches for this character
+        branches = CharacterDB.list_branches(db, character_id)
+        # Convert to dicts if needed
+        branch_dicts = [
+            {
+                "branch_id": b.id,
+                "branch_name": b.branch_name,
+                "base_version": getattr(b, 'base_version', None),
+                "description": getattr(b, 'description', None),
+                "created_at": b.created_at.isoformat() if hasattr(b, 'created_at') else "",
+                "character_id": character_id
+            }
+            for b in branches
+        ]
+        return CharacterBranchListResponse(character_id=character_id, branches=branch_dicts)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to list branches for character {character_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list branches: {str(e)}")
+
+@app.post("/api/v2/characters/{character_id}/branches/merge", response_model=CharacterBranchMergeResponse, tags=["versioning"])
+async def merge_character_branches(character_id: str, merge_data: CharacterBranchMergeRequest, db = Depends(get_db)):
+    """Merge two character branches (advanced versioning)."""
+    try:
+        # Ensure character exists
+        character = CharacterDB.get_character(db, character_id)
+        if not character:
+            raise HTTPException(status_code=404, detail="Character not found")
+
+        # Perform the merge using the database model
+        merge_result = CharacterDB.merge_branches(
+            db,
+            character_id=character_id,
+            source_branch_id=merge_data.source_branch_id,
+            target_branch_id=merge_data.target_branch_id,
+            merge_strategy=merge_data.merge_strategy,
+            message=merge_data.message
+        )
+        if not merge_result.get("success", False):
+            return CharacterBranchMergeResponse(
+                success=False,
+                message=merge_result.get("message", "Merge failed"),
+                merged_branch_id=None,
+                conflicts=merge_result.get("conflicts")
+            )
+        return CharacterBranchMergeResponse(
+            success=True,
+            message=merge_result.get("message", "Merge successful"),
+            merged_branch_id=merge_result.get("merged_branch_id"),
+            conflicts=merge_result.get("conflicts")
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to merge branches for character {character_id}: {e}")
+        return CharacterBranchMergeResponse(success=False, message=f"Merge failed: {str(e)}")
+
+@app.post("/api/v2/characters/{character_id}/branches/approve", response_model=CharacterBranchApprovalResponse, tags=["versioning"])
+async def approve_character_branch(character_id: str, approval_data: CharacterBranchApprovalRequest, db = Depends(get_db)):
+    """Approve or reject a character branch (approval workflow)."""
+    try:
+        # Ensure character exists
+        character = CharacterDB.get_character(db, character_id)
+        if not character:
+            raise HTTPException(status_code=404, detail="Character not found")
+
+        # Perform the approval using the database model
+        approval_result = CharacterDB.approve_branch(
+            db,
+            character_id=character_id,
+            branch_id=approval_data.branch_id,
+            approved=approval_data.approved,
+            reviewer=approval_data.reviewer,
+            comments=approval_data.comments
+        )
+        if not approval_result.get("success", False):
+            return CharacterBranchApprovalResponse(
+                branch_id=approval_data.branch_id,
+                approved=approval_data.approved,
+                reviewer=approval_data.reviewer,
+                comments=approval_data.comments,
+                message=approval_result.get("message", "Approval failed")
+            )
+        return CharacterBranchApprovalResponse(
+            branch_id=approval_data.branch_id,
+            approved=approval_data.approved,
+            reviewer=approval_data.reviewer,
+            comments=approval_data.comments,
+            message=approval_result.get("message", "Approval successful")
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to approve branch for character {character_id}: {e}")
+        return CharacterBranchApprovalResponse(
+            branch_id=approval_data.branch_id,
+            approved=approval_data.approved,
+            reviewer=approval_data.reviewer,
+            comments=approval_data.comments,
+            message=f"Approval failed: {str(e)}"
+        )
 
 # ============================================================================
 # INVENTORY MANAGEMENT ENDPOINTS
@@ -1510,186 +1949,5 @@ async def level_up_character_with_journal(character_id: str, request: CharacterL
 @app.get("/api/v2/characters/{character_id}/level-up/suggestions", tags=["character-advancement"])
 async def get_level_up_suggestions(character_id: str, journal_entries: List[str] = Query(default=[]), db = Depends(get_db)):
     """
-    Get level-up suggestions based on character's journal entries and current build.
-    Helps users make informed level-up decisions based on play experience.
+    Get level-up suggestions based on character
     """
-    try:
-        # Load existing character
-        existing_character = CharacterDB.get_character(db, character_id)
-        if not existing_character:
-            raise HTTPException(status_code=404, detail="Character not found")
-        
-        character_data = existing_character.to_dict()
-        current_level = character_data.get('level', 1)
-        
-        if current_level >= 20:
-            return {"message": "Character is already at maximum level (20)"}
-        
-        # Use CharacterCreator to analyze journal for suggestions
-        from creation import CharacterCreator
-        creator = CharacterCreator(app.state.llm_service)
-        
-        suggestions = await creator._analyze_journal_for_levelup(
-            character_data, journal_entries, current_level + 1
-        )
-        
-        return {
-            "character_id": character_id,
-            "current_level": current_level,
-            "next_level": current_level + 1,
-            "suggestions": suggestions,
-            "available_options": {
-                "class_advancement": list(character_data.get('classes', {}).keys()),
-                "multiclass_options": ["Fighter", "Wizard", "Cleric", "Rogue", "Ranger", "Paladin", "Barbarian", "Bard", "Druid", "Sorcerer", "Warlock", "Monk"],
-                "feat_levels": [4, 8, 12, 16, 19]
-            }
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to get level-up suggestions for character {character_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Get level-up suggestions failed: {str(e)}")
-
-# ============================================================================
-# CHARACTER EVOLUTION & ENHANCEMENT ENDPOINTS
-# ============================================================================
-
-class CharacterEnhancementRequest(BaseModel):
-    """Request model for character enhancement based on story events."""
-    enhancement_prompt: str
-    preserve_backstory: bool = True
-    story_context: Optional[str] = None
-
-@app.post("/api/v2/characters/{character_id}/enhance", response_model=FactoryResponse, tags=["character-advancement"])
-async def enhance_existing_character(character_id: str, request: CharacterEnhancementRequest, db = Depends(get_db)):
-    """
-    Enhance existing character based on story events while preserving core identity.
-    Used for character evolution due to magical effects, artifacts, story events, etc.
-    """
-    import time
-    start_time = time.time()
-    
-    try:
-        # Load existing character
-        existing_character = CharacterDB.get_character(db, character_id)
-        if not existing_character:
-            raise HTTPException(status_code=404, detail="Character not found")
-        
-        character_data = existing_character.to_dict()
-        
-        logger.info(f"Enhancing character {character_id}: {request.enhancement_prompt[:100]}...")
-        
-        # Use CharacterCreator to enhance the character
-        from creation import CharacterCreator
-        creator = CharacterCreator(app.state.llm_service)
-        
-        result = await creator.enhance_existing_character(
-            character_data, 
-            request.enhancement_prompt, 
-            request.preserve_backstory
-        )
-        
-        if not result.success:
-            raise Exception(result.error)
-        
-        # Save enhanced character back to database
-        warnings = ["Character enhanced based on story events"]
-        if request.story_context:
-            warnings.append(f"Story context: {request.story_context}")
-        
-        try:
-            CharacterDB.save_character_sheet(db, result.data, character_id)
-            logger.info(f"Enhanced character saved back to database")
-        except Exception as e:
-            logger.warning(f"Failed to save enhanced character: {e}")
-            warnings.append(f"Enhancement completed but not saved: {str(e)}")
-        
-        processing_time = time.time() - start_time
-        
-        # Prepare response data
-        response_data = result.data.to_dict() if hasattr(result.data, 'to_dict') else result.data
-        
-        logger.info(f"Character enhancement completed in {processing_time:.2f}s")
-        
-        # Track metrics for this request
-        track_request_metrics("/api/v2/characters/{character_id}/enhance", processing_time, True)
-        
-        return FactoryResponse(
-            success=True,
-            creation_type="character",
-            object_id=character_id,
-            data=response_data,
-            warnings=warnings if warnings else None,
-            processing_time=processing_time
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        processing_time = time.time() - start_time
-        logger.error(f"Character enhancement failed: {e}")
-        # Track metrics for this request
-        track_request_metrics("/api/v2/characters/{character_id}/enhance", processing_time, False)
-        return FactoryResponse(
-            success=False,
-            creation_type="character",
-            data={"error": str(e)},
-            processing_time=processing_time
-        )
-
-# ============================================================================
-# PERFORMANCE METRICS ENDPOINTS
-# ============================================================================
-
-@app.get("/api/v2/metrics", tags=["metrics"])
-async def get_performance_metrics():
-    """Get performance metrics for the API."""
-    try:
-        # Calculate uptime
-        uptime = datetime.now() - performance_metrics['startup_time']
-        uptime_seconds = uptime.total_seconds()
-        
-        # Get memory usage
-        memory_usage = psutil.Process().memory_info().rss / (1024 * 1024)  # Convert to MB
-        
-        return {
-            "success": True,
-            "uptime_seconds": uptime_seconds,
-            "total_requests": performance_metrics['total_requests'],
-            "total_processing_time": performance_metrics['total_processing_time'],
-            "average_processing_time": performance_metrics['total_processing_time'] / performance_metrics['total_requests'] if performance_metrics['total_requests'] > 0 else 0,
-            "endpoint_metrics": performance_metrics['endpoint_metrics'],
-            "error_count": performance_metrics['error_count'],
-            "memory_usage_mb": memory_usage
-        }
-        
-    except Exception as e:
-        logger.error(f"Failed to get performance metrics: {e}")
-        raise HTTPException(status_code=500, detail=f"Metrics retrieval failed: {str(e)}")
-
-@app.get("/api/v2/metrics/reset", tags=["metrics"])
-async def reset_performance_metrics():
-    """Reset performance metrics (for testing or maintenance)."""
-    try:
-        global performance_metrics
-        performance_metrics = {
-            'startup_time': datetime.now(),
-            'total_requests': 0,
-            'total_processing_time': 0.0,
-            'endpoint_metrics': {},
-            'error_count': 0
-        }
-        
-        return {
-            "success": True,
-            "message": "Performance metrics reset successfully"
-        }
-        
-    except Exception as e:
-        logger.error(f"Failed to reset performance metrics: {e}")
-        raise HTTPException(status_code=500, detail=f"Metrics reset failed: {str(e)}")
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)

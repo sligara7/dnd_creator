@@ -1526,64 +1526,85 @@ Match the character concept exactly. Return complete JSON only."""
     # ITERATIVE REFINEMENT METHODS (dev_vision.md CRITICAL REQUIREMENT)
     # ============================================================================
     
-    async def refine_character(self, character_data: Dict[str, Any], refinement_prompt: str, 
-                             user_preferences: Optional[Dict[str, Any]] = None) -> CreationResult:
+    async def refine_character(self, character_data: Dict[str, Any], refinement_prompt: str, user_preferences: Optional[Dict[str, Any]] = None) -> CreationResult:
         """
         Iteratively refine an existing character based on user feedback.
-        
         This is a CRITICAL dev_vision.md requirement for user-driven character improvement.
         """
         logger.info(f"Starting character refinement: {refinement_prompt}")
-        
+        start_time = time.time()
+        verbose_generation = user_preferences.get("verbose_generation", False) if user_preferences else False
+        if verbose_generation:
+            self.verbose_logs = []
+            self.verbose_logs.append({
+                'type': 'refinement_start',
+                'timestamp': time.time(),
+                'refinement_prompt': refinement_prompt,
+                'original_character': character_data
+            })
         try:
-            # Create refinement prompt that preserves character identity
             character_concept = self._extract_character_concept(character_data)
-            
             refinement_full_prompt = f"""
-            ORIGINAL CHARACTER: {character_concept}
-            
-            CHARACTER DATA: {json.dumps(character_data, indent=2)}
-            
-            REFINEMENT REQUEST: {refinement_prompt}
-            
-            Create an improved version of this character that:
-            1. Applies the requested refinement changes
-            2. Preserves the character's core identity and backstory
-            3. Maintains D&D 5e 2024 compatibility
-            4. Keeps the same name and background unless specifically requested to change
-            
-            Respond with complete character data in the same format as the original.
-            """
-            
-            # Generate refined character
-            refined_data = await self._generate_character_data(refinement_full_prompt, character_data.get("level", 1))
-            
-            # Enhance the refined character
-            refined_data = self._enhance_character_spells(refined_data)
-           
+ORIGINAL CHARACTER: {character_concept}
 
+CHARACTER DATA: {json.dumps(character_data, indent=2)}
+
+REFINEMENT REQUEST: {refinement_prompt}
+
+Create an improved version of this character that:
+1. Applies the requested refinement changes
+2. Preserves the character's core identity and backstory
+3. Maintains D&D 5e 2024 compatibility
+4. Keeps the same name and background unless specifically requested to change
+
+Respond with complete character data in the same format as the original.
+"""
+            refined_data = await self._generate_character_data(refinement_full_prompt, character_data.get("level", 1))
+            if verbose_generation and hasattr(self, 'verbose_logs'):
+                self.verbose_logs.append({
+                    'type': 'refinement_step',
+                    'timestamp': time.time(),
+                    'step': 'llm_refinement',
+                    'description': 'LLM generated refined character data',
+                    'refined_keys': list(refined_data.keys()) if refined_data else []
+                })
+            refined_data = self._enhance_character_spells(refined_data)
             refined_data = self._enhance_character_weapons(refined_data)
             refined_data = self._enhance_character_feats(refined_data)
             refined_data = self._enhance_character_equipment(refined_data)
-            
-            # Build character core
+            if verbose_generation and hasattr(self, 'verbose_logs'):
+                self.verbose_logs.append({
+                    'type': 'refinement_step',
+                    'timestamp': time.time(),
+                    'step': 'enhancements',
+                    'description': 'Enhanced spells, weapons, feats, equipment',
+                    'spells': refined_data.get('spells_known', []),
+                    'weapons': refined_data.get('weapons', []),
+                    'feats': refined_data.get('general_feats', []),
+                    'equipment': refined_data.get('equipment', {})
+                })
             character_core = self._build_character_core(refined_data)
-            
-            # Generate enhanced backstory incorporating refinement
             if self.llm_service:
                 backstory_prompt = f"""
-                ORIGINAL CHARACTER: {character_concept}
-                REFINEMENT APPLIED: {refinement_prompt}
-                
-                Create an enhanced backstory that:
-                1. Incorporates the character refinement changes
-                2. Explains how the character developed these new aspects
-                3. Maintains narrative consistency
-                4. Keeps the core character identity
-                """
+ORIGINAL CHARACTER: {character_concept}
+REFINEMENT APPLIED: {refinement_prompt}
+
+Create an enhanced backstory that:
+1. Incorporates the character refinement changes
+2. Explains how the character developed these new aspects
+3. Maintains narrative consistency
+4. Keeps the core character identity
+"""
                 refined_data = await self._generate_enhanced_backstory(refined_data, backstory_prompt)
-            
-            return CreationResult(
+                if verbose_generation and hasattr(self, 'verbose_logs'):
+                    self.verbose_logs.append({
+                        'type': 'refinement_step',
+                        'timestamp': time.time(),
+                        'step': 'enhanced_backstory',
+                        'description': 'Generated enhanced backstory after refinement',
+                        'backstory': refined_data.get('backstory', '')
+                    })
+            result = CreationResult(
                 success=True,
                 data={
                     "character_core": character_core,
@@ -1592,90 +1613,126 @@ Match the character concept exactly. Return complete JSON only."""
                     "creation_type": "character_refinement"
                 }
             )
-            
+            result.creation_time = time.time() - start_time
+            if verbose_generation and hasattr(self, 'verbose_logs'):
+                self.verbose_logs.append({
+                    'type': 'refinement_complete',
+                    'timestamp': time.time(),
+                    'total_time': result.creation_time
+                })
+                result.verbose_logs = self.verbose_logs
+            logger.info(f"Character refinement completed in {result.creation_time:.2f}s")
+            return result
         except Exception as e:
             logger.error(f"Character refinement failed: {str(e)}")
-            return CreationResult(success=False, error=f"Character refinement failed: {str(e)}")
-    
-    async def level_up_character_with_journal(self, character_data: Dict[str, Any], 
-                                            journal_entries: List[str],
-                                            new_level: int,
-                                            multiclass_option: Optional[str] = None) -> CreationResult:
+            result = CreationResult(success=False, error=f"Character refinement failed: {str(e)}")
+            result.creation_time = time.time() - start_time
+            if verbose_generation and hasattr(self, 'verbose_logs'):
+                self.verbose_logs.append({
+                    'type': 'refinement_error',
+                    'timestamp': time.time(),
+                    'error': str(e),
+                    'total_time': result.creation_time
+                })
+                result.verbose_logs = self.verbose_logs
+            return result
+
+    async def level_up_character_with_journal(self, character_data: Dict[str, Any], journal_entries: List[str], new_level: int, multiclass_option: Optional[str] = None, user_preferences: Optional[Dict[str, Any]] = None) -> CreationResult:
         """
         Level up a character using journal entries for context.
-        
         This is a HIGH dev_vision.md requirement for journal-informed character advancement.
         """
         logger.info(f"Starting journal-based level up to level {new_level}")
-        
+        start_time = time.time()
+        verbose_generation = user_preferences.get("verbose_generation", False) if user_preferences else False
+        if verbose_generation:
+            self.verbose_logs = []
+            self.verbose_logs.append({
+                'type': 'levelup_start',
+                'timestamp': time.time(),
+                'journal_entries': journal_entries,
+                'original_character': character_data,
+                'new_level': new_level,
+                'multiclass_option': multiclass_option
+            })
         try:
             current_level = character_data.get("level", 1)
             character_concept = self._extract_character_concept(character_data)
-            
-            # Create journal-informed level-up prompt
             journal_context = "\n".join([f"- {entry}" for entry in journal_entries])
-            
             levelup_prompt = f"""
-            EXISTING CHARACTER: {character_concept}
-            CURRENT LEVEL: {current_level}
-            TARGET LEVEL: {new_level}
-            
-            JOURNAL ENTRIES (PLAY EXPERIENCE):
-            {journal_context}
-            
-            CHARACTER DATA: {json.dumps(character_data, indent=2)}
-            
-            Level up this character from level {current_level} to {new_level} based on their actual play experiences.
-            
-            Requirements:
-            1. Preserve character identity, name, and core backstory
-            2. Add appropriate class features for the new level
-            3. Reflect the journal experiences in advancement choices
-            4. Add spells, feats, ability score improvements as appropriate
-            5. {"Consider adding " + multiclass_option + " levels if appropriate" if multiclass_option else "Focus on existing classes"}
-            6. Maintain D&D 5e 2024 compatibility
-            
-            Respond with complete updated character data.
-            """
-            
-            # Generate leveled character
+EXISTING CHARACTER: {character_concept}
+CURRENT LEVEL: {current_level}
+TARGET LEVEL: {new_level}
+
+JOURNAL ENTRIES (PLAY EXPERIENCE):
+{journal_context}
+
+CHARACTER DATA: {json.dumps(character_data, indent=2)}
+
+Level up this character from level {current_level} to {new_level} based on their actual play experiences.
+
+Requirements:
+1. Preserve character identity, name, and core backstory
+2. Add appropriate class features for the new level
+3. Reflect the journal experiences in advancement choices
+4. Add spells, feats, ability score improvements as appropriate
+5. {"Consider adding " + multiclass_option + " levels if appropriate" if multiclass_option else "Focus on existing classes"}
+6. Maintain D&D 5e 2024 compatibility
+
+Respond with complete updated character data.
+"""
             leveled_data = await self._generate_character_data(levelup_prompt, new_level)
-            
-            # Ensure level is correct
+            if verbose_generation and hasattr(self, 'verbose_logs'):
+                self.verbose_logs.append({
+                    'type': 'levelup_step',
+                    'timestamp': time.time(),
+                    'step': 'llm_levelup',
+                    'description': 'LLM generated leveled-up character data',
+                    'leveled_keys': list(leveled_data.keys()) if leveled_data else []
+                })
             leveled_data["level"] = new_level
-            
-            # Handle multiclass if specified
             if multiclass_option and multiclass_option not in leveled_data.get("classes", {}):
                 current_classes = leveled_data.get("classes", {})
-                # Add one level of the new class
                 current_classes[multiclass_option] = 1
                 leveled_data["classes"] = current_classes
-            
-            # Enhance the leveled character
             leveled_data = self._enhance_character_spells(leveled_data)
             leveled_data = self._enhance_character_weapons(leveled_data)
             leveled_data = self._enhance_character_feats(leveled_data)
             leveled_data = self._enhance_character_equipment(leveled_data)
-            
-            # Build character core
+            if verbose_generation and hasattr(self, 'verbose_logs'):
+                self.verbose_logs.append({
+                    'type': 'levelup_step',
+                    'timestamp': time.time(),
+                    'step': 'enhancements',
+                    'description': 'Enhanced spells, weapons, feats, equipment',
+                    'spells': leveled_data.get('spells_known', []),
+                    'weapons': leveled_data.get('weapons', []),
+                    'feats': leveled_data.get('general_feats', []),
+                    'equipment': leveled_data.get('equipment', {})
+                })
             character_core = self._build_character_core(leveled_data)
-            
-            # Generate enhanced backstory incorporating play experiences
             if self.llm_service:
                 backstory_prompt = f"""
-                CHARACTER: {character_concept}
-                LEVEL UP: {current_level} → {new_level}
-                PLAY EXPERIENCES: {journal_context}
-                
-                Create an enhanced backstory that:
-                1. Incorporates the character's actual play experiences
-                2. Explains their growth and new abilities
-                3. Reflects lessons learned in their adventures
-                4. Maintains character consistency and personality
-                """
+CHARACTER: {character_concept}
+LEVEL UP: {current_level} → {new_level}
+PLAY EXPERIENCES: {journal_context}
+
+Create an enhanced backstory that:
+1. Incorporates the character's actual play experiences
+2. Explains their growth and new abilities
+3. Reflects lessons learned in their adventures
+4. Maintains character consistency and personality
+"""
                 leveled_data = await self._generate_enhanced_backstory(leveled_data, backstory_prompt)
-            
-            return CreationResult(
+                if verbose_generation and hasattr(self, 'verbose_logs'):
+                    self.verbose_logs.append({
+                        'type': 'levelup_step',
+                        'timestamp': time.time(),
+                        'step': 'enhanced_backstory',
+                        'description': 'Generated enhanced backstory after level up',
+                        'backstory': leveled_data.get('backstory', '')
+                    })
+            result = CreationResult(
                 success=True,
                 data={
                     "character_core": character_core,
@@ -1685,10 +1742,29 @@ Match the character concept exactly. Return complete JSON only."""
                     "creation_type": "character_levelup"
                 }
             )
-            
+            result.creation_time = time.time() - start_time
+            if verbose_generation and hasattr(self, 'verbose_logs'):
+                self.verbose_logs.append({
+                    'type': 'levelup_complete',
+                    'timestamp': time.time(),
+                    'total_time': result.creation_time
+                })
+                result.verbose_logs = self.verbose_logs
+            logger.info(f"Journal-based level up completed in {result.creation_time:.2f}s")
+            return result
         except Exception as e:
             logger.error(f"Journal-based level up failed: {str(e)}")
-            return CreationResult(success=False, error=f"Journal-based level up failed: {str(e)}")
+            result = CreationResult(success=False, error=f"Journal-based level up failed: {str(e)}")
+            result.creation_time = time.time() - start_time
+            if verbose_generation and hasattr(self, 'verbose_logs'):
+                self.verbose_logs.append({
+                    'type': 'levelup_error',
+                    'timestamp': time.time(),
+                    'error': str(e),
+                    'total_time': result.creation_time
+                })
+                result.verbose_logs = self.verbose_logs
+            return result
     
     async def enhance_existing_character(self, character_data: Dict[str, Any], 
                                        enhancement_prompt: str) -> CreationResult:

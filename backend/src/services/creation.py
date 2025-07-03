@@ -23,33 +23,32 @@ from dataclasses import dataclass
 from abc import ABC, abstractmethod
 
 # Import validation functions from centralized module
-from backend.creation_validation import (
+from src.services.creation_validation import (
     validate_basic_structure, validate_custom_content,
     validate_and_enhance_npc, validate_item_for_level,
     validate_and_enhance_creature
 )
 
 # Import from centralized enums
-from backend.enums import (
+from src.core.enums import (
     NPCType, NPCRole, NPCSpecies, NPCClass, CreatureType, CreatureSize, CreatureAlignment,
     ItemType, ItemRarity, WeaponCategory, ArmorCategory, FeatCategory, FeatType, FeatPrerequisite,
     Skill, SkillAbilityMapping, SkillSource
 )
 
 # Import core D&D components
-from backend.core_models import AbilityScore, ProficiencyLevel, ASIManager, MagicItemManager
-from backend.character_models import CharacterCore  # DnDCondition, CharacterSheet, CharacterState, CharacterStats - may not exist yet
-from backend.llm_service import create_llm_service, LLMService
-from backend.database_models import CustomContent
-from backend.ability_management import AdvancedAbilityManager
-from backend.generators import (
-    BackstoryGenerator, CustomContentGenerator, CharacterGenerator, 
-    NPCGenerator, CreatureGenerator, ItemGenerator
+from src.models.core_models import AbilityScore, ProficiencyLevel, ASIManager, MagicItemManager
+from src.models.character_models import CharacterCore  # DnDCondition, CharacterSheet, CharacterState, CharacterStats - may not exist yet
+from src.services.llm_service import create_llm_service, LLMService
+from src.models.database_models import CustomContent
+from src.services.ability_management import AdvancedAbilityManager
+from src.services.generators import (
+    BackstoryGenerator, CustomContentGenerator, NPCGenerator
 )
-from backend.custom_content_models import ContentRegistry, CustomClass
+from src.models.custom_content_models import ContentRegistry, CustomClass
 
 # Import D&D 5e official data
-from backend.dnd_data import (
+from src.services.dnd_data import (
     DND_SPELL_DATABASE, CLASS_SPELL_LISTS, COMPLETE_SPELL_LIST, SPELL_LOOKUP,
     DND_WEAPON_DATABASE, ALL_WEAPONS, WEAPON_LOOKUP, CLASS_WEAPON_PROFICIENCIES,
     DND_FEAT_DATABASE, ALL_FEATS, FEAT_LOOKUP, FEAT_AVAILABILITY,
@@ -65,7 +64,7 @@ from backend.dnd_data import (
     get_appropriate_feats_for_character, get_available_feats_for_level,
     get_spell_schools_for_class
 )
-from backend.creation_validation import validate_feat_prerequisites
+from src.services.creation_validation import validate_feat_prerequisites
 
 logger = logging.getLogger(__name__)
 
@@ -123,10 +122,11 @@ class BaseCreator(ABC):
         self.custom_content_generator = CustomContentGenerator(self.llm_service, self.content_registry)
         
         # Advanced integrated generators for comprehensive content creation
-        self.character_generator = CharacterGenerator(self.llm_service, self.content_registry)
+        # TODO: Implement CharacterGenerator, CreatureGenerator, ItemGenerator
+        # self.character_generator = CharacterGenerator(self.llm_service, self.content_registry)
         self.npc_generator = NPCGenerator(self.llm_service, self.content_registry)
-        self.creature_generator = CreatureGenerator(self.llm_service, self.content_registry)
-        self.item_generator = ItemGenerator(self.llm_service)
+        # self.creature_generator = CreatureGenerator(self.llm_service, self.content_registry)
+        # self.item_generator = ItemGenerator(self.llm_service)
         
         logger.info(f"{self.__class__.__name__} initialized with shared components")
     
@@ -257,7 +257,28 @@ class BaseCreator(ABC):
         else:
             return False
         
-        return any(cls.lower() in spellcasting_classes for cls in class_names)
+        # Check standard D&D spellcasting classes
+        if any(cls.lower() in spellcasting_classes for cls in class_names):
+            return True
+        
+        # Check for custom spellcasting classes
+        for class_name in class_names:
+            class_lower = class_name.lower()
+            # Classes ending in "mancer" are typically spellcasters
+            if class_lower.endswith("mancer"):
+                return True
+            # Other magic-related class keywords
+            magic_keywords = ["magic", "spell", "arcane", "divine", "elemental", "mystic", 
+                            "enchanter", "conjurer", "evoker", "necromancer", "illusionist",
+                            "transmuter", "abjurer", "diviner", "witch", "warlock", "sorcerer"]
+            if any(keyword in class_lower for keyword in magic_keywords):
+                return True
+        
+        # Check if character already has spells defined (indicating spellcaster intent)
+        if character_data.get("spells_known") or character_data.get("spells") or character_data.get("custom_void_spells"):
+            return True
+            
+        return False
     
     def _get_feat_section_for_level(self, level: int) -> str:
         """Get appropriate feat section for character level based on D&D 5e 2024 rules."""
@@ -661,6 +682,9 @@ class CharacterCreator(BaseCreator):
                     'final_level': getattr(character_core, 'level', level)
                 })
             
+            # Final data type normalization to ensure consistency
+            final_character = self._normalize_character_data_types(final_character)
+            
             result = CreationResult(success=True, data=final_character)
             result.creation_time = time.time() - start_time
             
@@ -705,8 +729,18 @@ class CharacterCreator(BaseCreator):
         prompt = self._create_character_prompt(description, level)
         data = await self._generate_with_llm(prompt, "character")
         
+        # Debug: Check the type and content of data
+        logger.debug(f"Generated character data type: {type(data)}")
+        if not isinstance(data, dict):
+            logger.error(f"Expected dict from LLM but got {type(data)}: {data}")
+            raise TypeError(f"Expected dict from LLM but got {type(data)}")
+        
         # Fix common data structure issues
         data = self._fix_character_data_structure(data)
+        
+        # Normalize data types to prevent inconsistencies
+        data = self._normalize_character_data_types(data)
+        
         data["level"] = level
         
         return data
@@ -929,9 +963,78 @@ Match description exactly. Prioritize existing D&D 5e spells, weapons, feats, ar
         
         return character_data
     
+    def _normalize_character_data_types(self, character_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize character data to ensure consistent data types.
+        This prevents issues like arrays becoming booleans or other type mismatches.
+        """
+        # Ensure spells_known is always an array
+        if "spells_known" not in character_data:
+            character_data["spells_known"] = []
+        elif not isinstance(character_data["spells_known"], list):
+            logger.warning(f"spells_known was {type(character_data['spells_known'])}, converting to empty array")
+            character_data["spells_known"] = []
+        
+        # Ensure custom spell arrays are always arrays
+        custom_spell_fields = ["custom_void_spells", "custom_spells", "spells"]
+        for field in custom_spell_fields:
+            if field in character_data:
+                if not isinstance(character_data[field], list):
+                    logger.warning(f"{field} was {type(character_data[field])}, converting to empty array")
+                    character_data[field] = []
+        
+        # Ensure equipment is always a dict
+        if "equipment" not in character_data:
+            character_data["equipment"] = {}
+        elif not isinstance(character_data["equipment"], dict):
+            logger.warning(f"equipment was {type(character_data['equipment'])}, converting to empty dict")
+            character_data["equipment"] = {}
+        
+        # Ensure weapons is always an array
+        if "weapons" not in character_data:
+            character_data["weapons"] = []
+        elif not isinstance(character_data["weapons"], list):
+            logger.warning(f"weapons was {type(character_data['weapons'])}, converting to empty array")
+            character_data["weapons"] = []
+        
+        # Ensure feats arrays are always arrays
+        feat_fields = ["general_feats", "fighting_style_feats", "feats"]
+        for field in feat_fields:
+            if field in character_data:
+                if not isinstance(character_data[field], list):
+                    logger.warning(f"{field} was {type(character_data[field])}, converting to empty array")
+                    character_data[field] = []
+        
+        # Ensure species and classes are correct types
+        if "species" in character_data:
+            if isinstance(character_data["species"], list):
+                # Convert list to string (take first element)
+                character_data["species"] = character_data["species"][0] if character_data["species"] else "Human"
+            elif not isinstance(character_data["species"], str):
+                character_data["species"] = str(character_data["species"]) if character_data["species"] else "Human"
+        
+        if "classes" in character_data:
+            if isinstance(character_data["classes"], list):
+                # Convert list to dict
+                if character_data["classes"]:
+                    character_data["classes"] = {character_data["classes"][0]: character_data.get("level", 1)}
+                else:
+                    character_data["classes"] = {"Fighter": character_data.get("level", 1)}
+            elif not isinstance(character_data["classes"], dict):
+                character_data["classes"] = {"Fighter": character_data.get("level", 1)}
+        
+        return character_data
+
     def _build_character_core(self, character_data: Dict[str, Any]) -> CharacterCore:
         """Build CharacterCore from character data."""
-        character_core = CharacterCore(character_data["name"])
+        # Debug: Check the type and content of character_data
+        logger.debug(f"Building character core with data type: {type(character_data)}")
+        if not isinstance(character_data, dict):
+            logger.error(f"Expected dict but got {type(character_data)}: {character_data}")
+            raise TypeError(f"Expected dict but got {type(character_data)}")
+        
+        name = character_data.get("name", "Unknown")
+        character_core = CharacterCore(name)
         character_core.species = character_data.get("species", "Human")
         character_core.background = character_data.get("background", "Folk Hero")
         character_core.character_classes = character_data.get("classes", {"Fighter": 1})
@@ -960,8 +1063,8 @@ Match description exactly. Prioritize existing D&D 5e spells, weapons, feats, ar
             else:
                 character_core.skill_proficiencies[skill_name] = ProficiencyLevel.NONE
         
-        # Apply feat effects to character
-        character_core.apply_feat_effects()
+        # Note: Feat effects are applied through the data structure itself
+        # No separate apply_feat_effects method needed
         
         return character_core
     
@@ -1024,6 +1127,15 @@ Match the character concept exactly. Return complete JSON only."""
             # If character already has spells, validate and enhance them
             existing_spells = character_data.get("spells_known", [])
             
+            # For custom spellcasters with no initial spells, ensure they get some spells
+            if not existing_spells and level >= 3:
+                # Estimate spells known based on level (like a wizard/sorcerer hybrid)
+                spells_for_level = min(level + 2, 15)  # Level 11 gets ~13 spells
+                existing_spells = suggested_spells[:spells_for_level]
+                logger.info(f"Auto-populated {len(existing_spells)} spells for level {level} custom spellcaster")
+            
+            # Validate and enhance existing spells
+            
             # Validate and enhance existing spells
             enhanced_spells = []
             existing_spell_names = set()
@@ -1068,6 +1180,9 @@ Match the character concept exactly. Return complete JSON only."""
                         break
             
             character_data["spells_known"] = enhanced_spells
+            
+            # Normalize data types after spell enhancement
+            character_data = self._normalize_character_data_types(character_data)
             
             # Add spell slot information
             character_data["spell_slots"] = self._calculate_spell_slots(character_data)
@@ -1894,9 +2009,23 @@ Create an enhanced backstory that:
         character_concept = self._parse_character_concept(prompt, level)
         
         # Use CharacterGenerator for complete character creation
-        character_data = await self.character_generator.generate_character(character_concept, prompt)
+        # TODO: Implement CharacterGenerator class
+        # character_data = await self.character_generator.generate_character(character_concept, prompt)
         
-        # Apply additional validation and enhancement from creation system
+        # For now, use the existing character creation logic
+        # Pass level in user_preferences format and disable generators to prevent recursion
+        level_preferences = user_preferences.copy() if user_preferences else {}
+        level_preferences["level"] = level
+        level_preferences["use_generators"] = False  # Prevent infinite recursion
+        creation_result = await self.create_character(prompt, level_preferences)
+        
+        # Extract character data from the creation result
+        if creation_result.success:
+            character_data = creation_result.data
+        else:
+            raise Exception(f"Character creation failed: {creation_result.error}")
+        
+        # Apply additional validation and enhancement from src.services.creation system
         character_data = self._enhance_character_spells(character_data)
         character_data = self._enhance_character_weapons(character_data)
         character_data = self._enhance_character_feats(character_data)
@@ -1922,7 +2051,11 @@ Create an enhanced backstory that:
         """Use the integrated CreatureGenerator for creature creation."""
         logger.info(f"Creating creature with integrated generators: {creature_type}")
         
-        creature_data = await self.creature_generator.generate_creature(creature_type, user_description)
+        # TODO: Implement CreatureGenerator class
+        # creature_data = await self.creature_generator.generate_creature(creature_type, user_description)
+        
+        # For now, use the existing creature creation logic
+        creature_data = await self.create_creature(f"{creature_type}: {user_description}")
         
         # Apply creature-specific validation and enhancement
         creature_data = validate_and_enhance_creature(creature_data)
@@ -1935,7 +2068,17 @@ Create an enhanced backstory that:
         """Use the integrated ItemGenerator for item creation."""
         logger.info(f"Creating item with integrated generators: {item_type}")
         
-        item_data = await self.item_generator.generate_item(item_type, name, description, extra_fields)
+        # TODO: Implement ItemGenerator class
+        # item_data = await self.item_generator.generate_item(item_type, name, description, extra_fields)
+        
+        # For now, use the existing item creation logic
+        prompt = f"{item_type}: {name} - {description}"
+        if item_type.lower() == "weapon":
+            item_data = await self.create_weapon(prompt)
+        elif item_type.lower() == "spell":
+            item_data = await self.create_spell(prompt)
+        else:
+            item_data = await self.create_item(prompt)
         
         # Apply item-specific validation
         level = extra_fields.get("level", 1) if extra_fields else 1

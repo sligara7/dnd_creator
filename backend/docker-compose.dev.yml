@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  dnd-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dnd-character-creator-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persistent data volumes
+      - ./data:/app/data:Z
+      - ./logs:/app/logs:Z
+      - ./characters:/app/characters:Z
+      - ./custom_content:/app/custom_content:Z
+      # Development volumes (comment out for production)
+      - ./src:/app/src:Z
+      - ./.env:/app/.env:Z
+    environment:
+      - ENV=development
+      - DEBUG=true
+      - PYTHONPATH=/app:/app/src
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+  # Optional: PostgreSQL database for production-like testing
+  postgres:
+    image: postgres:15-alpine
+    container_name: dnd-postgres
+    environment:
+      POSTGRES_DB: dnd_characters
+      POSTGRES_USER: dnd_user
+      POSTGRES_PASSWORD: dnd_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dnd_user -d dnd_characters"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - postgres  # Only start with --profile postgres
+
+volumes:
+  postgres_data:
+
+networks:
+  default:
+    name: dnd-network

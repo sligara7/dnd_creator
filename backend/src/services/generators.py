@@ -7,13 +7,13 @@
 from typing import Dict, Any, List, Optional
 import json
 import logging
-from backend.llm_service import LLMService
-from backend.custom_content_models import (
+from src.services.llm_service import LLMService
+from src.models.custom_content_models import (
     ContentRegistry, CustomSpecies, CustomClass, CustomSpell, 
     CustomWeapon, CustomArmor, CustomFeat, CustomItem
 )
-from backend.core_models import SpellcastingManager
-from backend.creation_validation import (
+from src.models.core_models import SpellcastingManager
+from src.services.creation_validation import (
     validate_basic_structure, validate_custom_content,
     validate_and_enhance_npc, validate_item_for_level,
     validate_and_enhance_creature
@@ -645,15 +645,17 @@ Return ONLY this JSON:
         try:
             # Validate basic character structure first
             basic_validation = validate_basic_structure(character_data)
-            if not basic_validation.get('valid', True):
+            if not basic_validation.success:
                 validation_results['is_valid'] = False
-                validation_results['warnings'].extend(basic_validation.get('errors', []))
+                validation_results['warnings'].append(basic_validation.error)
+                validation_results['warnings'].extend(basic_validation.warnings)
             
             # Validate custom content using creation_validation
-            custom_validation = validate_custom_content(content, character_data)
-            if not custom_validation.get('valid', True):
-                validation_results['warnings'].extend(custom_validation.get('warnings', []))
-                validation_results['balance_score'] = custom_validation.get('balance_score', 100)
+            custom_validation = validate_custom_content(character_data, True, True)  # Assume custom content for epic characters
+            if not custom_validation.success:
+                validation_results['warnings'].extend(custom_validation.warnings)
+                # Note: balance_score is not available in CreationResult, using default
+                validation_results['balance_score'] = 100
             
             # Apply automatic balance adjustments if needed
             if validation_results['balance_score'] < 80:  # Significantly overpowered

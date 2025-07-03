@@ -691,7 +691,7 @@ class CharacterDB:
             return None
         
         # Import here to avoid circular imports
-        from backend.character_models import CharacterCore
+        from src.models.character_models import CharacterCore
         
         # Create CharacterCore-based response (simplified for now)
         character_core = CharacterCore(db_character.name)

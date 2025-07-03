@@ -13,10 +13,10 @@ import time
 from functools import wraps
 
 # Import from other modules
-from backend.core_models import ASIManager, CharacterLevelManager, AbilityScore, AbilityScoreSource
-from backend.custom_content_models import CustomSpecies, CustomClass
-from backend.character_models import CharacterCore
-from backend.creation_validation import (
+from src.models.core_models import ASIManager, CharacterLevelManager, AbilityScore, AbilityScoreSource
+from src.models.custom_content_models import CustomSpecies, CustomClass
+from src.models.character_models import CharacterCore
+from src.services.creation_validation import (
     validate_basic_structure, validate_custom_content, 
     validate_custom_species_balance, validate_custom_class_balance,
     CreationResult
@@ -960,7 +960,7 @@ def create_enhanced_ability_manager(character_core: CharacterCore,
 def validate_ability_management_system(system: Dict[str, Any]) -> CreationResult:
     """
     Validate that an ability management system meets all dev_vision.md requirements.
-    Uses external validation from creation_validation.py for consistency.
+    Uses external validation from src.services.creation_validation.py for consistency.
     
     Returns CreationResult with validation results and compliance score.
     """
@@ -1046,7 +1046,7 @@ def validate_character_ability_scores(character_data: Dict[str, Any]) -> Creatio
     This is a convenience function that delegates to creation_validation.py.
     """
     try:
-        # Use the comprehensive validation from creation_validation.py
+        # Use the comprehensive validation from src.services.creation_validation.py
         basic_validation = validate_basic_structure(character_data)
         
         if not basic_validation.success:

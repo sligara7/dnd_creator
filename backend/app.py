@@ -30,28 +30,31 @@ from typing import List, Dict, Any, Optional
 from fastapi import FastAPI, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pathlib import Path
 
 # Import performance monitoring
 import psutil
 import os
+import sys
+import time
+import logging
 from datetime import datetime, timedelta
 
-# Add the app directory to Python path
-sys.path.append(str(Path(__file__).parent))
+# Add the src directory to Python path for clean imports
+sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 # Import configuration and services
-from backend.config import settings
-from backend.llm_service import create_llm_service
+from src.core.config import settings
+from src.services.llm_service import create_llm_service
 
 # Import database models and operations
-from backend.database_models import CharacterDB, init_database, get_db
-from backend.character_models import CharacterCore
+from src.models.database_models import CharacterDB, init_database, get_db
+from src.models.character_models import CharacterCore
 
 # Import factory-based creation system
-from backend.creation_factory import CreationFactory
-from backend.enums import CreationOptions
+from src.services.creation_factory import CreationFactory
+from src.core.enums import CreationOptions
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -146,6 +149,7 @@ class FactoryCreateRequest(BaseModel):
     creation_type: str  # 'character', 'monster', 'npc', 'weapon', 'armor', 'spell', 'other_item'
     prompt: str
     user_preferences: Optional[Dict[str, Any]] = None
+    extra_fields: Optional[Dict[str, Any]] = None
     save_to_database: Optional[bool] = True
 
 class FactoryEvolveRequest(BaseModel):
@@ -580,7 +584,8 @@ async def factory_create_from_scratch(request: FactoryCreateRequest, db = Depend
         result = await factory.create_from_scratch(
             creation_type, 
             request.prompt,
-            user_preferences=request.user_preferences or {}
+            user_preferences=request.user_preferences or {},
+            extra_fields=request.extra_fields or {}
         )
         
         object_id = None
@@ -589,36 +594,58 @@ async def factory_create_from_scratch(request: FactoryCreateRequest, db = Depend
         # Save to database if requested (only for characters currently)
         if request.save_to_database and creation_type == CreationOptions.CHARACTER:
             try:
-                # Convert CharacterSheet to database format
-                if hasattr(result, 'to_dict'):
-                    character_data = result.to_dict()
+                # Handle different result types
+                if isinstance(result, CharacterCore):
+                    # If it's a CharacterCore object, extract data directly from attributes
+                    db_character_data = {
+                        "name": getattr(result, 'name', 'Generated Character'),
+                        "species": getattr(result, 'species', 'Human'),
+                        "background": getattr(result, 'background', 'Folk Hero'),
+                        "alignment": getattr(result, 'alignment', 'Neutral Good'),
+                        "level": getattr(result, 'level', 1),
+                        "character_classes": getattr(result, 'classes', {'Fighter': 1}),
+                        "backstory": getattr(result, 'backstory', ''),
+                        "abilities": getattr(result, 'ability_scores', {
+                            "strength": 10, "dexterity": 10, "constitution": 10,
+                            "intelligence": 10, "wisdom": 10, "charisma": 10
+                        }),
+                        "armor_class": 10,  # Default values for now
+                        "hit_points": 10,
+                        "proficiency_bonus": 2,
+                        "skills": {},
+                        "equipment": {}
+                    }
                 else:
-                    character_data = result
-                
-                # Extract data from the character sheet structure
-                core_data = character_data.get("core", {})
-                stats_data = character_data.get("stats", {})
-                state_data = character_data.get("state", {})
-                
-                # Create flattened data structure for database
-                db_character_data = {
-                    "name": core_data.get("name", "Generated Character"),
-                    "species": core_data.get("species", "Human"),
-                    "background": core_data.get("background", "Folk Hero"),
-                    "alignment": core_data.get("alignment", "Neutral Good"),
-                    "level": core_data.get("level", 1),
-                    "character_classes": core_data.get("classes", {"Fighter": 1}),
-                    "backstory": core_data.get("backstory", ""),
-                    "abilities": core_data.get("ability_scores", {
-                        "strength": 10, "dexterity": 10, "constitution": 10,
-                        "intelligence": 10, "wisdom": 10, "charisma": 10
-                    }),
-                    "armor_class": stats_data.get("armor_class", 10),
-                    "hit_points": stats_data.get("max_hit_points", 10),
-                    "proficiency_bonus": stats_data.get("proficiency_bonus", 2),
-                    "skills": stats_data.get("skills", {}),
-                    "equipment": state_data.get("equipment", {})
-                }
+                    # Convert to dict if possible, otherwise handle as dict
+                    if hasattr(result, 'to_dict'):
+                        character_data = result.to_dict()
+                    else:
+                        character_data = result
+                    
+                    # Extract data from the character sheet structure
+                    core_data = character_data.get("core", {})
+                    stats_data = character_data.get("stats", {})
+                    state_data = character_data.get("state", {})
+                    
+                    # Create flattened data structure for database
+                    db_character_data = {
+                        "name": core_data.get("name", "Generated Character"),
+                        "species": core_data.get("species", "Human"),
+                        "background": core_data.get("background", "Folk Hero"),
+                        "alignment": core_data.get("alignment", "Neutral Good"),
+                        "level": core_data.get("level", 1),
+                        "character_classes": core_data.get("classes", {"Fighter": 1}),
+                        "backstory": core_data.get("backstory", ""),
+                        "abilities": core_data.get("ability_scores", {
+                            "strength": 10, "dexterity": 10, "constitution": 10,
+                            "intelligence": 10, "wisdom": 10, "charisma": 10
+                        }),
+                        "armor_class": stats_data.get("armor_class", 10),
+                        "hit_points": stats_data.get("max_hit_points", 10),
+                        "proficiency_bonus": stats_data.get("proficiency_bonus", 2),
+                        "skills": stats_data.get("skills", {}),
+                        "equipment": state_data.get("equipment", {})
+                    }
                 
                 db_character = CharacterDB.create_character(db, db_character_data)
                 object_id = db_character.id
@@ -630,11 +657,62 @@ async def factory_create_from_scratch(request: FactoryCreateRequest, db = Depend
         
         processing_time = time.time() - start_time
         
-        # Prepare response data
-        if hasattr(result, 'to_dict'):
-            response_data = result.to_dict()
-        else:
-            response_data = result
+        # Prepare response data - convert CharacterCore to dict for JSON serialization
+        def convert_to_serializable(obj):
+            """Recursively convert objects to serializable format."""
+            if isinstance(obj, CharacterCore):
+                try:
+                    if hasattr(obj, 'to_dict') and callable(getattr(obj, 'to_dict')):
+                        return obj.to_dict()
+                    else:
+                        # Manual conversion for CharacterCore objects
+                        return {
+                            "name": getattr(obj, 'name', 'Generated Character'),
+                            "species": getattr(obj, 'species', 'Human'),
+                            "background": getattr(obj, 'background', 'Folk Hero'),
+                            "alignment": getattr(obj, 'alignment', 'Neutral Good'),
+                            "level": getattr(obj, 'level', 1),
+                            "character_classes": getattr(obj, 'character_classes', {'Fighter': 1}),
+                            "backstory": getattr(obj, 'backstory', ''),
+                            "ability_scores": {
+                                "strength": getattr(obj.strength, 'total_score', 10) if hasattr(obj, 'strength') and obj.strength else 10,
+                                "dexterity": getattr(obj.dexterity, 'total_score', 10) if hasattr(obj, 'dexterity') and obj.dexterity else 10,
+                                "constitution": getattr(obj.constitution, 'total_score', 10) if hasattr(obj, 'constitution') and obj.constitution else 10,
+                                "intelligence": getattr(obj.intelligence, 'total_score', 10) if hasattr(obj, 'intelligence') and obj.intelligence else 10,
+                                "wisdom": getattr(obj.wisdom, 'total_score', 10) if hasattr(obj, 'wisdom') and obj.wisdom else 10,
+                                "charisma": getattr(obj.charisma, 'total_score', 10) if hasattr(obj, 'charisma') and obj.charisma else 10
+                            },
+                            "skills": getattr(obj, 'skill_proficiencies', {}),
+                            "feats": getattr(obj, 'feats', []),
+                            "languages": list(getattr(obj, 'languages', set())),
+                            "weapon_proficiencies": list(getattr(obj, 'weapon_proficiencies', set())),
+                            "armor_proficiencies": list(getattr(obj, 'armor_proficiencies', set()))
+                        }
+                except Exception as e:
+                    logger.warning(f"Failed to convert CharacterCore manually: {e}")
+                    return {"error": "CharacterCore conversion failed", "raw": str(obj)}
+            elif isinstance(obj, dict):
+                return {k: convert_to_serializable(v) for k, v in obj.items()}
+            elif isinstance(obj, (list, tuple)):
+                return [convert_to_serializable(item) for item in obj]
+            elif isinstance(obj, set):
+                return list(obj)
+            else:
+                # For primitive types and other objects
+                try:
+                    # Try JSON serialization test
+                    import json
+                    json.dumps(obj)
+                    return obj
+                except (TypeError, ValueError):
+                    return str(obj)
+        
+        try:
+            response_data = convert_to_serializable(result)
+            logger.info(f"Successfully converted result to serializable format")
+        except Exception as e:
+            logger.error(f"Failed to convert result to serializable format: {e}")
+            response_data = {"error": "Failed to serialize character data", "raw_data": str(result)}
         
         logger.info(f"Factory creation completed in {processing_time:.2f}s")
         
@@ -1127,7 +1205,7 @@ async def validate_character(character_data: CharacterCreateRequest):
         }
         
         # Use creation_validation.py for validation
-        from backend.creation_validation import validate_basic_structure
+        from src.services.creation_validation import validate_basic_structure
         validation_result = validate_basic_structure(validation_data)
         
         return {
@@ -1161,7 +1239,7 @@ async def validate_existing_character(character_id: str, db = Depends(get_db)):
         }
         
         # Use creation_validation.py for validation
-        from backend.creation_validation import validate_basic_structure
+        from src.services.creation_validation import validate_basic_structure
         validation_result = validate_basic_structure(character_data)
         
         return {

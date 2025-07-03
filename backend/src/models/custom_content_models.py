@@ -20,7 +20,7 @@ from pathlib import Path
 import asyncio
 
 # Import from core_models.py
-from backend.core_models import (
+from src.models.core_models import (
     ProficiencyLevel, 
     AbilityScoreSource, 
     AbilityScore, 

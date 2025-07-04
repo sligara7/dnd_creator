@@ -963,3 +963,246 @@ def validate_all_databases() -> bool:
     
     logger.info("All database validations passed")
     return True
+
+# ============================================================================
+# ALLOCATION VALIDATION (Task 2C)
+# ============================================================================
+
+def validate_item_allocation(character_data: Dict[str, Any], item_data: Dict[str, Any], 
+                           access_type: str = "inventory") -> CreationResult:
+    """
+    Validate that a character can use/access an item based on class restrictions,
+    proficiencies, and D&D 5e 2024 rules.
+    
+    Args:
+        character_data: Character information (classes, proficiencies, etc.)
+        item_data: Item to validate (from unified catalog)
+        access_type: Type of access (inventory, equipped, spells_known, spells_prepared)
+    
+    Returns:
+        CreationResult with validation outcome
+    """
+    result = CreationResult(success=True)
+    
+    item_type = item_data.get("item_type", "").lower()
+    item_name = item_data.get("name", "Unknown Item")
+    
+    # Validate based on item type
+    if item_type == "spell":
+        return _validate_spell_allocation(character_data, item_data, access_type)
+    elif item_type == "weapon":
+        return _validate_weapon_allocation(character_data, item_data, access_type)
+    elif item_type == "armor":
+        return _validate_armor_allocation(character_data, item_data, access_type)
+    elif item_type in ["tool", "equipment"]:
+        return _validate_tool_equipment_allocation(character_data, item_data, access_type)
+    else:
+        # Generic items (adventuring gear, etc.) - usually no restrictions
+        result.add_warning(f"No specific validation rules for item type: {item_type}")
+        return result
+
+def _validate_spell_allocation(character_data: Dict[str, Any], spell_data: Dict[str, Any], 
+                             access_type: str) -> CreationResult:
+    """Validate spell allocation based on class spell lists and caster level."""
+    result = CreationResult(success=True)
+    
+    spell_name = spell_data.get("name", "Unknown Spell")
+    spell_level = spell_data.get("spell_level", 0)
+    spell_school = spell_data.get("spell_school", "")
+    class_restrictions = spell_data.get("class_restrictions", [])
+    
+    # Get character classes
+    character_classes = character_data.get("character_classes", {})
+    if not character_classes:
+        result.success = False
+        result.error = f"Character has no classes to learn spell: {spell_name}"
+        return result
+    
+    # Check if character has a class that can use this spell
+    character_class_names = [cls.lower() for cls in character_classes.keys()]
+    spell_class_names = [cls.lower() for cls in class_restrictions]
+    
+    can_use_spell = any(char_class in spell_class_names for char_class in character_class_names)
+    
+    if not can_use_spell and class_restrictions:
+        result.success = False
+        result.error = f"Character classes {list(character_classes.keys())} cannot use spell: {spell_name} (requires: {class_restrictions})"
+        return result
+    
+    # Check caster level for spell level
+    if access_type in ["spells_known", "spells_prepared"]:
+        max_spell_level = _get_max_spell_level_for_character(character_data)
+        if spell_level > max_spell_level:
+            result.success = False
+            result.error = f"Character level too low for {spell_name} (level {spell_level} spell, character can cast up to level {max_spell_level})"
+            return result
+    
+    # Check known spell limits for class
+    if access_type == "spells_known":
+        spell_limit_warning = _check_spell_known_limits(character_data, spell_level)
+        if spell_limit_warning:
+            result.add_warning(spell_limit_warning)
+    
+    logger.info(f"Spell allocation validated: {spell_name} for character classes {list(character_classes.keys())}")
+    return result
+
+def _validate_weapon_allocation(character_data: Dict[str, Any], weapon_data: Dict[str, Any], 
+                              access_type: str) -> CreationResult:
+    """Validate weapon allocation based on weapon proficiencies."""
+    result = CreationResult(success=True)
+    
+    weapon_name = weapon_data.get("name", "Unknown Weapon")
+    weapon_subtype = weapon_data.get("item_subtype", "")
+    weapon_content = weapon_data.get("content_data", {})
+    weapon_category = weapon_content.get("category", "")
+    
+    # Get character weapon proficiencies
+    weapon_proficiencies = character_data.get("weapon_proficiencies", [])
+    if isinstance(weapon_proficiencies, dict):
+        weapon_proficiencies = list(weapon_proficiencies.keys())
+    
+    # Check for specific weapon proficiency
+    if weapon_name.lower() in [prof.lower() for prof in weapon_proficiencies]:
+        return result
+    
+    # Check for category proficiency (simple weapons, martial weapons)
+    category_proficiencies = [
+        "simple weapons" if "simple" in weapon_subtype.lower() else "",
+        "martial weapons" if "martial" in weapon_subtype.lower() else "",
+        f"{weapon_category.lower()} weapons" if weapon_category else ""
+    ]
+    
+    has_category_proficiency = any(
+        cat_prof in [prof.lower() for prof in weapon_proficiencies] 
+        for cat_prof in category_proficiencies if cat_prof
+    )
+    
+    if not has_category_proficiency and access_type == "equipped":
+        result.add_warning(f"Character not proficient with {weapon_name} - will have disadvantage on attack rolls")
+    
+    logger.info(f"Weapon allocation validated: {weapon_name} for character proficiencies {weapon_proficiencies}")
+    return result
+
+def _validate_armor_allocation(character_data: Dict[str, Any], armor_data: Dict[str, Any], 
+                             access_type: str) -> CreationResult:
+    """Validate armor allocation based on armor proficiencies."""
+    result = CreationResult(success=True)
+    
+    armor_name = armor_data.get("name", "Unknown Armor")
+    armor_subtype = armor_data.get("item_subtype", "")
+    
+    # Get character armor proficiencies
+    armor_proficiencies = character_data.get("armor_proficiencies", [])
+    if isinstance(armor_proficiencies, dict):
+        armor_proficiencies = list(armor_proficiencies.keys())
+    
+    # Check for specific armor proficiency
+    if armor_name.lower() in [prof.lower() for prof in armor_proficiencies]:
+        return result
+    
+    # Check for category proficiency
+    armor_category_map = {
+        "light_armor": "light armor",
+        "medium_armor": "medium armor", 
+        "heavy_armor": "heavy armor"
+    }
+    
+    required_proficiency = armor_category_map.get(armor_subtype.lower(), armor_subtype)
+    has_proficiency = required_proficiency.lower() in [prof.lower() for prof in armor_proficiencies]
+    
+    if not has_proficiency and access_type == "equipped":
+        result.add_warning(f"Character not proficient with {armor_name} - may have disadvantage on ability checks, saving throws, and attack rolls")
+    
+    logger.info(f"Armor allocation validated: {armor_name} for character proficiencies {armor_proficiencies}")
+    return result
+
+def _validate_tool_equipment_allocation(character_data: Dict[str, Any], item_data: Dict[str, Any], 
+                                      access_type: str) -> CreationResult:
+    """Validate tool/equipment allocation based on tool proficiencies."""
+    result = CreationResult(success=True)
+    
+    item_name = item_data.get("name", "Unknown Item")
+    item_subtype = item_data.get("item_subtype", "")
+    
+    # Most equipment doesn't require proficiency, but tools do
+    if item_data.get("item_type") == "tool":
+        tool_proficiencies = character_data.get("tool_proficiencies", {})
+        if isinstance(tool_proficiencies, list):
+            tool_proficiencies = {tool: "proficient" for tool in tool_proficiencies}
+        
+        # Check if character has proficiency with this tool
+        has_tool_proficiency = any(
+            tool_name.lower() in item_name.lower() or item_name.lower() in tool_name.lower()
+            for tool_name in tool_proficiencies.keys()
+        )
+        
+        if not has_tool_proficiency:
+            result.add_warning(f"Character not proficient with {item_name} - cannot add proficiency bonus to ability checks")
+    
+    logger.info(f"Tool/Equipment allocation validated: {item_name}")
+    return result
+
+def _get_max_spell_level_for_character(character_data: Dict[str, Any]) -> int:
+    """Calculate the maximum spell level a character can cast based on their classes and levels."""
+    character_classes = character_data.get("character_classes", {})
+    max_spell_level = 0
+    
+    # Standard D&D 5e spell progression
+    spell_level_progression = {
+        1: 0, 2: 1, 3: 2, 4: 2, 5: 3, 6: 3, 7: 4, 8: 4, 9: 5, 10: 5,
+        11: 6, 12: 6, 13: 7, 14: 7, 15: 8, 16: 8, 17: 9, 18: 9, 19: 9, 20: 9
+    }
+    
+    # Full caster classes
+    full_casters = ["wizard", "sorcerer", "cleric", "druid", "bard", "warlock"]
+    
+    # Half caster classes (Paladin, Ranger)
+    half_casters = ["paladin", "ranger"]
+    
+    for class_name, class_level in character_classes.items():
+        class_name_lower = class_name.lower()
+        
+        if class_name_lower in full_casters:
+            # Full casters use standard progression
+            class_max_level = spell_level_progression.get(class_level, 0)
+            max_spell_level = max(max_spell_level, class_max_level)
+        elif class_name_lower in half_casters:
+            # Half casters start at level 2 and progress at half rate
+            if class_level >= 2:
+                effective_level = (class_level - 1) // 2 + 1
+                class_max_level = min(spell_level_progression.get(effective_level, 0), 5)  # Capped at 5th level
+                max_spell_level = max(max_spell_level, class_max_level)
+    
+    return max_spell_level
+
+def _check_spell_known_limits(character_data: Dict[str, Any], spell_level: int) -> Optional[str]:
+    """Check if character is approaching spell known limits for their class."""
+    # This is a simplified check - in a full implementation, this would check
+    # specific class spell progression tables
+    character_classes = character_data.get("character_classes", {})
+    total_level = sum(character_classes.values())
+    
+    # Basic heuristic: warn if character has many high-level spells
+    if spell_level >= 6 and total_level < 12:
+        return f"High-level spell ({spell_level}) for character level {total_level} - ensure spell slot availability"
+    
+    return None
+
+def validate_character_can_allocate_item(character_id: str, item_id: str, access_type: str = "inventory") -> CreationResult:
+    """
+    Convenience function to validate item allocation by loading character and item data.
+    This would typically be called from the allocation service.
+    
+    Args:
+        character_id: UUID of the character
+        item_id: UUID of the item
+        access_type: Type of access being granted
+    
+    Returns:
+        CreationResult with validation outcome
+    """
+    # Note: This function would need database access to load character and item data
+    # For now, it's a placeholder that shows the intended interface
+    result = CreationResult(success=False)
+    result.error = "Function requires database integration - use validate_item_allocation with loaded data"
+    return result

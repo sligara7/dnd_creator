@@ -42,7 +42,10 @@ RUN pip install --no-cache-dir --upgrade pip \
 # Copy the application source code with new modular structure
 COPY src/ ./src/
 COPY app.py main.py ./
-COPY .env.example .env
+
+# NOTE: .env file is NOT copied - all secrets must come from host environment variables
+# The container expects OPENAI_API_KEY, SECRET_KEY, and other secrets to be provided 
+# via container runtime environment variables (e.g., podman run -e OPENAI_API_KEY=...)
 
 # Create directories for data, logs, and character storage with Podman-friendly permissions
 RUN mkdir -p /app/data /app/logs /app/characters /app/custom_content /app/tests \

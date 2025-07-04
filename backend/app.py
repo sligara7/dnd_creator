@@ -49,6 +49,7 @@ from src.services.llm_service import create_llm_service
 # Import database models and operations
 from src.models.database_models import CharacterDB, init_database, get_db
 from src.models.character_models import CharacterCore
+from src.models.character_models import CharacterCore
 
 # Import factory-based creation system
 from src.services.creation_factory import CreationFactory
@@ -56,7 +57,7 @@ from src.services.creation_factory import CreationFactory
 from src.core.enums import CreationOptions
 
 # Unified catalog API
-from src.api.unified_catalog_api import unified_catalog_router
+# from src.api.unified_catalog_api import unified_catalog_router
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -135,7 +136,7 @@ app = FastAPI(
 )
 
 # Register unified catalog API router
-app.include_router(unified_catalog_router)
+# app.include_router(unified_catalog_router)
 
 # Configure CORS
 app.add_middleware(
@@ -384,8 +385,6 @@ async def award_xp(character_id: str, xp_data: XPAwardRequest, db = Depends(get_
             character_id=character_id,
             new_xp_total=result.get("new_xp_total", 0),
             xp_awarded=xp_data.amount,
-            new_xp_total=result.get("new_xp_total", 0),
-            xp_awarded=xp_data.amount,
             level_up=result.get("level_up", False),
             new_level=result.get("new_level"),
             message=result.get("message", "XP awarded successfully"),
@@ -602,58 +601,120 @@ async def factory_create_from_scratch(request: FactoryCreateRequest, db = Depend
         # Save to database if requested (only for characters currently)
         if request.save_to_database and creation_type == CreationOptions.CHARACTER:
             try:
-                # Handle different result types
+                # Always convert result to dict first, regardless of type
                 if isinstance(result, CharacterCore):
-                    # If it's a CharacterCore object, extract data directly from attributes
+                    character_data = result.to_dict()
+                elif hasattr(result, 'to_dict') and callable(getattr(result, 'to_dict')):
+                    character_data = result.to_dict()
+                else:
+                    character_data = result
+                
+                # Ensure we have a dictionary to work with before proceeding
+                if not isinstance(character_data, dict):
+                    raise Exception(f"Unable to convert character data to dictionary. Got: {type(character_data)}")
+                
+                # Normalize the character data structure for database storage
+                # Handle multiple possible data layouts from the factory
+                
+                # Try different possible structures from the factory response
+                core_data = {}
+                raw_data = {}
+                
+                # Option 1: Direct CharacterCore.to_dict() output
+                if "name" in character_data and "species" in character_data:
+                    core_data = character_data
+                # Option 2: Nested structure with "core" key
+                elif "core" in character_data:
+                    core_obj = character_data.get("core", {})
+                    
+                    # Check if core_obj is a CharacterCore or dict
+                    if isinstance(core_obj, dict):
+                        core_data = core_obj
+                    elif hasattr(core_obj, 'to_dict'):
+                        # It's a CharacterCore object, convert it
+                        core_data = core_obj.to_dict()
+                    elif hasattr(core_obj, '__class__') and core_obj.__class__.__name__ == 'CharacterCore':
+                        # Manual extraction from CharacterCore
+                        core_data = {
+                            "name": getattr(core_obj, 'name', 'Generated Character'),
+                            "species": getattr(core_obj, 'species', 'Human'),
+                            "background": getattr(core_obj, 'background', 'Folk Hero'),
+                            "alignment": getattr(core_obj, 'alignment', 'Neutral Good'),
+                            "level": 1,
+                            "character_classes": getattr(core_obj, 'character_classes', {"Fighter": 1})
+                        }
+                    else:
+                        core_data = {}
+                # Option 3: Structure with "character" wrapper
+                elif "character" in character_data:
+                    character_obj = character_data["character"]
+                    
+                    # Check if character_obj is a CharacterCore or dict
+                    if isinstance(character_obj, dict) and "core" in character_obj:
+                        core_data = character_obj["core"]
+                    elif hasattr(character_obj, 'to_dict'):
+                        # It's a CharacterCore object, convert it
+                        core_data = character_obj.to_dict()
+                    elif hasattr(character_obj, '__class__') and character_obj.__class__.__name__ == 'CharacterCore':
+                        # Manual extraction from CharacterCore
+                        core_data = {
+                            "name": getattr(character_obj, 'name', 'Generated Character'),
+                            "species": getattr(character_obj, 'species', 'Human'),
+                            "background": getattr(character_obj, 'background', 'Folk Hero'),
+                            "alignment": getattr(character_obj, 'alignment', 'Neutral Good'),
+                            "level": 1,
+                            "character_classes": getattr(character_obj, 'character_classes', {"Fighter": 1})
+                        }
+                # Option 4: raw_data structure
+                elif "raw_data" in character_data:
+                    raw_data = character_data["raw_data"]
+                    if isinstance(raw_data, dict) and "name" in raw_data:
+                        core_data = raw_data
+                
+                # Extract character information for database
+                if raw_data and "name" in raw_data:
+                    # Use raw_data as primary source if available
                     db_character_data = {
-                        "name": getattr(result, 'name', 'Generated Character'),
-                        "species": getattr(result, 'species', 'Human'),
-                        "background": getattr(result, 'background', 'Folk Hero'),
-                        "alignment": getattr(result, 'alignment', 'Neutral Good'),
-                        "level": getattr(result, 'level', 1),
-                        "character_classes": getattr(result, 'classes', {'Fighter': 1}),
-                        "backstory": getattr(result, 'backstory', ''),
-                        "abilities": getattr(result, 'ability_scores', {
+                        "name": raw_data.get("name", "Generated Character"),
+                        "species": raw_data.get("species", "Human"),
+                        "background": raw_data.get("background", "Folk Hero"),
+                        "alignment": raw_data.get("alignment", "Neutral Good"),
+                        "level": raw_data.get("level", 1),
+                        "character_classes": raw_data.get("classes", raw_data.get("character_classes", {"Fighter": 1})),
+                        "backstory": raw_data.get("backstory", ""),
+                        "abilities": raw_data.get("ability_scores", raw_data.get("attributes", {
                             "strength": 10, "dexterity": 10, "constitution": 10,
                             "intelligence": 10, "wisdom": 10, "charisma": 10
-                        }),
-                        "armor_class": 10,  # Default values for now
-                        "hit_points": 10,
+                        })),
+                        "armor_class": 10,  # Default for now
+                        "hit_points": 10,   # Default for now
                         "proficiency_bonus": 2,
-                        "skills": {},
-                        "equipment": {}
+                        "skills": raw_data.get("skill_proficiencies", {}),
+                        "equipment": raw_data.get("equipment", {})
                     }
-                else:
-                    # Convert to dict if possible, otherwise handle as dict
-                    if hasattr(result, 'to_dict'):
-                        character_data = result.to_dict()
-                    else:
-                        character_data = result
-                    
-                    # Extract data from the character sheet structure
-                    core_data = character_data.get("core", {})
-                    stats_data = character_data.get("stats", {})
-                    state_data = character_data.get("state", {})
-                    
-                    # Create flattened data structure for database
+                elif core_data and "name" in core_data:
+                    # Use core_data structure
                     db_character_data = {
                         "name": core_data.get("name", "Generated Character"),
                         "species": core_data.get("species", "Human"),
                         "background": core_data.get("background", "Folk Hero"),
-                        "alignment": core_data.get("alignment", "Neutral Good"),
+                        "alignment": " ".join(core_data.get("alignment", ["Neutral", "Good"])) if isinstance(core_data.get("alignment"), list) else core_data.get("alignment", "Neutral Good"),
                         "level": core_data.get("level", 1),
-                        "character_classes": core_data.get("classes", {"Fighter": 1}),
-                        "backstory": core_data.get("backstory", ""),
+                        "character_classes": core_data.get("character_classes", core_data.get("classes", {"Fighter": 1})),
+                        "backstory": core_data.get("personality", {}).get("backstory", core_data.get("backstory", "")),
                         "abilities": core_data.get("ability_scores", {
                             "strength": 10, "dexterity": 10, "constitution": 10,
                             "intelligence": 10, "wisdom": 10, "charisma": 10
                         }),
-                        "armor_class": stats_data.get("armor_class", 10),
-                        "hit_points": stats_data.get("max_hit_points", 10),
-                        "proficiency_bonus": stats_data.get("proficiency_bonus", 2),
-                        "skills": stats_data.get("skills", {}),
-                        "equipment": state_data.get("equipment", {})
+                        "armor_class": 10,  # Default for now
+                        "hit_points": 10,   # Default for now
+                        "proficiency_bonus": 2,
+                        "skills": core_data.get("proficiencies", {}).get("skills", {}),
+                        "equipment": {}
                     }
+                else:
+                    logger.warning(f"Could not extract character data from result structure: {list(character_data.keys()) if isinstance(character_data, dict) else type(character_data)}")
+                    raise Exception("Unable to extract character data from factory result")
                 
                 db_character = CharacterDB.create_character(db, db_character_data)
                 object_id = db_character.id

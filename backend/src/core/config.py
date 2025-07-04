@@ -50,8 +50,8 @@ class Settings(BaseSettings):
     llm_max_retries: int = 3
     llm_temperature: float = 0.7
     
-    # Security Configuration
-    secret_key: str = "your-secret-key-change-this-in-production"
+    # Security Configuration - MUST be provided via environment variables
+    secret_key: Optional[str] = None  # Must be set via SECRET_KEY environment variable
     access_token_expire_minutes: int = 30
     
     # CORS Configuration
@@ -69,10 +69,33 @@ class Settings(BaseSettings):
     log_format: str = "json"  # "json" or "text"
     
     class Config:
-        env_file = ".env"
+        # Do not load from .env files - all secrets must come from host environment
+        env_file = None
         env_file_encoding = "utf-8"
-        extra = "ignore"  # Ignore extra fields from .env
+        extra = "ignore"  # Ignore extra fields from environment
+    
+    def validate_required_settings(self) -> None:
+        """Validate that all required environment variables are set."""
+        missing_vars = []
+        
+        if not self.secret_key:
+            missing_vars.append("SECRET_KEY")
+            
+        if self.llm_provider == "openai" and not self.openai_api_key:
+            missing_vars.append("OPENAI_API_KEY")
+            
+        if self.llm_provider == "anthropic" and not self.anthropic_api_key:
+            missing_vars.append("ANTHROPIC_API_KEY")
+        
+        if missing_vars:
+            raise ValueError(
+                f"Missing required environment variables: {', '.join(missing_vars)}. "
+                "These must be provided via host environment variables."
+            )
 
 
 # Global settings instance
 settings = Settings()
+
+# Validate required settings on import
+settings.validate_required_settings()

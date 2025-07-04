@@ -193,7 +193,7 @@ class OpenAILLMService(LLMService):
         if not self.api_key:
             raise ValueError(
                 "OpenAI API key not provided. Set OPENAI_API_KEY environment variable "
-                "or pass api_key parameter. Create .env file with OPENAI_API_KEY=your_key"
+                "or pass api_key parameter. API key must be provided via host environment."
             )
         
         self.model = model
@@ -682,11 +682,11 @@ def create_llm_service(provider: str = "openai", **kwargs) -> LLMService:
         # Explicit Ollama for testing:
         llm_service = create_llm_service("ollama", model="llama3:8b")
         
-        # OpenAI with .env file:
+        # OpenAI with environment variable:
         llm_service = create_llm_service("openai")
         
-        # Explicit API key:
-        llm_service = create_llm_service("openai", api_key="...")
+        # Explicit API key (example format only):
+        llm_service = create_llm_service("openai", api_key="-key-here")
     """
     if provider.lower() == "ollama":
         return OllamaLLMService(**kwargs)
@@ -774,10 +774,10 @@ OPTION 1: OPENAI (DEFAULT FOR PRODUCTION)
 1. Install required packages:
    pip install openai httpx python-dotenv
 
-2. Set up API key (choose one):
+2. Set up API key (must be provided via host environment):
    a) Environment variable: export OPENAI_API_KEY=your-key
-   b) Add to /etc/environment: OPENAI_API_KEY=your-key
-   c) Create .env file: OPENAI_API_KEY=your-key
+   b) Container runtime: podman run -e OPENAI_API_KEY=your-key
+   c) Add to /etc/environment: OPENAI_API_KEY=your-key
 
 3. Usage:
    llm_service = create_llm_service()  # Uses OpenAI with gpt-4.1-nano-2025-04-14
@@ -828,6 +828,6 @@ RATE LIMITING (OpenAI Tier 1):
 - Comprehensive logging of rate limit status
 
 ENVIRONMENT VARIABLES:
-- OPENAI_API_KEY: Your OpenAI API key (can be in environment or /etc/environment)
-- ANTHROPIC_API_KEY: Your Anthropic API key
+- OPENAI_API_KEY: Your OpenAI API key (must be set as host environment variable)
+- ANTHROPIC_API_KEY: Your Anthropic API key (must be set as host environment variable)
 """

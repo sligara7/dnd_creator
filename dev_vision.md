@@ -242,6 +242,39 @@ Create an AI-powered D&D 5e 2024 character creation system that enables users to
 - **Type support**: Character, monster, NPC, weapon, armor, spell, other_item
 - **Endpoints**: `/api/v2/factory/create`, `/api/v2/factory/evolve`, `/api/v2/factory/types`
 
+#### 18. UNIFIED CATALOG SYSTEM (NEW - HIGH)
+**PRIORITY: HIGH**
+- **Unified item tracking**: Centralized catalog for all items, spells, and equipment across characters
+- **Smart recommendations**: Suggest appropriate items/spells based on character build and level
+- **Cross-character sharing**: Allow characters to access shared catalog of available items
+- **Rarity management**: Track item rarity and availability based on campaign settings
+- **Custom content integration**: Seamlessly integrate custom items/spells into unified catalog
+
+#### 19. ADVANCED SPELL MANAGEMENT (NEW - HIGH)
+**PRIORITY: HIGH**
+- **Spell swapping**: Allow characters to change prepared spells following D&D 5e rules
+- **Spell slot tracking**: Real-time tracking of used/available spell slots by level
+- **Spell progression**: Automatic spell availability as characters level up
+- **Ritual tracking**: Separate tracking for ritual spells and components
+- **Spell customization**: Support for custom spells with proper slot assignments
+- **Known vs Prepared**: Distinguish between spells known and spells prepared for each class
+
+#### 20. DYNAMIC EQUIPMENT MANAGEMENT (NEW - HIGH)
+**PRIORITY: HIGH**
+- **Equipment swapping**: Allow real-time swapping of equipped items between characters or inventory
+- **Smart equipping**: Automatic optimization suggestions for equipment slots
+- **Equipment synergy**: Track equipment combinations and their effects
+- **Enchantment tracking**: Monitor magical item bonuses and their stacking rules
+- **Equipment history**: Track when items were equipped/unequipped for session continuity
+- **Slot validation**: Enforce D&D 5e equipment slot rules and restrictions
+
+**Required Endpoints:**
+- `/api/v2/catalog/*` - Unified catalog management
+- `/api/v2/characters/{id}/spells/swap` - Spell swapping functionality
+- `/api/v2/characters/{id}/spells/prepare` - Spell preparation management
+- `/api/v2/characters/{id}/equipment/swap` - Equipment swapping
+- `/api/v2/characters/{id}/equipment/optimize` - Equipment optimization suggestions
+
 ## MISSING FEATURES TO IMPLEMENT
 
 ### Performance Monitoring System
@@ -330,3 +363,32 @@ The **CharacterCreator** class now includes all required refinement methods:
 - **app.py** - Ready to expose refinement endpoints
 - **Database integration** - Character versioning and iteration tracking
 - **LLM integration** - Advanced prompt engineering for refinements
+
+backend/ (Production Ready)
+├── Core Application Files
+│   ├── app.py (Main FastAPI app)
+│   ├── main.py (Entry point)
+│   └── src/ (Modular source code)
+├── Container Files
+│   ├── Dockerfile (Production container)
+│   ├── .dockerignore (Comprehensive filtering)
+│   └── requirements.txt (Production deps only)
+├── Configuration
+│   ├── .env (Template, no secrets)
+│   └── .env.example (Documentation)
+└── Documentation
+    ├── README.md (Quick start)
+    ├── CONTAINER_DEPLOYMENT.md (Detailed deployment)
+    ├── SECURITY_AUDIT_COMPLETE.md (Security info)
+    └── PRODUCTION_READY.md (Production guide)
+
+# Build container
+podman build -t dnd-char-creator .
+
+# Run with environment variables
+podman run -d \
+  --name dnd-char-creator \
+  -p 8000:8000 \
+  -e OPENAI_API_KEY="your-key" \
+  -e SECRET_KEY="your-secret" \
+  dnd-char-creator

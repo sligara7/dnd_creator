@@ -1,36 +1,3 @@
-# Equipment Swap Request Model
-class EquipmentSwapRequest(BaseModel):
-    character_id: str = Field(..., description="Character UUID")
-    from_item_id: str = Field(..., description="UUID of item to unequip")
-    to_item_id: str = Field(..., description="UUID of item to equip")
-    slot: Optional[str] = Field(None, description="Equipment slot (optional)")
-    skip_validation: bool = Field(False, description="Skip validation checks")
-
-# Equipment swap endpoint
-@unified_catalog_router.post("/swap/equipment")
-async def swap_equipment(
-    request: EquipmentSwapRequest,
-    allocation_service: AllocationService = Depends(get_allocation_service)
-):
-    """Swap equipped items for a character (unequip one, equip another)."""
-    try:
-        result = allocation_service.swap_equipment(
-            character_id=request.character_id,
-            from_item_id=request.from_item_id,
-            to_item_id=request.to_item_id,
-            slot=request.slot,
-            skip_validation=request.skip_validation
-        )
-        return {"status": "success", "data": result}
-    except ValueError as e:
-        logger.info(f"Equipment swap validation failed: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
-    except RuntimeError as e:
-        logger.error(f"Database error during equipment swap: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    except Exception as e:
-        logger.error(f"Unexpected error during equipment swap: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 """
 API endpoints for the unified item catalog system.
 Provides REST endpoints for searching, managing, and accessing the unified catalog.
@@ -40,6 +7,25 @@ from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, Field
 import logging
+
+logger = logging.getLogger(__name__)
+
+# Create router
+unified_catalog_router = APIRouter(prefix="/api/v2/catalog", tags=["catalog"])
+
+# Equipment Swap Request Model
+class EquipmentSwapRequest(BaseModel):
+    character_id: str = Field(..., description="Character UUID")
+    from_item_id: str = Field(..., description="UUID of item to unequip")
+    to_item_id: str = Field(..., description="UUID of item to equip")
+    slot: Optional[str] = Field(None, description="Equipment slot (optional)")
+    skip_validation: bool = Field(False, description="Skip validation checks")
+
+# Placeholder endpoint for now
+@unified_catalog_router.get("/status")
+async def catalog_status():
+    """Get catalog status."""
+    return {"status": "active", "message": "Unified catalog API is running"}
 
 from src.services.unified_catalog_service import UnifiedCatalogService
 from src.services.allocation_service import AllocationService

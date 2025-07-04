@@ -1,0 +1,124 @@
+{
+  "character_generation": [
+    {
+      "concept": "A crystal-powered artificer from a steampunk sky city",
+      "success": true,
+      "character_name": "Aeris Lumina",
+      "species": "Gnome (Deep Gnome)",
+      "classes": {
+        "Artificer": 3
+      },
+      "backstory_length": 0,
+      "generation_time": 7.372534275054932,
+      "has_equipment": true,
+      "has_spells": false,
+      "creativity_score": 4
+    },
+    {
+      "concept": "A time-traveling druid who speaks with extinct creatures",
+      "success": true,
+      "character_name": "Unknown",
+      "species": "Unknown",
+      "classes": {},
+      "backstory_length": 0,
+      "generation_time": 4.912938356399536,
+      "has_equipment": false,
+      "has_spells": false,
+      "creativity_score": 0
+    },
+    {
+      "concept": "A shadow dancer who weaves darkness into magical weapons",
+      "success": true,
+      "character_name": "Shadow Dancer",
+      "species": "Half-Elf",
+      "classes": {
+        "Rogue": 3
+      },
+      "backstory_length": 0,
+      "generation_time": 7.067301034927368,
+      "has_equipment": true,
+      "has_spells": false,
+      "creativity_score": 5
+    },
+    {
+      "concept": "A dragon-touched healer with scales that change with emotions",
+      "success": true,
+      "character_name": "Unknown",
+      "species": "Unknown",
+      "classes": {},
+      "backstory_length": 0,
+      "generation_time": 4.913421869277954,
+      "has_equipment": false,
+      "has_spells": false,
+      "creativity_score": 0
+    },
+    {
+      "concept": "A void monk who fights by erasing parts of reality",
+      "success": true,
+      "character_name": "Void Monk",
+      "species": "Custom Void Beings",
+      "classes": {
+        "Monk": 3
+      },
+      "backstory_length": 0,
+      "generation_time": 7.1941070556640625,
+      "has_equipment": true,
+      "has_spells": false,
+      "creativity_score": 6
+    }
+  ],
+  "content_creation": [
+    {
+      "type": "weapon",
+      "success": true,
+      "creation_time": 0.007370948791503906,
+      "has_data": true,
+      "complexity": 209
+    },
+    {
+      "type": "armor",
+      "success": true,
+      "creation_time": 0.006201505661010742,
+      "has_data": true,
+      "complexity": 207
+    },
+    {
+      "type": "spell",
+      "success": true,
+      "creation_time": 0.006247282028198242,
+      "has_data": true,
+      "complexity": 213
+    }
+  ],
+  "api_endpoints": [
+    {
+      "endpoint": "/health",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "response_size": 90
+    },
+    {
+      "endpoint": "/api/v2/factory/create",
+      "method": "POST",
+      "status_code": 200,
+      "success": true,
+      "response_size": 244
+    },
+    {
+      "endpoint": "/api/v2/characters",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "response_size": 2
+    },
+    {
+      "endpoint": "/openapi.json",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "response_size": 43806
+    }
+  ],
+  "test_timestamp": "2025-07-04 15:56:41"
+}

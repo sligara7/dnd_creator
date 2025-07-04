@@ -1,0 +1,114 @@
+{
+  "creative_character_generation": {
+    "concept_1": {
+      "success": true,
+      "character_id": null,
+      "generation_time": 8.158026218414307,
+      "character_name": "Stormcrystal Artificer",
+      "species": "Gnome",
+      "classes": {},
+      "backstory_length": 0,
+      "has_custom_content": true,
+      "verbose_logs": 15
+    },
+    "concept_2": {
+      "success": true,
+      "character_id": null,
+      "generation_time": 8.310508966445923,
+      "character_name": "Temporal Echo Druid",
+      "species": "Extinct Creature Communicator",
+      "classes": {},
+      "backstory_length": 0,
+      "has_custom_content": true,
+      "verbose_logs": 15
+    },
+    "concept_3": {
+      "success": true,
+      "character_id": null,
+      "generation_time": 7.663102388381958,
+      "character_name": "Shadow Dancer",
+      "species": "Half-Elf",
+      "classes": {},
+      "backstory_length": 0,
+      "has_custom_content": true,
+      "verbose_logs": 15
+    },
+    "concept_4": {
+      "success": true,
+      "character_id": null,
+      "generation_time": 8.601664304733276,
+      "character_name": "Emberlyn",
+      "species": "Dragon-Touched Humanoid",
+      "classes": {},
+      "backstory_length": 0,
+      "has_custom_content": true,
+      "verbose_logs": 15
+    },
+    "concept_5": {
+      "success": true,
+      "character_id": null,
+      "generation_time": 4.810207843780518,
+      "character_name": "Unknown",
+      "species": "Unknown",
+      "classes": {},
+      "backstory_length": 0,
+      "has_custom_content": false,
+      "verbose_logs": 0
+    }
+  },
+  "iterative_refinement": {
+    "success": false,
+    "error": "No characters available"
+  },
+  "custom_content_creation": {
+    "weapon": {
+      "success": true,
+      "object_id": null,
+      "creation_time": 0.0024831295013427734,
+      "name": "Unknown",
+      "has_mechanics": false,
+      "has_lore": false,
+      "complexity": 237
+    },
+    "armor": {
+      "success": true,
+      "object_id": null,
+      "creation_time": 0.003444194793701172,
+      "name": "Unknown",
+      "has_mechanics": false,
+      "has_lore": false,
+      "complexity": 237
+    },
+    "spell": {
+      "success": true,
+      "object_id": null,
+      "creation_time": 0.0026404857635498047,
+      "name": "Unknown",
+      "has_mechanics": false,
+      "has_lore": false,
+      "complexity": 254
+    },
+    "item": {
+      "success": false,
+      "error": "{\"detail\":\"Invalid creation type: item\"}"
+    }
+  },
+  "character_validation_sheets": {
+    "success": false,
+    "error": "No characters available"
+  },
+  "advanced_catalog_management": {
+    "spells": {
+      "success": false,
+      "error": "{\"detail\":\"Not Found\"}"
+    },
+    "equipment": {
+      "success": false,
+      "error": "{\"detail\":\"Not Found\"}"
+    },
+    "species": {
+      "success": false,
+      "error": "{\"detail\":\"Not Found\"}"
+    }
+  }
+}

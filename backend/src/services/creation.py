@@ -1121,18 +1121,19 @@ Match the character concept exactly. Return complete JSON only."""
                 character_data["spells_known"] = []
                 return character_data
             
+            # Calculate proper number of spells based on D&D 5e rules
+            spell_count = self._calculate_spells_known_for_level(character_data)
+            
             # Get appropriate spells for this character (prioritizes existing D&D spells)
-            suggested_spells = get_appropriate_spells_for_character(character_data, 15)
+            suggested_spells = get_appropriate_spells_for_character(character_data, spell_count)
             
             # If character already has spells, validate and enhance them
             existing_spells = character_data.get("spells_known", [])
             
-            # For custom spellcasters with no initial spells, ensure they get some spells
-            if not existing_spells and level >= 3:
-                # Estimate spells known based on level (like a wizard/sorcerer hybrid)
-                spells_for_level = min(level + 2, 15)  # Level 11 gets ~13 spells
-                existing_spells = suggested_spells[:spells_for_level]
-                logger.info(f"Auto-populated {len(existing_spells)} spells for level {level} custom spellcaster")
+            # For spellcasters with no initial spells, populate based on D&D 5e rules
+            if not existing_spells and spell_count > 0:
+                existing_spells = suggested_spells[:spell_count]
+                logger.info(f"Auto-populated {len(existing_spells)} spells for level {level} spellcaster (expected: {spell_count})")
             
             # Validate and enhance existing spells
             
@@ -1176,7 +1177,8 @@ Match the character concept exactly. Return complete JSON only."""
                 if suggested_spell["name"] not in existing_spell_names:
                     enhanced_spells.append(suggested_spell)
                     logger.info(f"Added suggested D&D 5e spell: {suggested_spell['name']}")
-                    if len(enhanced_spells) >= 12:  # Reasonable spell limit
+                    if len(enhanced_spells) >= spell_count:  # Use calculated spell count
+                        break
                         break
             
             character_data["spells_known"] = enhanced_spells
@@ -1193,12 +1195,251 @@ Match the character concept exactly. Return complete JSON only."""
             
             logger.info(f"Enhanced character with {len(enhanced_spells)} spells ({dnd_spells} D&D 5e spells, {custom_spells} custom spells)")
             
+            # PRIORITY 5: For custom classes, populate custom spell fields
+            self._populate_custom_spell_fields(character_data)
+            
             return character_data
             
         except Exception as e:
             logger.warning(f"Spell enhancement failed: {e}")
             return character_data
     
+    def _calculate_spells_known_for_level(self, character_data: Dict[str, Any]) -> int:
+        """
+        Calculate the proper number of spells a character should know based on D&D 5e rules.
+        """
+        classes = character_data.get("classes", {})
+        level = character_data.get("level", 1)
+        
+        max_spells = 0
+        
+        for class_name, class_level in classes.items():
+            class_lower = class_name.lower()
+            
+            # Wizard spell progression (spellbook)
+            if "wizard" in class_lower or any(keyword in class_lower for keyword in ["mage", "arcane", "scholar"]):
+                # Wizards: 6 starting spells + 2 per level
+                wizard_spells = 6 + (class_level - 1) * 2
+                max_spells = max(max_spells, wizard_spells)
+                logger.info(f"Wizard-type class '{class_name}' level {class_level}: {wizard_spells} spells")
+            
+            # Sorcerer spell progression (spells known)
+            elif "sorcerer" in class_lower or any(keyword in class_lower for keyword in ["chaos", "wild", "draconic"]):
+                # Sorcerer spells known by level (D&D 5e table)
+                sorcerer_spells_by_level = {
+                    1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7, 7: 8, 8: 9, 9: 10, 
+                    10: 11, 11: 12, 12: 12, 13: 13, 14: 13, 15: 14, 16: 14, 
+                    17: 15, 18: 15, 19: 15, 20: 15
+                }
+                sorcerer_spells = sorcerer_spells_by_level.get(min(class_level, 20), 15)
+                max_spells = max(max_spells, sorcerer_spells)
+                logger.info(f"Sorcerer-type class '{class_name}' level {class_level}: {sorcerer_spells} spells")
+            
+            # Warlock spell progression (limited spells known)
+            elif "warlock" in class_lower or any(keyword in class_lower for keyword in ["patron", "pact", "fiend", "fey"]):
+                # Warlock spells known by level
+                warlock_spells_by_level = {
+                    1: 1, 2: 2, 3: 2, 4: 2, 5: 3, 6: 3, 7: 4, 8: 4, 9: 5, 
+                    10: 5, 11: 5, 12: 5, 13: 6, 14: 6, 15: 6, 16: 6, 
+                    17: 7, 18: 7, 19: 7, 20: 7
+                }
+                warlock_spells = warlock_spells_by_level.get(min(class_level, 20), 7)
+                max_spells = max(max_spells, warlock_spells)
+                logger.info(f"Warlock-type class '{class_name}' level {class_level}: {warlock_spells} spells")
+            
+            # Bard spell progression (spells known)
+            elif "bard" in class_lower or any(keyword in class_lower for keyword in ["song", "music", "lore"]):
+                # Bard spells known by level
+                bard_spells_by_level = {
+                    1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7, 7: 8, 8: 9, 9: 10, 
+                    10: 10, 11: 11, 12: 11, 13: 12, 14: 12, 15: 13, 16: 13, 
+                    17: 14, 18: 14, 19: 15, 20: 15
+                }
+                bard_spells = bard_spells_by_level.get(min(class_level, 20), 15)
+                max_spells = max(max_spells, bard_spells)
+                logger.info(f"Bard-type class '{class_name}' level {class_level}: {bard_spells} spells")
+            
+            # Ranger/Paladin spell progression (limited spells known)
+            elif any(keyword in class_lower for keyword in ["ranger", "paladin", "hunter", "knight"]):
+                # Half-casters get fewer spells
+                if class_level >= 2:  # They start getting spells at level 2
+                    half_caster_level = max(1, (class_level - 1) // 2)
+                    half_caster_spells = min(half_caster_level + 1, 11)  # Max ~11 spells
+                    max_spells = max(max_spells, half_caster_spells)
+                    logger.info(f"Half-caster class '{class_name}' level {class_level}: {half_caster_spells} spells")
+            
+            # Custom spellcaster classes (use wizard-like progression for powerful customs)
+            elif any(keyword in class_lower for keyword in ["mancer", "witch", "mystic", "elementalist", "void", "nether", "shadow"]):
+                # Custom magical classes get wizard-like progression
+                custom_spells = 6 + (class_level - 1) * 2
+                max_spells = max(max_spells, custom_spells)
+                logger.info(f"Custom spellcaster class '{class_name}' level {class_level}: {custom_spells} spells (wizard-like progression)")
+            
+            # Druid/Cleric (prepared spells, but we'll give them a good number to know)
+            elif any(keyword in class_lower for keyword in ["druid", "cleric", "priest", "nature"]):
+                # These classes prepare spells, but for our purposes give them many to "know"
+                prepared_equivalent = class_level + 10  # Generous spell knowledge
+                max_spells = max(max_spells, prepared_equivalent)
+                logger.info(f"Divine/Nature caster class '{class_name}' level {class_level}: {prepared_equivalent} spells")
+        
+        # Ensure minimum spells for any spellcaster
+        if max_spells == 0 and self._is_spellcaster(character_data):
+            max_spells = max(2, level // 2)  # Minimum progression for unknown spellcasters
+            logger.info(f"Default spellcaster progression: {max_spells} spells for level {level}")
+        
+        return max_spells
+    
+    def _populate_custom_spell_fields(self, character_data: Dict[str, Any]) -> None:
+        """
+        Populate custom spell fields for custom classes with thematic spells.
+        """
+        try:
+            classes = character_data.get("classes", {})
+            level = character_data.get("level", 1)
+            
+            # Check for custom classes with specific themes
+            for class_name, class_level in classes.items():
+                class_lower = class_name.lower()
+                
+                # Determine custom spell field based on class theme
+                custom_field = None
+                spell_theme = None
+                
+                if any(keyword in class_lower for keyword in ["void", "nether", "shadow", "darkness", "abyss"]):
+                    custom_field = "custom_void_spells"
+                    spell_theme = "void/shadow"
+                elif any(keyword in class_lower for keyword in ["fire", "flame", "inferno", "phoenix"]):
+                    custom_field = "custom_fire_spells"
+                    spell_theme = "fire"
+                elif any(keyword in class_lower for keyword in ["ice", "frost", "winter", "cryo"]):
+                    custom_field = "custom_ice_spells"
+                    spell_theme = "ice/frost"
+                elif any(keyword in class_lower for keyword in ["nature", "plant", "growth", "druid"]):
+                    custom_field = "custom_nature_spells"
+                    spell_theme = "nature"
+                elif any(keyword in class_lower for keyword in ["time", "chrono", "temporal"]):
+                    custom_field = "custom_time_spells"
+                    spell_theme = "time"
+                elif any(keyword in class_lower for keyword in ["blood", "crimson", "sacrifice"]):
+                    custom_field = "custom_blood_spells"
+                    spell_theme = "blood"
+                
+                if custom_field and spell_theme:
+                    # Ensure the custom field exists
+                    if custom_field not in character_data:
+                        character_data[custom_field] = []
+                    
+                    # Calculate number of custom spells based on level
+                    spell_count = min(max(1, class_level // 2), 5)  # 1-5 spells based on level
+                    
+                    # Create thematic custom spells if the field is empty
+                    if not character_data[custom_field]:
+                        custom_spells = self._create_thematic_spells(spell_theme, spell_count, class_level)
+                        character_data[custom_field] = custom_spells
+                        logger.info(f"Created {len(custom_spells)} custom {spell_theme} spells for {class_name}")
+                    
+        except Exception as e:
+            logger.warning(f"Custom spell field population failed: {e}")
+    
+    def _create_thematic_spells(self, theme: str, count: int, max_level: int) -> List[Dict[str, Any]]:
+        """
+        Create thematic custom spells for a specific theme.
+        """
+        spell_templates = {
+            "void/shadow": [
+                {"name": "Void Bolt", "level": 1, "school": "evocation", 
+                 "description": "Launch a bolt of pure void energy that deals necrotic damage."},
+                {"name": "Shadow Step", "level": 2, "school": "conjuration", 
+                 "description": "Teleport through shadows to an unoccupied space within range."},
+                {"name": "Darkness Shroud", "level": 2, "school": "illusion", 
+                 "description": "Wrap yourself in supernatural darkness, gaining stealth advantages."},
+                {"name": "Void Prison", "level": 3, "school": "conjuration", 
+                 "description": "Trap an enemy in a prison of swirling void energy."},
+                {"name": "Shadow Mastery", "level": 4, "school": "necromancy", 
+                 "description": "Command shadows to attack multiple enemies with necrotic energy."},
+            ],
+            "fire": [
+                {"name": "Flame Lance", "level": 1, "school": "evocation", 
+                 "description": "Project a lance of concentrated fire that pierces through enemies."},
+                {"name": "Burning Aura", "level": 2, "school": "evocation", 
+                 "description": "Surround yourself with flames that damage nearby enemies."},
+                {"name": "Phoenix Flight", "level": 3, "school": "transmutation", 
+                 "description": "Transform into fire and fly, leaving a trail of flames."},
+                {"name": "Inferno Storm", "level": 4, "school": "evocation", 
+                 "description": "Create a massive storm of fire in a large area."},
+                {"name": "Phoenix Rebirth", "level": 5, "school": "necromancy", 
+                 "description": "Upon death, resurrect in a burst of flames."},
+            ],
+            "ice/frost": [
+                {"name": "Ice Shard", "level": 1, "school": "evocation", 
+                 "description": "Launch sharp shards of ice at your enemies."},
+                {"name": "Frost Armor", "level": 2, "school": "abjuration", 
+                 "description": "Cover yourself in protective ice that damages attackers."},
+                {"name": "Frozen Ground", "level": 3, "school": "transmutation", 
+                 "description": "Turn the ground to ice, slowing and damaging enemies."},
+                {"name": "Blizzard", "level": 4, "school": "evocation", 
+                 "description": "Create a localized blizzard that obscures and damages."},
+                {"name": "Absolute Zero", "level": 5, "school": "evocation", 
+                 "description": "Freeze enemies solid with supernatural cold."},
+            ],
+            "nature": [
+                {"name": "Thorn Whip", "level": 1, "school": "transmutation", 
+                 "description": "Create a whip of thorny vines to strike and pull enemies."},
+                {"name": "Bark Skin", "level": 2, "school": "transmutation", 
+                 "description": "Your skin becomes bark-like, increasing natural armor."},
+                {"name": "Entangle", "level": 3, "school": "conjuration", 
+                 "description": "Cause plants to grow and restrain enemies in an area."},
+                {"name": "Tree Form", "level": 4, "school": "transmutation", 
+                 "description": "Transform into a mighty tree with increased health and damage."},
+                {"name": "Nature's Wrath", "level": 5, "school": "evocation", 
+                 "description": "Call upon nature itself to devastate your enemies."},
+            ],
+            "time": [
+                {"name": "Time Skip", "level": 1, "school": "transmutation", 
+                 "description": "Skip forward a few seconds, avoiding attacks."},
+                {"name": "Slow", "level": 2, "school": "transmutation", 
+                 "description": "Slow down time for enemies, reducing their speed."},
+                {"name": "Temporal Shield", "level": 3, "school": "abjuration", 
+                 "description": "Create a barrier that exists slightly outside of time."},
+                {"name": "Time Stop", "level": 4, "school": "transmutation", 
+                 "description": "Stop time briefly, allowing you to act while others cannot."},
+                {"name": "Temporal Mastery", "level": 5, "school": "transmutation", 
+                 "description": "Gain complete control over the flow of time in combat."},
+            ],
+            "blood": [
+                {"name": "Blood Dart", "level": 1, "school": "necromancy", 
+                 "description": "Use your own blood as a projectile weapon."},
+                {"name": "Crimson Bond", "level": 2, "school": "necromancy", 
+                 "description": "Create a blood connection that shares damage."},
+                {"name": "Blood Sacrifice", "level": 3, "school": "necromancy", 
+                 "description": "Sacrifice health to dramatically increase spell power."},
+                {"name": "Hemorrhage", "level": 4, "school": "necromancy", 
+                 "description": "Cause enemies to bleed uncontrollably."},
+                {"name": "Blood Mastery", "level": 5, "school": "necromancy", 
+                 "description": "Control the blood of enemies, commanding their actions."},
+            ]
+        }
+        
+        if theme not in spell_templates:
+            return []
+        
+        # Get spells appropriate for the level
+        available_spells = [spell for spell in spell_templates[theme] 
+                          if spell["level"] <= min(max_level // 2 + 1, 5)]
+        
+        # Take the requested number of spells
+        selected_spells = available_spells[:count]
+        
+        # Add source information
+        for spell in selected_spells:
+            spell["source"] = "Custom"
+            spell["casting_time"] = "1 action"
+            spell["range"] = "60 feet"
+            spell["components"] = "V, S"
+            spell["duration"] = "Instantaneous"
+        
+        return selected_spells
+
     def _enhance_character_weapons(self, character_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Enhance character with appropriate D&D 5e weapons based on their class and level.

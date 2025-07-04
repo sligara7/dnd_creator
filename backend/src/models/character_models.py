@@ -309,6 +309,15 @@ class CharacterState:
         self.attuned_items: List[str] = []
         self.max_attunement_slots: int = 3
         
+        # UUID-Based Allocated Items from Unified Catalog
+        self.allocated_spells: Dict[str, List[Dict[str, Any]]] = {
+            "spells_known": [], "spells_prepared": []
+        }
+        self.allocated_equipment: Dict[str, List[Dict[str, Any]]] = {
+            "inventory": [], "equipped": []
+        }
+        self.all_allocated_items: List[Dict[str, Any]] = []
+        
         # Currency
         self.currency: Dict[str, int] = {
             "copper": 0, "silver": 0, "electrum": 0, "gold": 0, "platinum": 0
@@ -456,6 +465,10 @@ class CharacterState:
                 "magical_items": self.magical_items,
                 "attuned": self.attuned_items
             },
+            # UUID-based allocated items from unified catalog
+            "allocated_spells": self.allocated_spells,
+            "allocated_equipment": self.allocated_equipment,
+            "all_allocated_items": self.all_allocated_items,
             "currency": self.currency,
             "conditions": {
                 "active": self.active_conditions,

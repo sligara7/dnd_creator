@@ -366,6 +366,9 @@ class Character(Base):
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "is_active": self.is_active
         }
+    
+    # Relationships
+    item_access = relationship("CharacterItemAccess", back_populates="character", cascade="all, delete-orphan")
 
 
 class CharacterSession(Base):
@@ -429,6 +432,129 @@ def register_custom_item(db: Session, name: str, item_type: str, description: st
     db.refresh(db_item)
     return db_item
 
+
+# ============================================================================
+# UNIFIED ITEM CATALOG SYSTEM - ALL ITEMS GET UUIDS
+# ============================================================================
+
+class UnifiedItem(Base):
+    """
+    Unified table for ALL items (spells, weapons, armor, equipment) - both traditional and custom.
+    Every item gets a UUID for consistent tracking and relationships.
+    """
+    __tablename__ = "unified_items"
+    
+    # Primary identification
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4, index=True)
+    name = Column(String(100), nullable=False, index=True)
+    item_type = Column(String(50), nullable=False, index=True)  # 'spell', 'weapon', 'armor', 'item', 'tool', 'consumable'
+    item_subtype = Column(String(50), nullable=True, index=True)  # 'simple_weapon', 'martial_weapon', 'light_armor', etc.
+    source_type = Column(String(20), nullable=False, index=True)  # 'official', 'custom', or 'llm_generated'
+    source_info = Column(String(500), nullable=True)  # Extra provenance or LLM prompt info
+    llm_metadata = Column(JSON, nullable=True)  # LLM-specific metadata (model, prompt, etc.)
+    
+    # Content and properties
+    content_data = Column(JSON, nullable=False)  # All item properties, stats, descriptions
+    short_description = Column(String(500), nullable=True)  # Brief description for catalog views
+    
+    # D&D 5e specific metadata
+    rarity = Column(String(20), nullable=True, index=True)  # 'common', 'uncommon', 'rare', 'very_rare', 'legendary', 'artifact'
+    requires_attunement = Column(Boolean, default=False)
+    spell_level = Column(Integer, nullable=True, index=True)  # For spells: 0 for cantrips, 1-9 for leveled spells
+    spell_school = Column(String(30), nullable=True, index=True)  # For spells: 'evocation', 'conjuration', etc.
+    class_restrictions = Column(JSON, nullable=True)  # Array of classes that can use this item ['wizard', 'sorcerer']
+    
+    # Economics and practical data
+    value_gp = Column(Integer, nullable=True)  # Value in gold pieces
+    weight_lbs = Column(String(10), nullable=True)  # Weight (can be fractional like "0.5")
+    
+    # Metadata and versioning
+    created_by = Column(String(100), nullable=True)  # Creator (for custom items)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+    is_public = Column(Boolean, default=True)  # Most official items are public
+    version = Column(Integer, default=1)  # For tracking updates to items
+    
+    # Source attribution
+    source_book = Column(String(100), nullable=True)  # 'Player\'s Handbook 2024', 'Custom Creation', etc.
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for API responses."""
+        return {
+            "id": str(self.id),
+            "name": self.name,
+            "item_type": self.item_type,
+            "item_subtype": self.item_subtype,
+            "source_type": self.source_type,
+            "source_info": self.source_info,
+            "llm_metadata": self.llm_metadata,
+            "content_data": self.content_data,
+            "short_description": self.short_description,
+            "rarity": self.rarity,
+            "requires_attunement": self.requires_attunement,
+            "spell_level": self.spell_level,
+            "spell_school": self.spell_school,
+            "class_restrictions": self.class_restrictions,
+            "value_gp": self.value_gp,
+            "weight_lbs": self.weight_lbs,
+            "created_by": self.created_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "is_active": self.is_active,
+            "is_public": self.is_public,
+            "version": self.version,
+            "source_book": self.source_book
+        }
+
+
+class CharacterItemAccess(Base):
+    """
+    Junction table tracking which items a character has access to (spells known, equipment owned, etc.).
+    This replaces the old system of storing item lists directly in character data.
+    """
+    __tablename__ = "character_item_access"
+    
+    # Composite primary key
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    character_id = Column(String(36), ForeignKey("characters.id"), nullable=False, index=True)
+    item_id = Column(GUID(), ForeignKey("unified_items.id"), nullable=False, index=True)
+    
+    # Access type and status
+    access_type = Column(String(30), nullable=False, index=True)  # 'spells_known', 'spells_prepared', 'inventory', 'equipped'
+    access_subtype = Column(String(30), nullable=True)  # 'main_hand', 'off_hand', 'armor', 'attuned', etc.
+    quantity = Column(Integer, default=1)  # For stackable items
+    
+    # Acquisition and management
+    acquired_at = Column(DateTime, default=datetime.utcnow)
+    acquired_method = Column(String(50), nullable=True)  # 'character_creation', 'level_up', 'purchase', 'loot', 'craft'
+    is_active = Column(Boolean, default=True)  # Can be deactivated without deletion
+    
+    # Character-specific customization
+    custom_properties = Column(JSON, nullable=True)  # Character-specific modifications to the item
+    notes = Column(Text, nullable=True)  # Player notes about this specific item instance
+    
+    # Relationships
+    character = relationship("Character", back_populates="item_access")
+    item = relationship("UnifiedItem")
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for API responses."""
+        return {
+            "id": str(self.id),
+            "character_id": str(self.character_id),
+            "item_id": str(self.item_id),
+            "access_type": self.access_type,
+            "access_subtype": self.access_subtype,
+            "quantity": self.quantity,
+            "acquired_at": self.acquired_at.isoformat() if self.acquired_at else None,
+            "acquired_method": self.acquired_method,
+            "is_active": self.is_active,
+            "custom_properties": self.custom_properties,
+            "notes": self.notes,
+            "item": self.item.to_dict() if self.item else None
+        }
+
 def register_custom_npc(db: Session, name: str, npc_type: str, description: str = "", stats: Optional[Dict[str, Any]] = None, challenge_rating: Optional[float] = None, created_by: str = "dungeon_master", is_public: bool = False) -> CustomContent:
     """
     Register a custom NPC in the CustomContent table, with CR support.
@@ -484,6 +610,407 @@ def register_custom_creature(db: Session, name: str, creature_type: str, descrip
     db.commit()
     db.refresh(db_creature)
     return db_creature
+
+# ============================================================================
+# CONTENT CATALOG TABLES - FOR SPELL/EQUIPMENT MANAGEMENT
+# ============================================================================
+
+class SpellCatalog(Base):
+    """
+    Database model for all spells (traditional D&D and custom/generated).
+    Provides a unified catalog for spell management and character assignment.
+    """
+    __tablename__ = "spell_catalog"
+    
+    id = Column(String(36), primary_key=True, index=True)
+    name = Column(String(100), nullable=False, index=True)
+    
+    # Spell properties
+    level = Column(Integer, nullable=False, index=True)  # 0-9 (0 = cantrip)
+    school = Column(String(50), nullable=False, index=True)  # evocation, illusion, etc.
+    casting_time = Column(String(100), nullable=False)
+    spell_range = Column(String(100), nullable=False)
+    components = Column(String(200), nullable=False)  # V, S, M
+    duration = Column(String(100), nullable=False)
+    concentration = Column(Boolean, default=False)
+    ritual = Column(Boolean, default=False)
+    
+    # Content
+    description = Column(Text, nullable=False)
+    higher_levels = Column(Text, nullable=True)  # At higher levels description
+    
+    # Class compatibility (JSON array of class names)
+    compatible_classes = Column(JSON, nullable=False, default=list)
+    
+    # Source information
+    source = Column(String(50), nullable=False, index=True)  # "D&D 5e Core", "Custom", "Generated"
+    source_book = Column(String(100), nullable=True)  # PHB, XGE, etc.
+    page_number = Column(Integer, nullable=True)
+    
+    # Metadata
+    created_by = Column(String(100), nullable=True)  # For custom spells
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+    is_homebrew = Column(Boolean, default=False)
+    
+    # Custom spell theme (for generated spells)
+    spell_theme = Column(String(50), nullable=True)  # "void", "fire", "nature", etc.
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert spell to dictionary format."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "level": self.level,
+            "school": self.school,
+            "casting_time": self.casting_time,
+            "range": self.spell_range,
+            "components": self.components,
+            "duration": self.duration,
+            "concentration": self.concentration,
+            "ritual": self.ritual,
+            "description": self.description,
+            "higher_levels": self.higher_levels,
+            "compatible_classes": self.compatible_classes,
+            "source": self.source,
+            "source_book": self.source_book,
+            "page_number": self.page_number,
+            "created_by": self.created_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "is_active": self.is_active,
+            "is_homebrew": self.is_homebrew,
+            "spell_theme": self.spell_theme
+        }
+
+
+class WeaponCatalog(Base):
+    """
+    Database model for all weapons (traditional D&D and custom/generated).
+    Provides a unified catalog for weapon management and character assignment.
+    """
+    __tablename__ = "weapon_catalog"
+    
+    id = Column(String(36), primary_key=True, index=True)
+    name = Column(String(100), nullable=False, index=True)
+    
+    # Weapon properties
+    weapon_type = Column(String(50), nullable=False, index=True)  # "simple", "martial"
+    weapon_category = Column(String(50), nullable=False, index=True)  # "melee", "ranged"
+    damage_dice = Column(String(20), nullable=False)  # "1d8", "2d6", etc.
+    damage_type = Column(String(20), nullable=False)  # "slashing", "piercing", "bludgeoning"
+    
+    # Optional properties (JSON array)
+    properties = Column(JSON, nullable=False, default=list)  # ["finesse", "light", "versatile"]
+    
+    # Physical attributes
+    weight = Column(Integer, nullable=True)  # in pounds
+    cost = Column(String(20), nullable=True)  # "15 gp", "2 sp", etc.
+    
+    # Range (for ranged weapons)
+    range_normal = Column(Integer, nullable=True)  # normal range in feet
+    range_long = Column(Integer, nullable=True)    # long range in feet
+    
+    # Versatile damage (for versatile weapons)
+    versatile_damage = Column(String(20), nullable=True)  # "1d10" for longsword
+    
+    # Description and lore
+    description = Column(Text, nullable=True)
+    
+    # Source information
+    source = Column(String(50), nullable=False, index=True)  # "D&D 5e Core", "Custom", "Generated"
+    source_book = Column(String(100), nullable=True)  # PHB, XGE, etc.
+    page_number = Column(Integer, nullable=True)
+    
+    # Metadata
+    created_by = Column(String(100), nullable=True)  # For custom weapons
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+    is_homebrew = Column(Boolean, default=False)
+    
+    # Rarity and magic
+    rarity = Column(String(20), default="common")  # common, uncommon, rare, etc.
+    is_magical = Column(Boolean, default=False)
+    requires_attunement = Column(Boolean, default=False)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert weapon to dictionary format."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "weapon_type": self.weapon_type,
+            "weapon_category": self.weapon_category,
+            "damage_dice": self.damage_dice,
+            "damage_type": self.damage_type,
+            "properties": self.properties,
+            "weight": self.weight,
+            "cost": self.cost,
+            "range_normal": self.range_normal,
+            "range_long": self.range_long,
+            "versatile_damage": self.versatile_damage,
+            "description": self.description,
+            "source": self.source,
+            "source_book": self.source_book,
+            "page_number": self.page_number,
+            "created_by": self.created_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "is_active": self.is_active,
+            "is_homebrew": self.is_homebrew,
+            "rarity": self.rarity,
+            "is_magical": self.is_magical,
+            "requires_attunement": self.requires_attunement
+        }
+
+
+class ArmorCatalog(Base):
+    """
+    Database model for all armor (traditional D&D and custom/generated).
+    Provides a unified catalog for armor management and character assignment.
+    """
+    __tablename__ = "armor_catalog"
+    
+    id = Column(String(36), primary_key=True, index=True)
+    name = Column(String(100), nullable=False, index=True)
+    
+    # Armor properties
+    armor_type = Column(String(20), nullable=False, index=True)  # "light", "medium", "heavy", "shield"
+    armor_class = Column(String(20), nullable=False)  # "11 + Dex mod", "18", etc.
+    
+    # Requirements and limitations
+    strength_requirement = Column(Integer, nullable=True)  # Minimum Str for heavy armor
+    stealth_disadvantage = Column(Boolean, default=False)
+    max_dex_bonus = Column(Integer, nullable=True)  # For medium/heavy armor
+    
+    # Physical attributes
+    weight = Column(Integer, nullable=True)  # in pounds
+    cost = Column(String(20), nullable=True)  # "1,500 gp", "10 gp", etc.
+    
+    # Description and lore
+    description = Column(Text, nullable=True)
+    
+    # Source information
+    source = Column(String(50), nullable=False, index=True)  # "D&D 5e Core", "Custom", "Generated"
+    source_book = Column(String(100), nullable=True)  # PHB, XGE, etc.
+    page_number = Column(Integer, nullable=True)
+    
+    # Metadata
+    created_by = Column(String(100), nullable=True)  # For custom armor
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+    is_homebrew = Column(Boolean, default=False)
+    
+    # Rarity and magic
+    rarity = Column(String(20), default="common")  # common, uncommon, rare, etc.
+    is_magical = Column(Boolean, default=False)
+    requires_attunement = Column(Boolean, default=False)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert armor to dictionary format."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "armor_type": self.armor_type,
+            "armor_class": self.armor_class,
+            "strength_requirement": self.strength_requirement,
+            "stealth_disadvantage": self.stealth_disadvantage,
+            "max_dex_bonus": self.max_dex_bonus,
+            "weight": self.weight,
+            "cost": self.cost,
+            "description": self.description,
+            "source": self.source,
+            "source_book": self.source_book,
+            "page_number": self.page_number,
+            "created_by": self.created_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "is_active": self.is_active,
+            "is_homebrew": self.is_homebrew,
+            "rarity": self.rarity,
+            "is_magical": self.is_magical,
+            "requires_attunement": self.requires_attunement
+        }
+
+
+class ItemCatalog(Base):
+    """
+    Database model for all other items (adventuring gear, tools, etc.).
+    Provides a unified catalog for general item management and character assignment.
+    """
+    __tablename__ = "item_catalog"
+    
+    id = Column(String(36), primary_key=True, index=True)
+    name = Column(String(100), nullable=False, index=True)
+    
+    # Item properties
+    item_type = Column(String(50), nullable=False, index=True)  # "tool", "consumable", "magic_item", etc.
+    item_category = Column(String(50), nullable=True, index=True)  # "artisan_tools", "potion", etc.
+    
+    # Physical attributes
+    weight = Column(Integer, nullable=True)  # in pounds
+    cost = Column(String(20), nullable=True)  # "25 gp", "2 sp", etc.
+    
+    # Usage and properties
+    properties = Column(JSON, nullable=False, default=dict)  # Flexible properties storage
+    uses_per_day = Column(Integer, nullable=True)  # For limited-use items
+    charges = Column(Integer, nullable=True)  # For charged items
+    
+    # Description and mechanics
+    description = Column(Text, nullable=True)
+    mechanical_effect = Column(Text, nullable=True)  # Game mechanics description
+    
+    # Source information
+    source = Column(String(50), nullable=False, index=True)  # "D&D 5e Core", "Custom", "Generated"
+    source_book = Column(String(100), nullable=True)  # PHB, DMG, etc.
+    page_number = Column(Integer, nullable=True)
+    
+    # Metadata
+    created_by = Column(String(100), nullable=True)  # For custom items
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+    is_homebrew = Column(Boolean, default=False)
+    
+    # Rarity and magic
+    rarity = Column(String(20), default="common")  # common, uncommon, rare, etc.
+    is_magical = Column(Boolean, default=False)
+    requires_attunement = Column(Boolean, default=False)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert item to dictionary format."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "item_type": self.item_type,
+            "item_category": self.item_category,
+            "weight": self.weight,
+            "cost": self.cost,
+            "properties": self.properties,
+            "uses_per_day": self.uses_per_day,
+            "charges": self.charges,
+            "description": self.description,
+            "mechanical_effect": self.mechanical_effect,
+            "source": self.source,
+            "source_book": self.source_book,
+            "page_number": self.page_number,
+            "created_by": self.created_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "is_active": self.is_active,
+            "is_homebrew": self.is_homebrew,
+            "rarity": self.rarity,
+            "is_magical": self.is_magical,
+            "requires_attunement": self.requires_attunement
+        }
+
+
+# ============================================================================
+# CHARACTER-CONTENT RELATIONSHIP TABLES
+# ============================================================================
+
+class CharacterSpellAccess(Base):
+    """
+    Many-to-many relationship table for character spell access.
+    Tracks which spells a character has access to and their status.
+    """
+    __tablename__ = "character_spell_access"
+    
+    id = Column(String(36), primary_key=True, index=True)
+    character_id = Column(String(36), ForeignKey("characters.id"), nullable=False, index=True)
+    spell_id = Column(String(36), ForeignKey("spell_catalog.id"), nullable=False, index=True)
+    
+    # Status tracking
+    is_known = Column(Boolean, default=False)      # Spell is in character's known spells
+    is_prepared = Column(Boolean, default=False)   # Spell is currently prepared
+    is_favorite = Column(Boolean, default=False)   # Player-marked favorite
+    
+    # Learning information
+    learned_at_level = Column(Integer, nullable=True)  # Level when spell was learned
+    learned_from = Column(String(100), nullable=True)  # "level_up", "scroll", "tutor", etc.
+    
+    # Custom spell list assignment (for themed spellcasters)
+    spell_list_category = Column(String(50), nullable=True)  # "known", "custom_void", "custom_fire", etc.
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert spell access to dictionary format."""
+        return {
+            "id": self.id,
+            "character_id": self.character_id,
+            "spell_id": self.spell_id,
+            "is_known": self.is_known,
+            "is_prepared": self.is_prepared,
+            "is_favorite": self.is_favorite,
+            "learned_at_level": self.learned_at_level,
+            "learned_from": self.learned_from,
+            "spell_list_category": self.spell_list_category,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None
+        }
+
+
+class CharacterEquipmentAccess(Base):
+    """
+    Many-to-many relationship table for character equipment access.
+    Tracks which equipment a character owns and their status.
+    """
+    __tablename__ = "character_equipment_access"
+    
+    id = Column(String(36), primary_key=True, index=True)
+    character_id = Column(String(36), ForeignKey("characters.id"), nullable=False, index=True)
+    
+    # Equipment can be from any catalog
+    weapon_id = Column(String(36), ForeignKey("weapon_catalog.id"), nullable=True, index=True)
+    armor_id = Column(String(36), ForeignKey("armor_catalog.id"), nullable=True, index=True)
+    item_id = Column(String(36), ForeignKey("item_catalog.id"), nullable=True, index=True)
+    
+    # Status tracking
+    quantity = Column(Integer, default=1)
+    is_equipped = Column(Boolean, default=False)
+    is_attuned = Column(Boolean, default=False)  # For magical items
+    is_favorite = Column(Boolean, default=False)  # Player-marked favorite
+    
+    # Equipment slot (for equipped items)
+    equipment_slot = Column(String(50), nullable=True)  # "main_hand", "armor", "boots", etc.
+    
+    # Acquisition information
+    acquired_at_level = Column(Integer, nullable=True)  # Level when item was acquired
+    acquired_from = Column(String(100), nullable=True)  # "starting_equipment", "loot", "purchase", etc.
+    
+    # Condition and notes
+    condition = Column(String(20), default="normal")  # "normal", "damaged", "broken", etc.
+    notes = Column(Text, nullable=True)  # Player notes about the item
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert equipment access to dictionary format."""
+        return {
+            "id": self.id,
+            "character_id": self.character_id,
+            "weapon_id": self.weapon_id,
+            "armor_id": self.armor_id,
+            "item_id": self.item_id,
+            "quantity": self.quantity,
+            "is_equipped": self.is_equipped,
+            "is_attuned": self.is_attuned,
+            "is_favorite": self.is_favorite,
+            "equipment_slot": self.equipment_slot,
+            "acquired_at_level": self.acquired_at_level,
+            "acquired_from": self.acquired_from,
+            "condition": self.condition,
+            "notes": self.notes,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None
+        }
 
 # ============================================================================
 # DATABASE ACCESS LAYER - CRUD OPERATIONS
@@ -683,7 +1210,7 @@ class CharacterDB:
     @staticmethod
     def load_character_sheet(db: Session, character_id: str):
         """
-        Load a character from database and convert to CharacterSheet object.
+        Load a character from database and convert to CharacterSheet object with allocated items.
         Returns None if character not found.
         """
         db_character = CharacterDB.get_character(db, character_id)
@@ -691,30 +1218,54 @@ class CharacterDB:
             return None
         
         # Import here to avoid circular imports
-        from src.models.character_models import CharacterCore
+        from src.models.character_models import CharacterSheet, CharacterCore, CharacterState
+        from src.services.unified_catalog_service import UnifiedCatalogService
         
-        # Create CharacterCore-based response (simplified for now)
-        character_core = CharacterCore(db_character.name)
+        # Create a full CharacterSheet instead of just CharacterCore
+        character_sheet = CharacterSheet(db_character.name)
         
         # Set core character data
-        character_core.species = db_character.species
-        character_core.background = db_character.background or ""
-        character_core.alignment = db_character.alignment.split() if db_character.alignment else ["Neutral", "Neutral"]
-        character_core.character_classes = db_character.character_classes or {}
-        character_core.backstory = db_character.backstory or ""
+        character_sheet.core.species = db_character.species
+        character_sheet.core.background = db_character.background or ""
+        character_sheet.core.alignment = db_character.alignment.split() if db_character.alignment else ["Neutral", "Neutral"]
+        character_sheet.core.character_classes = db_character.character_classes or {}
+        character_sheet.core.backstory = db_character.backstory or ""
         
         # Set ability scores
-        character_core.strength.base_score = db_character.strength
-        character_core.dexterity.base_score = db_character.dexterity
-        character_core.constitution.base_score = db_character.constitution
-        character_core.intelligence.base_score = db_character.intelligence
-        character_core.wisdom.base_score = db_character.wisdom
-        character_core.charisma.base_score = db_character.charisma
+        character_sheet.core.strength.base_score = db_character.strength
+        character_sheet.core.dexterity.base_score = db_character.dexterity
+        character_sheet.core.constitution.base_score = db_character.constitution
+        character_sheet.core.intelligence.base_score = db_character.intelligence
+        character_sheet.core.wisdom.base_score = db_character.wisdom
+        character_sheet.core.charisma.base_score = db_character.charisma
         
         # Store database ID for future saves
-        character_core.id = db_character.id
+        character_sheet.core.id = db_character.id
         
-        return character_core
+        # Load allocated items from unified catalog
+        try:
+            catalog_service = UnifiedCatalogService(db)
+            
+            # Get spells
+            character_spells = catalog_service.get_character_spells(character_id)
+            character_sheet.state.allocated_spells = character_spells
+            
+            # Get equipment
+            character_equipment = catalog_service.get_character_equipment(character_id)
+            character_sheet.state.allocated_equipment = character_equipment
+            
+            # Get all allocations for comprehensive view
+            all_allocations = catalog_service.get_character_allocations(character_id)
+            character_sheet.state.all_allocated_items = all_allocations
+            
+        except Exception as e:
+            # Log error but don't fail the entire load
+            logger.error(f"Failed to load allocated items for character {character_id}: {e}")
+            character_sheet.state.allocated_spells = {"spells_known": [], "spells_prepared": []}
+            character_sheet.state.allocated_equipment = {"inventory": [], "equipped": []}
+            character_sheet.state.all_allocated_items = []
+        
+        return character_sheet
     
     # ============================================================================
     # INVENTORY MANAGEMENT METHODS
@@ -1004,6 +1555,166 @@ class CharacterDB:
                 "note": "Only magic items that specifically require attunement can be attuned to"
             }
         }
+    
+    # ============================================================================
+    # UNIFIED ITEM CATALOG OPERATIONS
+    # ============================================================================
+    
+    @staticmethod
+    def create_unified_item(db: Session, item_data: Dict[str, Any]) -> UnifiedItem:
+        """Create a new unified item (spell, weapon, armor, etc.) in the catalog."""
+        db_item = UnifiedItem(
+            name=item_data["name"],
+            item_type=item_data["item_type"],
+            item_subtype=item_data.get("item_subtype"),
+            source_type=item_data.get("source_type", "custom"),
+            content_data=item_data["content_data"],
+            short_description=item_data.get("short_description"),
+            rarity=item_data.get("rarity"),
+            requires_attunement=item_data.get("requires_attunement", False),
+            spell_level=item_data.get("spell_level"),
+            spell_school=item_data.get("spell_school"),
+            class_restrictions=item_data.get("class_restrictions"),
+            value_gp=item_data.get("value_gp"),
+            weight_lbs=item_data.get("weight_lbs"),
+            created_by=item_data.get("created_by"),
+            is_public=item_data.get("is_public", True),
+            source_book=item_data.get("source_book")
+        )
+        
+        db.add(db_item)
+        db.commit()
+        db.refresh(db_item)
+        return db_item
+    
+    @staticmethod
+    def get_unified_item(db: Session, item_id: str) -> Optional[UnifiedItem]:
+        """Get a unified item by its UUID."""
+        try:
+            return db.query(UnifiedItem).filter(UnifiedItem.id == item_id, UnifiedItem.is_active == True).first()
+        except Exception as e:
+            logger.error(f"Failed to get unified item {item_id}: {e}")
+            return None
+    
+    @staticmethod
+    def search_unified_items(db: Session, 
+                           item_type: Optional[str] = None,
+                           source_type: Optional[str] = None,
+                           spell_level: Optional[int] = None,
+                           spell_school: Optional[str] = None,
+                           rarity: Optional[str] = None,
+                           class_restrictions: Optional[List[str]] = None,
+                           search_text: Optional[str] = None,
+                           limit: int = 100) -> List[UnifiedItem]:
+        """Search unified items catalog with filters."""
+        try:
+            query = db.query(UnifiedItem).filter(UnifiedItem.is_active == True)
+            
+            # Apply filters
+            if item_type:
+                query = query.filter(UnifiedItem.item_type == item_type)
+            if source_type:
+                query = query.filter(UnifiedItem.source_type == source_type)
+            if spell_level is not None:
+                query = query.filter(UnifiedItem.spell_level == spell_level)
+            if spell_school:
+                query = query.filter(UnifiedItem.spell_school == spell_school)
+            if rarity:
+                query = query.filter(UnifiedItem.rarity == rarity)
+            if search_text:
+                query = query.filter(UnifiedItem.name.ilike(f"%{search_text}%"))
+            
+            # Class restrictions filter (if item has restrictions, check if any match)
+            if class_restrictions:
+                # This is a complex JSON query - for now, fetch all and filter in Python
+                # In production, you'd want a proper JSON query
+                pass
+            
+            return query.limit(limit).all()
+        except Exception as e:
+            logger.error(f"Failed to search unified items: {e}")
+            return []
+    
+    @staticmethod
+    def add_character_item_access(db: Session, character_id: str, item_id: str, 
+                                access_type: str, access_subtype: Optional[str] = None,
+                                quantity: int = 1, acquired_method: Optional[str] = None) -> CharacterItemAccess:
+        """Add an item to a character's access list (spells known, inventory, etc.)."""
+        db_access = CharacterItemAccess(
+            character_id=character_id,
+            item_id=item_id,
+            access_type=access_type,
+            access_subtype=access_subtype,
+            quantity=quantity,
+            acquired_method=acquired_method or "manual"
+        )
+        
+        db.add(db_access)
+        db.commit()
+        db.refresh(db_access)
+        return db_access
+    
+    @staticmethod
+    def get_character_item_access(db: Session, character_id: str, 
+                                access_type: Optional[str] = None) -> List[CharacterItemAccess]:
+        """Get all items a character has access to, optionally filtered by access type."""
+        try:
+            query = db.query(CharacterItemAccess).filter(
+                CharacterItemAccess.character_id == character_id,
+                CharacterItemAccess.is_active == True
+            )
+            
+            if access_type:
+                query = query.filter(CharacterItemAccess.access_type == access_type)
+            
+            return query.all()
+        except Exception as e:
+            logger.error(f"Failed to get character item access for {character_id}: {e}")
+            return []
+    
+    @staticmethod
+    def remove_character_item_access(db: Session, character_id: str, item_id: str, 
+                                   access_type: Optional[str] = None) -> bool:
+        """Remove an item from a character's access list."""
+        try:
+            query = db.query(CharacterItemAccess).filter(
+                CharacterItemAccess.character_id == character_id,
+                CharacterItemAccess.item_id == item_id
+            )
+            
+            if access_type:
+                query = query.filter(CharacterItemAccess.access_type == access_type)
+            
+            access_records = query.all()
+            for record in access_records:
+                db.delete(record)
+            
+            db.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to remove character item access: {e}")
+            return False
+    
+    @staticmethod
+    def update_character_item_access(db: Session, access_id: str, 
+                                   update_data: Dict[str, Any]) -> Optional[CharacterItemAccess]:
+        """Update a character's item access record."""
+        try:
+            access_record = db.query(CharacterItemAccess).filter(CharacterItemAccess.id == access_id).first()
+            if not access_record:
+                return None
+            
+            # Update allowed fields
+            for field, value in update_data.items():
+                if hasattr(access_record, field):
+                    setattr(access_record, field, value)
+            
+            db.commit()
+            db.refresh(access_record)
+            return access_record
+        except Exception as e:
+            logger.error(f"Failed to update character item access {access_id}: {e}")
+            return None
     
     # ============================================================================
 # CHARACTER SESSION OPERATIONS

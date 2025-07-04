@@ -1,5 +1,3 @@
-
-
 """
 FastAPI main application for D&D Character Creator - COMPLETE V2 API.
 
@@ -54,7 +52,14 @@ from src.models.character_models import CharacterCore
 
 # Import factory-based creation system
 from src.services.creation_factory import CreationFactory
+
 from src.core.enums import CreationOptions
+
+# Unified catalog API
+from src.api.unified_catalog_api import unified_catalog_router
+
+# Clean allocation API
+from src.api.allocation_api import allocation_router
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -121,6 +126,7 @@ async def lifespan(app: FastAPI):
     finally:
         logger.info("Shutting down D&D Character Creator API v2")
 
+
 # Initialize FastAPI app
 app = FastAPI(
     title="D&D Character Creator API v2 - Complete",
@@ -130,6 +136,12 @@ app = FastAPI(
     redoc_url="/redoc",
     lifespan=lifespan
 )
+
+# Register unified catalog API router
+app.include_router(unified_catalog_router)
+
+# Register clean allocation API router
+app.include_router(allocation_router)
 
 # Configure CORS
 app.add_middleware(
@@ -1873,10 +1885,6 @@ async def apply_character_feedback(character_id: str, request: CharacterFeedback
         # Load existing character
         existing_character = CharacterDB.get_character(db, character_id)
         if not existing_character:
-            raise HTTPException(status_code=404, detail="Character not found")
-        
-        # Convert to dict format
-        character_data = existing_character.to_dict()
         
         logger.info(f"Applying feedback to character {character_id}: {request.change_type}")
         

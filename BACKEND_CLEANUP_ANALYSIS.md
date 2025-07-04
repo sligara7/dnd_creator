@@ -3,6 +3,25 @@
 ## Overview
 Analysis and cleanup of potentially redundant service files in the D&D Character Creator backend.
 
+## API Files Analysis
+
+### ✅ REMOVED: `allocation_api.py`
+- **Status**: Empty file, deleted
+- **Reason**: Completely empty (0 lines) and unused throughout codebase
+- **References**: None found in codebase
+- **Action**: Successfully deleted
+
+### ✅ KEPT: `unified_catalog_api.py`
+- **Status**: Active and comprehensive API router
+- **Purpose**: Complete unified catalog and allocation management
+- **Key responsibilities**:
+  - **Catalog Management**: Search, item lookup, custom item creation, statistics
+  - **Allocation Operations**: Item allocation/deallocation, equipment swapping
+  - **Character Views**: Character spells, equipment, allocated items
+  - **Migration Support**: Catalog population, character migration
+- **Registration**: Registered in main app as `unified_catalog_router`
+- **Endpoints**: 14 endpoints covering all catalog and allocation functionality
+
 ## Files Analyzed
 
 ### ✅ REMOVED: `item_allocation_validator.py`
@@ -56,6 +75,28 @@ The backend now has a clean separation of concerns:
                 ├── Item allocation/deallocation
                 ├── Equipment swapping
                 └── Validation integration
+```
+
+## API Architecture
+
+The backend now has a single, comprehensive API layer:
+
+```
+┌─────────────────────────┐
+│      main app.py        │  ← Main FastAPI Application
+└─────────────────────────┘
+            │
+            ├── unified_catalog_router (complete catalog & allocation API)
+            │   ├── Catalog operations (/search, /item, /stats)
+            │   ├── Allocation operations (/access, /swap/equipment)
+            │   ├── Character views (/character/{id}/spells, /equipment)
+            │   └── Migration support (/migrate)
+            │
+            └── Direct character endpoints (built into main app)
+                ├── Character CRUD (/characters)
+                ├── Character sheets (/characters/{id}/sheet)
+                ├── Gameplay (/characters/{id}/state, /combat, /rest)
+                └── Validation (/validate/character)
 ```
 
 ## Validation Architecture

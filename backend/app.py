@@ -58,9 +58,6 @@ from src.core.enums import CreationOptions
 # Unified catalog API
 from src.api.unified_catalog_api import unified_catalog_router
 
-# Clean allocation API
-from src.api.allocation_api import allocation_router
-
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -139,9 +136,6 @@ app = FastAPI(
 
 # Register unified catalog API router
 app.include_router(unified_catalog_router)
-
-# Register clean allocation API router
-app.include_router(allocation_router)
 
 # Configure CORS
 app.add_middleware(
@@ -388,6 +382,8 @@ async def award_xp(character_id: str, xp_data: XPAwardRequest, db = Depends(get_
 
         return XPAwardResponse(
             character_id=character_id,
+            new_xp_total=result.get("new_xp_total", 0),
+            xp_awarded=xp_data.amount,
             new_xp_total=result.get("new_xp_total", 0),
             xp_awarded=xp_data.amount,
             level_up=result.get("level_up", False),
@@ -1885,6 +1881,10 @@ async def apply_character_feedback(character_id: str, request: CharacterFeedback
         # Load existing character
         existing_character = CharacterDB.get_character(db, character_id)
         if not existing_character:
+            raise HTTPException(status_code=404, detail="Character not found")
+        
+        # Convert to dict format
+        character_data = existing_character.to_dict()
         
         logger.info(f"Applying feedback to character {character_id}: {request.change_type}")
         

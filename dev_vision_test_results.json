@@ -2,10 +2,10 @@
   "creative_character_generation": {
     "concept_1": {
       "success": true,
-      "character_id": null,
-      "generation_time": 8.158026218414307,
-      "character_name": "Stormcrystal Artificer",
-      "species": "Gnome",
+      "character_id": "305e9dc1-8cb0-49d1-ab7e-3348f5605e7a",
+      "generation_time": 7.0297417640686035,
+      "character_name": "Skyforge Innovator",
+      "species": "Warforged",
       "classes": {},
       "backstory_length": 0,
       "has_custom_content": true,
@@ -14,18 +14,18 @@
     "concept_2": {
       "success": true,
       "character_id": null,
-      "generation_time": 8.310508966445923,
-      "character_name": "Temporal Echo Druid",
-      "species": "Extinct Creature Communicator",
+      "generation_time": 5.105639457702637,
+      "character_name": "Unknown",
+      "species": "Unknown",
       "classes": {},
       "backstory_length": 0,
-      "has_custom_content": true,
-      "verbose_logs": 15
+      "has_custom_content": false,
+      "verbose_logs": 0
     },
     "concept_3": {
       "success": true,
-      "character_id": null,
-      "generation_time": 7.663102388381958,
+      "character_id": "c065fba3-05ea-4765-8a28-57a7de896a34",
+      "generation_time": 8.148430585861206,
       "character_name": "Shadow Dancer",
       "species": "Half-Elf",
       "classes": {},
@@ -36,35 +36,65 @@
     "concept_4": {
       "success": true,
       "character_id": null,
-      "generation_time": 8.601664304733276,
-      "character_name": "Emberlyn",
-      "species": "Dragon-Touched Humanoid",
-      "classes": {},
-      "backstory_length": 0,
-      "has_custom_content": true,
-      "verbose_logs": 15
-    },
-    "concept_5": {
-      "success": true,
-      "character_id": null,
-      "generation_time": 4.810207843780518,
+      "generation_time": 5.061248064041138,
       "character_name": "Unknown",
       "species": "Unknown",
       "classes": {},
       "backstory_length": 0,
       "has_custom_content": false,
       "verbose_logs": 0
+    },
+    "concept_5": {
+      "success": true,
+      "character_id": "9dc582c5-a565-477f-8ec8-65edec690125",
+      "generation_time": 7.284702777862549,
+      "character_name": "Void Monk",
+      "species": "Human",
+      "classes": {},
+      "backstory_length": 0,
+      "has_custom_content": true,
+      "verbose_logs": 15
     }
   },
   "iterative_refinement": {
-    "success": false,
-    "error": "No characters available"
+    "character_id": "305e9dc1-8cb0-49d1-ab7e-3348f5605e7a",
+    "refinements": [
+      {
+        "iteration": 1,
+        "success": true,
+        "refinement_time": 0.0037620067596435547,
+        "prompt": "Make the backstory more detailed and add specific names of places and people",
+        "changes_detected": true
+      },
+      {
+        "iteration": 2,
+        "success": true,
+        "refinement_time": 0.003524303436279297,
+        "prompt": "Change the personality to be more mysterious and brooding, with a dark secret",
+        "changes_detected": true
+      },
+      {
+        "iteration": 3,
+        "success": true,
+        "refinement_time": 0.0034940242767333984,
+        "prompt": "Add unique custom equipment that reflects the character's magical abilities",
+        "changes_detected": true
+      },
+      {
+        "iteration": 4,
+        "success": true,
+        "refinement_time": 0.003832578659057617,
+        "prompt": "Enhance the character's magical abilities and add signature spells",
+        "changes_detected": true
+      }
+    ],
+    "success": true
   },
   "custom_content_creation": {
     "weapon": {
       "success": true,
       "object_id": null,
-      "creation_time": 0.0024831295013427734,
+      "creation_time": 0.0031909942626953125,
       "name": "Unknown",
       "has_mechanics": false,
       "has_lore": false,
@@ -73,7 +103,7 @@
     "armor": {
       "success": true,
       "object_id": null,
-      "creation_time": 0.003444194793701172,
+      "creation_time": 0.0029489994049072266,
       "name": "Unknown",
       "has_mechanics": false,
       "has_lore": false,
@@ -82,7 +112,7 @@
     "spell": {
       "success": true,
       "object_id": null,
-      "creation_time": 0.0026404857635498047,
+      "creation_time": 0.0034401416778564453,
       "name": "Unknown",
       "has_mechanics": false,
       "has_lore": false,
@@ -94,8 +124,19 @@
     }
   },
   "character_validation_sheets": {
-    "success": false,
-    "error": "No characters available"
+    "character_id": "305e9dc1-8cb0-49d1-ab7e-3348f5605e7a",
+    "sheet": {
+      "success": false,
+      "error": "{\"detail\":\"Not Found\"}"
+    },
+    "validation": {
+      "success": false,
+      "error": "{\"detail\":\"Not Found\"}"
+    },
+    "state": {
+      "success": false,
+      "error": "{\"detail\":\"Not Found\"}"
+    }
   },
   "advanced_catalog_management": {
     "spells": {

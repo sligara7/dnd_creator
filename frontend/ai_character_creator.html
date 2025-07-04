@@ -672,6 +672,7 @@
                 </div>
 
                 <button class="btn" onclick="startCreation()">🚀 Start AI Generation</button>
+                <button class="btn btn-secondary" onclick="testFunction()" style="margin-left: 10px;">🧪 Test Function</button>
             </div>
         </div>
 
@@ -1122,35 +1123,48 @@
 
         // Enhanced character creation flow with detailed logging
         async function startCreation() {
+            console.log('🚀 startCreation function called!');
+            
             const concept = document.getElementById('characterConcept').value.trim();
+            console.log('Character concept:', concept);
             
             if (!concept) {
                 alert('Please enter a character concept first!');
+                console.log('❌ No concept provided');
                 return;
             }
 
-            // Reset verbose log
-            document.getElementById('verboseLog').innerHTML = '<h4>🔍 Ultra-Detailed AI Process Log</h4><p style="color: #6c757d; font-size: 12px; margin-bottom: 20px;">This log shows every single step, LLM request, and response in the character creation process.</p>';
-            stepCounter = 1;
+            console.log('✅ Concept provided, starting creation process...');
 
-            // Hide step 1, show step 2
-            hideElement('step1');
-            showElement('step2');
-            document.getElementById('loadingIndicator').classList.add('show');
-
-            // Log the user's initial concept
-            logVerbose('User Input Received', {
-                prompt: concept,
-                timestamp: new Date().toISOString(),
-                user_action: 'character_creation_start'
-            }, 'creation-start');
-
+            // Test basic functionality first
             try {
+                console.log('📝 Resetting verbose log...');
+                // Reset verbose log
+                document.getElementById('verboseLog').innerHTML = '<h4>🔍 Ultra-Detailed AI Process Log</h4><p style="color: #6c757d; font-size: 12px; margin-bottom: 20px;">This log shows every single step, LLM request, and response in the character creation process.</p>';
+                stepCounter = 1;
+
+                console.log('🎯 Showing step 2...');
+                // Hide step 1, show step 2
+                hideElement('step1');
+                showElement('step2');
+                document.getElementById('loadingIndicator').classList.add('show');
+
+                console.log('📊 Logging user input...');
+                // Log the user's initial concept
+                logVerbose('User Input Received', {
+                    prompt: concept,
+                    timestamp: new Date().toISOString(),
+                    user_action: 'character_creation_start'
+                }, 'creation-start');
+
+                console.log('🔍 Testing API connection...');
                 // Test health check first
                 updateProgress(5, 'Testing API connection...');
                 await apiCall('/health', 'GET', null, 'Health Check');
                 logMessage('✅ API connection successful');
+                console.log('✅ Health check passed');
 
+                console.log('🏭 Preparing character creation request...');
                 // Generate initial character using factory
                 updateProgress(15, 'Generating base character with AI...');
                 logVerbose('Preparing Factory Request', {
@@ -1169,7 +1183,9 @@
                     }
                 };
 
+                console.log('📡 Calling character creation API...');
                 const characterData = await apiCall('/api/v2/factory/create', 'POST', characterCreationData, 'AI Character Generation');
+                console.log('📦 Character data received:', characterData);
 
                 // Process verbose logs from backend if available
                 if (characterData.verbose_logs && characterData.verbose_logs.length > 0) {
@@ -1184,7 +1200,7 @@
 
                 if (characterData.object_id) {
                     characterId = characterData.object_id;
-                    currentCharacter = characterData.data;
+                    currentCharacter = characterData;
                     
                     logVerbose('Character Successfully Created', {
                         character_name: characterData.data?.core?.name || 'Unknown',
@@ -1194,6 +1210,7 @@
                     }, 'creation-complete');
                     
                     logMessage(`✅ Character created with ID: ${characterId}`);
+                    console.log(`🎉 Character created successfully with ID: ${characterId}`);
                     
                     // Show processing time
                     if (characterData.processing_time) {
@@ -1203,8 +1220,12 @@
                             character_name: characterData.data?.core?.name || 'Unknown'
                         }, 'creation-complete');
                     }
+                } else {
+                    console.log('❌ No character ID received');
+                    throw new Error('No character ID received from backend');
                 }
 
+                console.log('🚀 Starting additional content generation...');
                 updateProgress(35, 'Generating enhanced backstory...');
                 await generateEnhancedContent(concept);
 
@@ -1220,10 +1241,11 @@
                 updateProgress(100, 'Character generation complete!');
                 logVerbose('All Generation Complete', {
                     description: 'All AI generation steps finished successfully',
-                    final_character: currentCharacter?.core?.name || 'Unknown'
+                    final_character: currentCharacter?.data?.core?.name || 'Unknown'
                 }, 'creation-complete');
                 showSuccess('🎉 Your AI-generated character is ready for review!');
 
+                console.log('🎯 Showing step 3...');
                 // Show step 3
                 document.getElementById('loadingIndicator').classList.remove('show');
                 setTimeout(() => {
@@ -1233,13 +1255,13 @@
                 }, 1000);
 
             } catch (error) {
+                console.error('❌ Error during character generation:', error);
                 showError(`❌ Error during character generation: ${error.message}`);
                 document.getElementById('loadingIndicator').classList.remove('show');
                 logVerbose('Character Creation Failed', {
                     error: error.message,
                     stack: error.stack
                 }, 'creation-error');
-                console.error('Character creation error:', error);
             }
         }
 
@@ -1278,32 +1300,29 @@
 
         async function generateEnhancedContent(concept) {
             logVerbose('Enhanced Content Generation', {
-                description: 'Generating detailed backstory and lore',
-                step: 'enhanced_backstory'
+                description: 'Generating detailed custom items and spells',
+                step: 'enhanced_content'
             }, 'creation-step');
             
             try {
-                const enhancedData = {
-                    prompt: concept,
-                    level: 3,
-                    include_backstory: true,
-                    include_equipment: true,
+                // Generate unique spell for casters
+                logVerbose('Spell Generation Start', {
+                    description: 'Generating unique signature spell',
+                    prompt: `A unique signature spell for: ${concept}`
+                }, 'creation-step');
+
+                const spellData = {
+                    creation_type: 'spell',
+                    prompt: `A unique signature spell for: ${concept}`,
                     save_to_database: false
                 };
 
-                const enhancedCharacter = await apiCall('/api/v1/generate/character-complete', 'POST', null, 'Enhanced Character Generation');
+                const spellResult = await apiCall('/api/v2/factory/create', 'POST', spellData, 'Custom Spell Generation');
                 
                 logVerbose('Enhanced Content Complete', {
-                    description: 'Successfully generated detailed character enhancements',
-                    character_data: enhancedCharacter.character ? 'Available' : 'Missing'
+                    description: 'Successfully generated enhanced content',
+                    spell_created: spellResult ? 'Yes' : 'No'
                 }, 'creation-complete');
-                
-                if (enhancedCharacter.character) {
-                    logVerbose('Enhanced Character Data Retrieved', {
-                        description: 'Detailed character data received from backend',
-                        data_size: JSON.stringify(enhancedCharacter.character).length + ' characters'
-                    }, 'creation-step');
-                }
                 
             } catch (error) {
                 logVerbose('Enhanced Content Failed', {
@@ -1349,10 +1368,25 @@
 
                 const armorResult = await apiCall('/api/v2/factory/create', 'POST', armorData, 'Custom Armor Generation');
                 
+                // Generate unique item
+                logVerbose('Item Generation Start', {
+                    description: 'Generating custom magical item',
+                    prompt: `A unique magical item for: ${concept}`
+                }, 'creation-step');
+
+                const itemData = {
+                    creation_type: 'other_item',
+                    prompt: `A unique magical item for: ${concept}`,
+                    save_to_database: false
+                };
+
+                const itemResult = await apiCall('/api/v2/factory/create', 'POST', itemData, 'Custom Item Generation');
+                
                 logVerbose('Equipment Generation Complete', {
                     description: 'Successfully created custom equipment set',
                     weapon_created: weaponResult ? 'Yes' : 'No',
-                    armor_created: armorResult ? 'Yes' : 'No'
+                    armor_created: armorResult ? 'Yes' : 'No',
+                    item_created: itemResult ? 'Yes' : 'No'
                 }, 'creation-complete');
                 
             } catch (error) {
@@ -1371,17 +1405,18 @@
             }, 'creation-step');
             
             try {
-                const personalityData = {
-                    content_type: 'character',
-                    prompt: `Create detailed personality traits, ideals, bonds, and flaws for: ${concept}`,
+                // Generate an NPC companion or rival to add depth
+                const npcData = {
+                    creation_type: 'npc',
+                    prompt: `Create a significant NPC from the backstory of: ${concept} - this could be a mentor, rival, ally, or family member`,
                     save_to_database: false
                 };
 
-                const personalityResult = await apiCall('/api/v1/generate/content', 'GET', personalityData, 'Personality Generation');
+                const npcResult = await apiCall('/api/v2/factory/create', 'POST', npcData, 'Related NPC Generation');
                 
                 logVerbose('Personality Complete', {
-                    description: 'Successfully enhanced character personality',
-                    personality_data: personalityResult ? 'Generated' : 'Failed'
+                    description: 'Successfully enhanced character personality with related NPC',
+                    npc_created: npcResult ? 'Generated' : 'Failed'
                 }, 'creation-complete');
                 
             } catch (error) {
@@ -1410,16 +1445,16 @@
             
             try {
                 // Load basic character data
-                const basicCharacter = await apiCall(`/api/v1/characters/${characterId}`, 'GET', null, 'Basic Character Data');
+                const basicCharacter = await apiCall(`/api/v2/characters/${characterId}`, 'GET', null, 'Basic Character Data');
                 
                 // Load complete character sheet
-                const characterSheet = await apiCall(`/api/v1/characters/${characterId}/sheet`, 'GET', null, 'Complete Character Sheet');
+                const characterSheet = await apiCall(`/api/v2/characters/${characterId}/sheet`, 'GET', null, 'Complete Character Sheet');
                 
                 // Load character state
-                const characterState = await apiCall(`/api/v1/characters/${characterId}/state`, 'GET', null, 'Character State');
+                const characterState = await apiCall(`/api/v2/characters/${characterId}/state`, 'GET', null, 'Character State');
                 
-                // Validate character
-                const validation = await apiCall(`/api/v1/characters/${characterId}/validate`, 'GET', null, 'Character Validation');
+                // Validate character using v2 validation (validate existing character)
+                const validation = await apiCall(`/api/v2/characters/${characterId}/validate`, 'GET', null, 'Character Validation');
                 
                 currentCharacter = {
                     ...basicCharacter,
@@ -1428,12 +1463,21 @@
                     validation: validation
                 };
                 
-                logVerbose('Character Loading Complete', 'All character data successfully loaded and validated', 'success');
+                logVerbose('Character Loading Complete', 'All character data successfully loaded and validated', 'creation-complete');
                 logMessage('✅ Complete character sheet loaded and validated');
                 
             } catch (error) {
-                logVerbose('Character Loading Failed', error.message, 'error');
+                logVerbose('Character Loading Failed', error.message, 'creation-error');
                 logMessage(`⚠️ Character loading failed: ${error.message}`);
+                
+                // Fallback to basic character data if sheet/state loading fails
+                try {
+                    const basicCharacter = await apiCall(`/api/v2/characters/${characterId}`, 'GET', null, 'Fallback Character Data');
+                    currentCharacter = basicCharacter;
+                    logMessage('✅ Basic character data loaded as fallback');
+                } catch (fallbackError) {
+                    logMessage(`❌ Complete character loading failed: ${fallbackError.message}`);
+                }
             }
         }
 
@@ -1445,35 +1489,54 @@
                 return;
             }
 
+            // Handle both factory response format and character response format
+            const characterData = currentCharacter.data || currentCharacter;
+            const coreData = characterData.core || characterData;
+            const rawData = characterData.raw_data || {};
+
+            const name = coreData.name || rawData.name || 'Generated Character';
+            const species = coreData.species || rawData.species || 'Custom Species';
+            const background = coreData.background || rawData.background || 'Unique Background';
+            const level = coreData.level || rawData.level || 1;
+            const classes = coreData.character_classes || rawData.classes || rawData.character_classes || {'Adventurer': 1};
+            const abilities = coreData.ability_scores || rawData.ability_scores || rawData.attributes || {};
+            const backstory = (coreData.personality && coreData.personality.backstory) || rawData.backstory || 'A mysterious past awaits discovery...';
+
             container.innerHTML = `
                 <div class="character-sheet">
                     <h3>🎭 Your AI-Generated Character</h3>
                     <div class="character-grid">
                         <div class="character-section">
                             <h4>Basic Information</h4>
-                            <p><strong>Name:</strong> ${currentCharacter.name || 'Unknown'}</p>
-                            <p><strong>Species:</strong> ${currentCharacter.species || 'Custom Species'}</p>
-                            <p><strong>Background:</strong> ${currentCharacter.background || 'Unique Background'}</p>
-                            <p><strong>Alignment:</strong> ${currentCharacter.alignment || 'True Neutral'}</p>
-                            <p><strong>Level:</strong> ${currentCharacter.level || 1}</p>
+                            <p><strong>Name:</strong> ${name}</p>
+                            <p><strong>Species:</strong> ${species}</p>
+                            <p><strong>Background:</strong> ${background}</p>
+                            <p><strong>Level:</strong> ${level}</p>
                         </div>
                         
                         <div class="character-section">
                             <h4>Classes</h4>
-                            ${formatClasses(currentCharacter.character_classes || {})}
+                            ${formatClasses(classes)}
                         </div>
                         
                         <div class="character-section">
                             <h4>Ability Scores</h4>
                             <div class="ability-scores">
-                                ${formatAbilityScores(currentCharacter.abilities || {})}
+                                ${formatAbilityScores(abilities)}
                             </div>
                         </div>
                         
                         <div class="character-section">
                             <h4>Backstory</h4>
-                            <p>${currentCharacter.backstory || 'A mysterious figure with an interesting past.'}</p>
+                            <p style="font-style: italic; max-height: 150px; overflow-y: auto;">${backstory}</p>
                         </div>
+                    </div>
+                    
+                    <button class="collapsible" onclick="toggleCollapsible(this)">
+                        Show Full Character Data
+                    </button>
+                    <div class="collapsible-content">
+                        <div class="json-display">${JSON.stringify(characterData, null, 2)}</div>
                     </div>
                 </div>
             `;
@@ -1554,19 +1617,35 @@
                     }
                 });
 
-                // Update character data
-                const updatedCharacter = await apiCall(`/api/v1/characters/${characterId}`);
-                currentCharacter = updatedCharacter;
+                // Update character data from evolution response
+                if (evolutionData.success && evolutionData.data) {
+                    currentCharacter.data = evolutionData.data;
+                }
+
+                // Try to get updated character from database
+                try {
+                    const updatedCharacter = await apiCall(`/api/v2/characters/${characterId}`);
+                    currentCharacter = { ...currentCharacter, ...updatedCharacter };
+                } catch (error) {
+                    console.log('Could not load updated character from database, using evolution data');
+                }
 
                 // Update the refinement display
                 refinementDiv.querySelector('.loading').classList.remove('show');
+                
+                // Extract character data for display
+                const updatedData = currentCharacter.data || currentCharacter;
+                const coreData = updatedData.core || updatedData;
+                const name = coreData.name || 'Generated Character';
+                const backstory = (coreData.personality && coreData.personality.backstory) || updatedData.raw_data?.backstory || 'A mysterious past awaits discovery...';
+                
                 refinementDiv.innerHTML += `
                     <div class="success">✅ Character refined successfully!</div>
                     <div style="margin-top: 10px;">
                         <strong>Updated Character:</strong>
                         <div style="margin-left: 15px; margin-top: 5px;">
-                            <p><strong>Name:</strong> ${currentCharacter.name}</p>
-                            <p><strong>Backstory:</strong> ${currentCharacter.backstory}</p>
+                            <p><strong>Name:</strong> ${name}</p>
+                            <p><strong>Backstory:</strong> ${backstory.substring(0, 200)}${backstory.length > 200 ? '...' : ''}</p>
                         </div>
                     </div>
                 `;
@@ -1592,8 +1671,8 @@
 
             try {
                 // Load complete character sheet
-                const characterSheet = await apiCall(`/api/v1/characters/${characterId}/sheet`);
-                const characterState = await apiCall(`/api/v1/characters/${characterId}/state`);
+                const characterSheet = await apiCall(`/api/v2/characters/${characterId}/sheet`);
+                const characterState = await apiCall(`/api/v2/characters/${characterId}/state`);
                 
                 currentCharacter.sheet = characterSheet;
                 currentCharacter.state = characterState;
@@ -1606,15 +1685,33 @@
                 
             } catch (error) {
                 showError(`❌ Error finalizing character: ${error.message}`);
+                
+                // Fallback to current character data if detailed loading fails
+                hideElement('step3');
+                showElement('step4');
+                displayFinalCharacterSheet();
             }
         }
 
         function displayFinalCharacterSheet() {
             const container = document.getElementById('finalCharacterSheet');
+            
+            // Handle both v2 factory response format and direct character data
+            const characterData = currentCharacter.data || currentCharacter;
             const sheet = currentCharacter.sheet || {};
-            const core = sheet.core || {};
+            const coreData = characterData.core || sheet.core || characterData;
+            const rawData = characterData.raw_data || {};
             const stats = sheet.stats || {};
-            const state = sheet.state || {};
+            const state = currentCharacter.state || sheet.state || {};
+
+            // Extract data with fallbacks
+            const name = coreData.name || rawData.name || 'Generated Character';
+            const species = coreData.species || rawData.species || 'Custom Species';
+            const background = coreData.background || rawData.background || 'Unique Background';
+            const level = coreData.level || rawData.level || 1;
+            const classes = coreData.character_classes || rawData.classes || rawData.character_classes || {'Adventurer': 1};
+            const abilities = coreData.ability_scores || rawData.ability_scores || rawData.attributes || {};
+            const backstory = (coreData.personality && coreData.personality.backstory) || rawData.backstory || 'A mysterious past awaits discovery...';
 
             container.innerHTML = `
                 <div class="character-sheet">
@@ -1623,61 +1720,55 @@
                     <div class="character-grid">
                         <div class="character-section">
                             <h4>Core Information</h4>
-                            <p><strong>Name:</strong> ${core.name || 'Unknown'}</p>
-                            <p><strong>Species:</strong> ${core.species || 'Custom'}</p>
-                            <p><strong>Level:</strong> ${core.level || 1}</p>
-                            <p><strong>Background:</strong> ${core.background || 'Unique'}</p>
-                            <p><strong>Alignment:</strong> ${core.alignment || 'True Neutral'}</p>
+                            <p><strong>Name:</strong> ${name}</p>
+                            <p><strong>Species:</strong> ${species}</p>
+                            <p><strong>Level:</strong> ${level}</p>
+                            <p><strong>Background:</strong> ${background}</p>
+                            <p><strong>Character ID:</strong> ${characterId || 'Unknown'}</p>
                         </div>
 
                         <div class="character-section">
                             <h4>Classes</h4>
-                            ${formatClasses(core.classes || {})}
+                            ${formatClasses(classes)}
                         </div>
 
                         <div class="character-section">
                             <h4>Combat Stats</h4>
                             <p><strong>Armor Class:</strong> ${stats.armor_class || 10}</p>
-                            <p><strong>Hit Points:</strong> ${state.current_hit_points || 0}/${stats.max_hit_points || 0}</p>
+                            <p><strong>Hit Points:</strong> ${state.current_hit_points || stats.max_hit_points || 10}</p>
                             <p><strong>Proficiency Bonus:</strong> +${stats.proficiency_bonus || 2}</p>
-                            <p><strong>Initiative:</strong> +${stats.initiative || 0}</p>
                         </div>
 
                         <div class="character-section">
                             <h4>Ability Scores</h4>
                             <div class="ability-scores">
-                                ${formatAbilityScores(core.ability_scores || {})}
+                                ${formatAbilityScores(abilities)}
                             </div>
                         </div>
 
                         <div class="character-section">
-                            <h4>Skills</h4>
-                            ${formatSkills(stats.skills || {})}
-                        </div>
-
-                        <div class="character-section">
-                            <h4>Saving Throws</h4>
-                            ${formatSavingThrows(stats.saving_throws || {})}
-                        </div>
-
-                        <div class="character-section">
-                            <h4>Personality</h4>
-                            ${formatPersonality(core)}
+                            <h4>Skills & Proficiencies</h4>
+                            ${formatSkills(rawData.skill_proficiencies || coreData.proficiencies?.skills || {})}
                         </div>
 
                         <div class="character-section">
                             <h4>Equipment</h4>
-                            ${formatEquipment(state)}
+                            ${formatCompleteEquipment(rawData, characterData)}
                         </div>
 
                         <div class="character-section">
-                            <h4>Spellcasting</h4>
-                            ${formatSpellcasting(core.spellcasting || {})}
+                            <h4>Backstory</h4>
+                            <p style="font-style: italic; max-height: 200px; overflow-y: auto;">${backstory}</p>
                         </div>
 
-                        <div class="character-section" style="grid-column: 1 / -1;">
-                            <h4>Backstory</h4>
-                            <p>${core.backstory || 'A mysterious figure with an interesting past.'}</p>
+                        <div class="character-section">
+                            <h4>Full Character Data</h4>
+                            <button class="collapsible" onclick="toggleCollapsible(this)">
+                                Show Complete JSON Data
+                            </button>
+                            <div class="collapsible-content">
+                                <div class="json-display">${JSON.stringify(currentCharacter, null, 2)}</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1695,6 +1786,58 @@
                 .join('') || '<p>No skill bonuses</p>';
         }
 
+        function formatCompleteEquipment(rawData, characterData) {
+            const parts = [];
+            
+            // Handle armor from raw_data
+            if (rawData.armor) {
+                parts.push(`<p><strong>Armor:</strong> ${rawData.armor}</p>`);
+            }
+            
+            // Handle weapons from raw_data
+            if (rawData.weapons && rawData.weapons.length > 0) {
+                const weaponNames = rawData.weapons.map(weapon => 
+                    typeof weapon === 'string' ? weapon : weapon.name || 'Unknown Weapon'
+                );
+                parts.push(`<p><strong>Weapons:</strong> ${weaponNames.join(', ')}</p>`);
+            }
+            
+            // Handle equipment items
+            if (rawData.equipment || characterData.equipment) {
+                const equipment = rawData.equipment || characterData.equipment;
+                parts.push(formatEquipmentItems(equipment));
+            }
+            
+            return parts.join('') || '<p>Basic adventuring gear</p>';
+        }
+
+        function formatEquipmentItems(equipment) {
+            if (!equipment || Object.keys(equipment).length === 0) {
+                return '<p>Basic adventuring gear</p>';
+            }
+            
+            const parts = [];
+            
+            // Handle object-style equipment (like from the backend response)
+            if (typeof equipment === 'object' && !Array.isArray(equipment)) {
+                const equipmentList = Object.entries(equipment)
+                    .filter(([item, quantity]) => quantity > 0)
+                    .map(([item, quantity]) => quantity > 1 ? `${item} (${quantity})` : item)
+                    .join(', ');
+                
+                if (equipmentList) {
+                    parts.push(`<p><strong>Equipment:</strong> ${equipmentList}</p>`);
+                }
+            }
+            
+            // Handle array-style equipment
+            if (Array.isArray(equipment)) {
+                parts.push('<p><strong>Items:</strong> ' + equipment.join(', ') + '</p>');
+            }
+            
+            return parts.join('') || '<p>Basic adventuring gear</p>';
+        }
+
         function formatSavingThrows(saves) {
             if (!saves || Object.keys(saves).length === 0) {
                 return '<p>Standard saving throws</p>';
@@ -1703,7 +1846,7 @@
             return Object.entries(saves)
                 .map(([save, bonus]) => {
                     const sign = bonus >= 0 ? '+' : '';
-                    return `<p>${save.charAt(0).toUpperCase() + save.slice(1)}: ${sign}${bonus}</p>`;
+                    return '<p>' + save.charAt(0).toUpperCase() + save.slice(1) + ': ' + sign + bonus + '</p>';
                 })
                 .join('');
         }
@@ -1712,19 +1855,19 @@
             const parts = [];
             
             if (core.personality_traits && core.personality_traits.length > 0) {
-                parts.push(`<p><strong>Traits:</strong> ${core.personality_traits.join(', ')}</p>`);
+                parts.push('<p><strong>Traits:</strong> ' + core.personality_traits.join(', ') + '</p>');
             }
             
             if (core.ideals && core.ideals.length > 0) {
-                parts.push(`<p><strong>Ideals:</strong> ${core.ideals.join(', ')}</p>`);
+                parts.push('<p><strong>Ideals:</strong> ' + core.ideals.join(', ') + '</p>');
             }
             
             if (core.bonds && core.bonds.length > 0) {
-                parts.push(`<p><strong>Bonds:</strong> ${core.bonds.join(', ')}</p>`);
+                parts.push('<p><strong>Bonds:</strong> ' + core.bonds.join(', ') + '</p>');
             }
             
             if (core.flaws && core.flaws.length > 0) {
-                parts.push(`<p><strong>Flaws:</strong> ${core.flaws.join(', ')}</p>`);
+                parts.push('<p><strong>Flaws:</strong> ' + core.flaws.join(', ') + '</p>');
             }
             
             return parts.join('') || '<p>Unique personality awaiting discovery</p>';
@@ -1734,15 +1877,15 @@
             const parts = [];
             
             if (state.weapons && state.weapons.length > 0) {
-                parts.push(`<p><strong>Weapons:</strong> ${state.weapons.join(', ')}</p>`);
+                parts.push('<p><strong>Weapons:</strong> ' + state.weapons.join(', ') + '</p>');
             }
             
             if (state.armor) {
-                parts.push(`<p><strong>Armor:</strong> ${state.armor}</p>`);
+                parts.push('<p><strong>Armor:</strong> ' + state.armor + '</p>');
             }
             
             if (state.equipment && state.equipment.length > 0) {
-                parts.push(`<p><strong>Equipment:</strong> ${state.equipment.join(', ')}</p>`);
+                parts.push('<p><strong>Equipment:</strong> ' + state.equipment.join(', ') + '</p>');
             }
             
             return parts.join('') || '<p>Basic adventuring gear</p>';
@@ -1843,6 +1986,13 @@
             // Any initialization code here
             console.log('AI Character Creator initialized');
         });
+
+        // Test function to check if JavaScript is working
+        function testFunction() {
+            alert('JavaScript is working! The startCreation function exists: ' + (typeof startCreation === 'function'));
+            console.log('Test function called');
+            console.log('startCreation function type:', typeof startCreation);
+        }
     </script>
 </body>
 </html>

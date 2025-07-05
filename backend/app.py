@@ -155,6 +155,7 @@ class FactoryCreateRequest(BaseModel):
     """Request model for factory-based creation from scratch."""
     creation_type: str  # 'character', 'monster', 'npc', 'weapon', 'armor', 'spell', 'other_item'
     prompt: str
+    theme: Optional[str] = Field(None, description="Optional campaign theme (e.g., 'western', 'cyberpunk', 'steampunk', 'horror')")
     user_preferences: Optional[Dict[str, Any]] = None
     extra_fields: Optional[Dict[str, Any]] = None
     save_to_database: Optional[bool] = True
@@ -164,6 +165,7 @@ class FactoryEvolveRequest(BaseModel):
     creation_type: str
     character_id: str
     evolution_prompt: str
+    theme: Optional[str] = Field(None, description="Optional campaign theme for evolution context")
     preserve_backstory: Optional[bool] = True
     user_preferences: Optional[Dict[str, Any]] = None
     save_to_database: Optional[bool] = True
@@ -172,6 +174,7 @@ class FactoryResponse(BaseModel):
     """Response model for factory operations."""
     success: bool
     creation_type: str
+    theme: Optional[str] = None
     object_id: Optional[str] = None
     data: Dict[str, Any]
     warnings: Optional[List[str]] = None
@@ -585,12 +588,15 @@ async def factory_create_from_scratch(request: FactoryCreateRequest, db = Depend
             raise HTTPException(status_code=400, detail=f"Invalid creation type: {request.creation_type}")
         
         logger.info(f"Factory creating {creation_type.value} from scratch: {request.prompt[:100]}...")
+        if request.theme:
+            logger.info(f"Using campaign theme: {request.theme}")
         
         # Use the factory to create the object
         factory = app.state.creation_factory
         result = await factory.create_from_scratch(
             creation_type, 
             request.prompt,
+            theme=request.theme,
             user_preferences=request.user_preferences or {},
             extra_fields=request.extra_fields or {}
         )
@@ -796,6 +802,7 @@ async def factory_create_from_scratch(request: FactoryCreateRequest, db = Depend
         return FactoryResponse(
             success=True,
             creation_type=creation_type.value,
+            theme=request.theme,
             object_id=object_id,
             data=response_data,
             warnings=warnings if warnings else None,
@@ -813,6 +820,7 @@ async def factory_create_from_scratch(request: FactoryCreateRequest, db = Depend
         return FactoryResponse(
             success=False,
             creation_type=request.creation_type,
+            theme=request.theme,
             data={"error": str(e)},
             processing_time=processing_time
         )
@@ -851,6 +859,7 @@ async def factory_evolve_existing(request: FactoryEvolveRequest, db = Depends(ge
             creation_type,
             existing_data,
             request.evolution_prompt,
+            theme=request.theme,
             preserve_backstory=request.preserve_backstory,
             user_preferences=request.user_preferences or {}
         )
@@ -883,6 +892,7 @@ async def factory_evolve_existing(request: FactoryEvolveRequest, db = Depends(ge
         return FactoryResponse(
             success=True,
             creation_type=creation_type.value,
+            theme=request.theme,
             object_id=object_id,
             data=response_data,
             warnings=warnings if warnings else None,
@@ -899,6 +909,7 @@ async def factory_evolve_existing(request: FactoryEvolveRequest, db = Depends(ge
         return FactoryResponse(
             success=False,
             creation_type=request.creation_type,
+            theme=request.theme,
             data={"error": str(e)},
             processing_time=processing_time
         )

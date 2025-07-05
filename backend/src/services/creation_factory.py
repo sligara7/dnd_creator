@@ -143,6 +143,7 @@ class CreationFactory:
         Args:
             creation_type: The type of object to create
             prompt: Text description for LLM generation
+            theme: Optional campaign theme (e.g., 'western', 'cyberpunk', 'steampunk')
             **kwargs: Additional parameters specific to the creation type
         
         Returns:
@@ -151,6 +152,11 @@ class CreationFactory:
         config = self.get_config(creation_type)
         if not config:
             raise ValueError(f"Unknown creation type: {creation_type}")
+
+        # Extract theme parameter and log it
+        theme = kwargs.get('theme')
+        if theme:
+            logger.info(f"Creating {creation_type.value} with theme: {theme}")
         
         # Route to appropriate creation method
         if creation_type == CreationOptions.CHARACTER:
@@ -174,6 +180,7 @@ class CreationFactory:
             creation_type: The type of object to evolve
             existing_data: Current object data from database
             evolution_prompt: Description of how to evolve the object
+            theme: Optional campaign theme for evolution context
             **kwargs: Additional parameters specific to the evolution
         
         Returns:
@@ -182,6 +189,11 @@ class CreationFactory:
         config = self.get_config(creation_type)
         if not config:
             raise ValueError(f"Unknown creation type: {creation_type}")
+
+        # Extract theme parameter and log it
+        theme = kwargs.get('theme')
+        if theme:
+            logger.info(f"Evolving {creation_type.value} with theme context: {theme}")
         
         # Route to appropriate evolution method
         if creation_type == CreationOptions.CHARACTER:
@@ -210,12 +222,20 @@ class CreationFactory:
         """
         creator = CharacterCreator(self.llm_service)
         
+        # Extract theme parameter for character creation
+        theme = kwargs.get('theme')
+        
         # Merge extra_fields into user_preferences for better parameter handling
         user_preferences = kwargs.get('user_preferences', {})
         extra_fields = kwargs.get('extra_fields', {})
         
         # Merge extra_fields into user_preferences (extra_fields takes precedence)
         merged_preferences = {**user_preferences, **extra_fields}
+        
+        # Add theme to preferences if provided
+        if theme:
+            merged_preferences['theme'] = theme
+            logger.info(f"Creating character with theme: {theme}")
         
         result = await creator.create_character(prompt, merged_preferences)
         if result.success:
@@ -241,15 +261,25 @@ class CreationFactory:
         """
         creator = CharacterCreator(self.llm_service)
         
+        # Extract theme parameter for evolution context
+        theme = kwargs.get('theme')
+        
         # Determine evolution type
         evolution_type = kwargs.get('evolution_type', 'enhance')
+        
+        # Add theme to user preferences if provided
+        user_preferences = kwargs.get('user_preferences', {})
+        if theme:
+            user_preferences = user_preferences.copy()
+            user_preferences['theme'] = theme
+            logger.info(f"Evolving character with theme context: {theme}")
         
         if evolution_type == 'refine':
             # Iterative refinement
             result = await creator.refine_character(
                 existing_data, 
                 evolution_prompt, 
-                kwargs.get('user_preferences')
+                user_preferences
             )
         elif evolution_type == 'level_up':
             # Level up using journal

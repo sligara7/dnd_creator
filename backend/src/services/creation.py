@@ -552,7 +552,8 @@ class CharacterCreator(BaseCreator):
             logger.info("Using traditional creation method")
             
             # Step 1: Generate base character data
-            base_data = await self._generate_character_data(prompt, level)
+            theme = user_preferences.get("theme") if user_preferences else None
+            base_data = await self._generate_character_data(prompt, level, theme)
             
             if verbose_generation and hasattr(self, 'verbose_logs'):
                 self.verbose_logs.append({
@@ -605,7 +606,7 @@ class CharacterCreator(BaseCreator):
                 })
             
             # Step 5: Enhance character spells
-            enhanced_spell_data = self._enhance_character_spells(base_data)
+            enhanced_spell_data = self._enhance_character_spells(base_data, theme)
             base_data.update(enhanced_spell_data)
             
             if verbose_generation and hasattr(self, 'verbose_logs'):
@@ -618,7 +619,7 @@ class CharacterCreator(BaseCreator):
                 })
             
             # Step 6: Enhance character weapons
-            enhanced_weapon_data = self._enhance_character_weapons(base_data)
+            enhanced_weapon_data = self._enhance_character_weapons(base_data, theme)
             base_data.update(enhanced_weapon_data)
             
             if verbose_generation and hasattr(self, 'verbose_logs'):
@@ -724,9 +725,9 @@ class CharacterCreator(BaseCreator):
             result.creation_time = time.time() - start_time
             return result
     
-    async def _generate_character_data(self, description: str, level: int) -> Dict[str, Any]:
+    async def _generate_character_data(self, description: str, level: int, theme: Optional[str] = None) -> Dict[str, Any]:
         """Generate core character data - foundation for all character types."""
-        prompt = self._create_character_prompt(description, level)
+        prompt = self._create_character_prompt(description, level, theme)
         data = await self._generate_with_llm(prompt, "character")
         
         # Debug: Check the type and content of data
@@ -745,7 +746,7 @@ class CharacterCreator(BaseCreator):
         
         return data
     
-    def _create_character_prompt(self, description: str, level: int) -> str:
+    def _create_character_prompt(self, description: str, level: int, theme: Optional[str] = None) -> str:
         """Create character generation prompt with D&D 5e 2024 feats and skills."""
         # Determine feat availability based on level
         feat_section = self._get_feat_section_for_level(level)
@@ -761,12 +762,81 @@ class CharacterCreator(BaseCreator):
         
         spell_suggestion_text = ", ".join(spell_examples) if spell_examples else "Magic Missile, Fire Bolt, Cure Wounds"
         
-        return f"""Create D&D 5e 2024 character. Return ONLY JSON:
+        # Add theme context if provided
+        theme_context = ""
+        theme_equipment_guidance = ""
+        theme_spell_guidance = ""
+        
+        if theme:
+            theme_context = f"\nCAMPAIGN THEME: {theme}\n"
+            
+            # Provide theme-aware equipment suggestions (while preserving player choice)
+            if theme.lower() in ['western', 'frontier', 'gunslinger']:
+                theme_equipment_guidance = """
+THEME-AWARE EQUIPMENT SUGGESTIONS (OPTIONAL):
+- Western Theme: Consider firearms (musket, pistol), leather armor, horses, lassos
+- Clothing: Dusters, boots, wide-brimmed hats, bandanas
+- Gear: Bedrolls, rations, water skins, ammunition pouches"""
+                theme_spell_guidance = """
+THEME-AWARE SPELL SUGGESTIONS (OPTIONAL):
+- Western Theme: Utility spells (Mending for gear), nature spells (Animal Friendship for horses), communication spells"""
+            elif theme.lower() in ['steampunk', 'mechanical', 'clockwork']:
+                theme_equipment_guidance = """
+THEME-AWARE EQUIPMENT SUGGESTIONS (OPTIONAL):
+- Steampunk Theme: Mechanical devices, brass fittings, clockwork items, goggles
+- Weapons: Enhanced crossbows, mechanical contraptions
+- Gear: Tools, tinker supplies, mechanical components"""
+                theme_spell_guidance = """
+THEME-AWARE SPELL SUGGESTIONS (OPTIONAL):
+- Steampunk Theme: Artificer spells, mechanical enhancement spells, repair magic"""
+            elif theme.lower() in ['dark', 'gothic', 'horror']:
+                theme_equipment_guidance = """
+THEME-AWARE EQUIPMENT SUGGESTIONS (OPTIONAL):
+- Dark/Gothic Theme: Dark clothing, cloaks, silver items, holy symbols
+- Weapons: Silver weapons, blessed items, protective gear
+- Gear: Holy water, garlic, wooden stakes, mirrors"""
+                theme_spell_guidance = """
+THEME-AWARE SPELL SUGGESTIONS (OPTIONAL):
+- Dark/Gothic Theme: Protection spells, divination magic, undead-focused spells, light sources"""
+            elif theme.lower() in ['high_fantasy', 'magical', 'arcane']:
+                theme_equipment_guidance = """
+THEME-AWARE EQUIPMENT SUGGESTIONS (OPTIONAL):
+- High Fantasy Theme: Ornate weapons, magical focuses, enchanted items
+- Clothing: Robes, cloaks, jewelry with magical significance
+- Gear: Spell components, magical tools, crystal orbs"""
+                theme_spell_guidance = """
+THEME-AWARE SPELL SUGGESTIONS (OPTIONAL):
+- High Fantasy Theme: Wide variety of magical schools, utility and combat spells"""
+            elif theme.lower() in ['nature', 'wilderness', 'druidic']:
+                theme_equipment_guidance = """
+THEME-AWARE EQUIPMENT SUGGESTIONS (OPTIONAL):
+- Nature Theme: Natural materials (leather, wood, bone), camouflaged gear
+- Weapons: Bows, spears, simple weapons from natural materials
+- Gear: Herbalism kits, survival gear, animal companions"""
+                theme_spell_guidance = """
+THEME-AWARE SPELL SUGGESTIONS (OPTIONAL):
+- Nature Theme: Druid spells, nature magic, animal communication, weather control"""
+            else:
+                # Generic theme guidance
+                theme_equipment_guidance = f"""
+THEME-AWARE EQUIPMENT SUGGESTIONS (OPTIONAL):
+- {theme.title()} Theme: Consider equipment that fits the {theme} aesthetic and setting
+- Adapt standard D&D equipment to match the campaign's tone and style"""
+                theme_spell_guidance = f"""
+THEME-AWARE SPELL SUGGESTIONS (OPTIONAL):
+- {theme.title()} Theme: Choose spells that complement the {theme} setting and atmosphere"""
+        
+        return f"""Create D&D 5e 2024 character. Return ONLY JSON:{theme_context}
 
 DESCRIPTION: {description}
 LEVEL: {level}
 
 {{"name":"Name","species":"Species","level":{level},"classes":{{"Class":{level}}},"background":"Background","alignment":["Ethics","Morals"],"ability_scores":{{"strength":15,"dexterity":14,"constitution":13,"intelligence":12,"wisdom":10,"charisma":8}},"skill_proficiencies":{{"skill_name":"proficient"}},"personality_traits":["Trait"],"ideals":["Ideal"],"bonds":["Bond"],"flaws":["Flaw"],{feat_section}"armor":"Armor","weapons":[{{"name":"Weapon","damage":"1d8","properties":["property"]}}],"equipment":{{"Item":1}},"spells_known":[{{"name":"Spell Name","level":1,"school":"evocation","description":"Spell description"}}],"backstory":"Brief backstory"}}
+
+**IMPORTANT**: Theme is SUGGESTIVE, not mandatory. Player character concept takes priority over theme.
+If the character description conflicts with the theme, follow the character description.
+{theme_equipment_guidance}
+{theme_spell_guidance}
 
 D&D 5e 2024 SKILL RULES:
 - Skills from Species: Each species grants specific skill proficiencies
@@ -1107,10 +1177,11 @@ Match the character concept exactly. Return complete JSON only."""
             logger.warning(f"Custom content generation failed: {e}")
             return {}
     
-    def _enhance_character_spells(self, character_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _enhance_character_spells(self, character_data: Dict[str, Any], theme: Optional[str] = None) -> Dict[str, Any]:
         """
         Enhance character with appropriate D&D 5e spells based on their class and level.
         STRONGLY prioritizes existing D&D 5e spells over custom spell creation.
+        Considers campaign theme for spell selection guidance.
         """
         try:
             classes = character_data.get("classes", {})
@@ -1126,6 +1197,10 @@ Match the character concept exactly. Return complete JSON only."""
             
             # Get appropriate spells for this character (prioritizes existing D&D spells)
             suggested_spells = get_appropriate_spells_for_character(character_data, spell_count)
+            
+            # Apply theme-aware spell filtering if theme is provided
+            if theme:
+                suggested_spells = self._filter_spells_by_theme(suggested_spells, theme, character_data)
             
             # If character already has spells, validate and enhance them
             existing_spells = character_data.get("spells_known", [])
@@ -1440,10 +1515,11 @@ Match the character concept exactly. Return complete JSON only."""
         
         return selected_spells
 
-    def _enhance_character_weapons(self, character_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _enhance_character_weapons(self, character_data: Dict[str, Any], theme: Optional[str] = None) -> Dict[str, Any]:
         """
         Enhance character with appropriate D&D 5e weapons based on their class and level.
         STRONGLY prioritizes existing D&D 5e weapons over custom weapon creation.
+        Considers campaign theme for weapon selection guidance.
         """
         try:
             classes = character_data.get("classes", {})
@@ -1915,7 +1991,8 @@ Create an improved version of this character that:
 
 Respond with complete character data in the same format as the original.
 """
-            refined_data = await self._generate_character_data(refinement_full_prompt, character_data.get("level", 1))
+            refined_data = await self._generate_character_data(refinement_full_prompt, character_data.get("level", 1), 
+                                                              user_preferences.get("theme") if user_preferences else None)
             if verbose_generation and hasattr(self, 'verbose_logs'):
                 self.verbose_logs.append({
                     'type': 'refinement_step',
@@ -1924,8 +2001,8 @@ Respond with complete character data in the same format as the original.
                     'description': 'LLM generated refined character data',
                     'refined_keys': list(refined_data.keys()) if refined_data else []
                 })
-            refined_data = self._enhance_character_spells(refined_data)
-            refined_data = self._enhance_character_weapons(refined_data)
+            refined_data = self._enhance_character_spells(refined_data, user_preferences.get("theme") if user_preferences else None)
+            refined_data = self._enhance_character_weapons(refined_data, user_preferences.get("theme") if user_preferences else None)
             refined_data = self._enhance_character_feats(refined_data)
             refined_data = self._enhance_character_equipment(refined_data)
             if verbose_generation and hasattr(self, 'verbose_logs'):
@@ -2037,7 +2114,8 @@ Requirements:
 
 Respond with complete updated character data.
 """
-            leveled_data = await self._generate_character_data(levelup_prompt, new_level)
+            leveled_data = await self._generate_character_data(levelup_prompt, new_level, 
+                                                             user_preferences.get("theme") if user_preferences else None)
             if verbose_generation and hasattr(self, 'verbose_logs'):
                 self.verbose_logs.append({
                     'type': 'levelup_step',
@@ -2051,8 +2129,8 @@ Respond with complete updated character data.
                 current_classes = leveled_data.get("classes", {})
                 current_classes[multiclass_option] = 1
                 leveled_data["classes"] = current_classes
-            leveled_data = self._enhance_character_spells(leveled_data)
-            leveled_data = self._enhance_character_weapons(leveled_data)
+            leveled_data = self._enhance_character_spells(leveled_data, user_preferences.get("theme") if user_preferences else None)
+            leveled_data = self._enhance_character_weapons(leveled_data, user_preferences.get("theme") if user_preferences else None)
             leveled_data = self._enhance_character_feats(leveled_data)
             leveled_data = self._enhance_character_equipment(leveled_data)
             if verbose_generation and hasattr(self, 'verbose_logs'):
@@ -2123,7 +2201,8 @@ Create an enhanced backstory that:
             return result
     
     async def enhance_existing_character(self, character_data: Dict[str, Any], 
-                                       enhancement_prompt: str) -> CreationResult:
+                                       enhancement_prompt: str, 
+                                       user_preferences: Optional[Dict[str, Any]] = None) -> CreationResult:
         """
         Enhance an existing character with story-driven improvements.
         
@@ -2154,11 +2233,12 @@ Create an enhanced backstory that:
             """
             
             # Generate enhanced character
-            enhanced_data = await self._generate_character_data(enhancement_full_prompt, character_data.get("level", 1))
+            enhanced_data = await self._generate_character_data(enhancement_full_prompt, character_data.get("level", 1), 
+                                                               user_preferences.get("theme") if user_preferences else None)
             
             # Enhance the character
-            enhanced_data = self._enhance_character_spells(enhanced_data)
-            enhanced_data = self._enhance_character_weapons(enhanced_data)
+            enhanced_data = self._enhance_character_spells(enhanced_data, user_preferences.get("theme") if user_preferences else None)
+            enhanced_data = self._enhance_character_weapons(enhanced_data, user_preferences.get("theme") if user_preferences else None)
             enhanced_data = self._enhance_character_feats(enhanced_data)
             enhanced_data = self._enhance_character_equipment(enhanced_data)
             
@@ -2267,8 +2347,9 @@ Create an enhanced backstory that:
             raise Exception(f"Character creation failed: {creation_result.error}")
         
         # Apply additional validation and enhancement from src.services.creation system
-        character_data = self._enhance_character_spells(character_data)
-        character_data = self._enhance_character_weapons(character_data)
+        theme = user_preferences.get("theme") if user_preferences else None
+        character_data = self._enhance_character_spells(character_data, theme)
+        character_data = self._enhance_character_weapons(character_data, theme)
         character_data = self._enhance_character_feats(character_data)
         character_data = self._enhance_character_armor(character_data)
         character_data = self._enhance_character_equipment(character_data)

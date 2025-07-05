@@ -60,6 +60,27 @@ Create an AI-powered D&D 5e 2024 character creation system that enables users to
 4. BALANCE REQUIREMENT: All content must be balanced for level-appropriate play
 ```
 
+### 5.1. CAMPAIGN THEME-DRIVEN CONTENT CREATION
+**PRIORITY: HIGH**
+- **Theme Integration**: Support campaign themes (western, cyberpunk, steampunk, horror, etc.) as optional context for content creation
+- **Flexible Application**: Theme provides creative direction but doesn't override player choice
+- **Player Agency**: Users can still create traditional D&D content in themed campaigns (e.g., elf ranger in cyberpunk)
+- **Content Adaptation**: All content types (characters, NPCs, monsters, items, spells) support theme-aware generation
+- **Campaign Integration**: Campaign creators can suggest themes for character/content creation while preserving player freedom
+
+**Theme Examples:**
+- **Western**: Gunslingers, frontier towns, revolvers, cowboy gear, frontier magic
+- **Cyberpunk**: Corporate agents, mega-cities, smart weapons, cyberware, data magic  
+- **Steampunk**: Inventors, airships, mechanical gadgets, steam-powered devices, industrial magic
+- **Horror**: Investigators, haunted locations, blessed weapons, protective charms, eldritch magic
+- **Traditional**: Standard D&D fantasy with no thematic constraints
+
+**Design Principles:**
+- Theme is **suggestive, not mandatory** - guides content creation without forcing it
+- **Backward compatible** - all existing functionality works unchanged
+- **Optional integration** - can be used by campaign services or ignored entirely
+- **Player choice preserved** - theme doesn't override specific player requests
+
 ## SECONDARY REQUIREMENTS
 
 ### 6. NPC & CREATURE CREATION
@@ -153,6 +174,15 @@ Create an AI-powered D&D 5e 2024 character creation system that enables users to
 - **Balance integration**: Uses creation_validation.py for D&D 5e compliance
 - **Content hierarchy**: Prioritizes existing D&D content when appropriate
 
+#### 2.1. CAMPAIGN THEME-DRIVEN CONTENT CREATION (HIGH) - ✅ EXCELLENT
+- **Theme parameter support**: `/api/v2/factory/create` and `/api/v2/factory/evolve` accept optional theme parameter
+- **Backward compatibility**: All existing API calls work unchanged - theme is completely optional
+- **All content types**: Characters, NPCs, monsters, weapons, armor, spells all support theme-aware generation
+- **Campaign integration**: Campaign service can pass campaign themes to backend for thematic consistency
+- **Player agency preserved**: Theme provides creative direction but doesn't override specific player requests
+- **Response integration**: Theme included in factory responses for tracking and debugging
+- **Foundation ready**: Infrastructure in place for theme-aware content generation logic
+
 #### 3. ITERATIVE REFINEMENT SYSTEM (HIGH) - ✅ EXCELLENT
 - **Character refinement**: `/api/v2/characters/{id}/refine` for iterative improvements
 - **Structured feedback**: `/api/v2/characters/{id}/feedback` for targeted changes
@@ -170,6 +200,8 @@ Create an AI-powered D&D 5e 2024 character creation system that enables users to
 - **Database Models**: Comprehensive character storage with CharacterDB
 - **RESTful API**: Complete REST endpoints for all operations
 - **Error Handling**: Proper exception handling and graceful fallbacks
+- **Theme System**: Optional theme parameter support throughout factory system
+- **Service Integration**: Campaign and backend services can optionally interface for enhanced functionality
 
 #### 10. CONTENT VALIDATION (HIGH) - ✅ EXCELLENT
 - **Character validation**: `/api/v2/validate/character` endpoint
@@ -242,7 +274,17 @@ Create an AI-powered D&D 5e 2024 character creation system that enables users to
 - **Type support**: Character, monster, NPC, weapon, armor, spell, other_item
 - **Endpoints**: `/api/v2/factory/create`, `/api/v2/factory/evolve`, `/api/v2/factory/types`
 
-#### 18. UNIFIED CATALOG SYSTEM (NEW - HIGH)
+#### 18. STANDALONE SERVICES ARCHITECTURE (NEW - CRITICAL)
+**PRIORITY: CRITICAL**
+- **Independent operation**: Backend service (`/backend`) and campaign service (`/backend_campaign`) work standalone
+- **Optional integration**: When both services run, they interface for enhanced functionality
+- **Service communication**: HTTP-based integration with health checks and graceful fallbacks
+- **Theme propagation**: Campaign service can pass campaign themes to backend for content creation
+- **No hard dependencies**: Either service can operate independently for core functionality
+- **Resilient design**: Service failures don't break the other service
+- **Content delegation**: Campaign service focuses on campaigns, backend service focuses on content creation
+
+#### 19. UNIFIED CATALOG SYSTEM (NEW - HIGH)
 **PRIORITY: HIGH**
 - **Unified item tracking**: Centralized catalog for all items, spells, and equipment across characters
 - **Smart recommendations**: Suggest appropriate items/spells based on character build and level
@@ -250,7 +292,7 @@ Create an AI-powered D&D 5e 2024 character creation system that enables users to
 - **Rarity management**: Track item rarity and availability based on campaign settings
 - **Custom content integration**: Seamlessly integrate custom items/spells into unified catalog
 
-#### 19. ADVANCED SPELL MANAGEMENT (NEW - HIGH)
+#### 20. ADVANCED SPELL MANAGEMENT (NEW - HIGH)
 **PRIORITY: HIGH**
 - **Spell swapping**: Allow characters to change prepared spells following D&D 5e rules
 - **Spell slot tracking**: Real-time tracking of used/available spell slots by level
@@ -259,7 +301,7 @@ Create an AI-powered D&D 5e 2024 character creation system that enables users to
 - **Spell customization**: Support for custom spells with proper slot assignments
 - **Known vs Prepared**: Distinguish between spells known and spells prepared for each class
 
-#### 20. DYNAMIC EQUIPMENT MANAGEMENT (NEW - HIGH)
+#### 21. DYNAMIC EQUIPMENT MANAGEMENT (NEW - HIGH)
 **PRIORITY: HIGH**
 - **Equipment swapping**: Allow real-time swapping of equipped items between characters or inventory
 - **Smart equipping**: Automatic optimization suggestions for equipment slots
@@ -308,17 +350,19 @@ Create an AI-powered D&D 5e 2024 character creation system that enables users to
 9. **✅ Real-time gameplay support**
 10. **✅ Comprehensive validation system**
 11. **✅ Factory system architecture**
+12. **✅ Campaign theme-driven content creation**
+13. **✅ Standalone services architecture**
 
 ### 🔧 CURRENT IMPLEMENTATION (Phase 2)
-12. **Performance monitoring system** (metrics endpoints, system health)
-13. **Journal management system** (direct CRUD operations)  
-14. **Advanced version control** (git-like branching, approval workflows)
+14. **Performance monitoring system** (metrics endpoints, system health)
+15. **Journal management system** (direct CRUD operations)  
+16. **Advanced version control** (git-like branching, approval workflows)
 
 ### 📋 FUTURE ENHANCEMENTS (Phase 3)
-15. **Campaign integration** (link characters to campaigns)
-16. **Multi-user collaboration** (shared character editing)
-17. **Export/import features** (PDF character sheets, Roll20 integration)
-18. **AI-powered suggestions** (character optimization recommendations)
+17. **Campaign integration** (link characters to campaigns)
+18. **Multi-user collaboration** (shared character editing)
+19. **Export/import features** (PDF character sheets, Roll20 integration)
+20. **AI-powered suggestions** (character optimization recommendations)
 
 ---
 
@@ -329,6 +373,55 @@ When working on this system, remember:
 - **User-Centric**: Prioritize ease of use and creative freedom
 - **D&D Foundation**: Build on 5e 2024 rules while extending beyond traditional limits
 - **Iterative Design**: Support collaborative character development process
+- **Theme Integration**: Support campaign themes while preserving player choice
+- **Service Independence**: Backend and campaign services work standalone but integrate when both available
+
+## THEME SYSTEM USAGE EXAMPLES
+
+### Campaign Creator Workflow
+```bash
+# Campaign creator specifies themes for their campaign
+POST /api/v2/campaigns
+{
+  "title": "Wild West Adventures",
+  "themes": ["western", "frontier"]
+}
+
+# When players create characters, campaign service suggests theme
+POST /api/v2/factory/create
+{
+  "creation_type": "character",
+  "prompt": "Create a gunslinger with a mysterious past",
+  "theme": "western"  # Suggested by campaign, not mandatory
+}
+```
+
+### Player Choice Examples
+```bash
+# Player accepts theme suggestion - creates western-themed character
+POST /api/v2/factory/create
+{
+  "creation_type": "character",
+  "prompt": "Create a gunslinger with a mysterious past",
+  "theme": "western"
+}
+
+# Player overrides theme - creates traditional D&D character in western campaign
+POST /api/v2/factory/create
+{
+  "creation_type": "character", 
+  "prompt": "Create a traditional elven ranger with nature magic",
+  "theme": "western"  # Theme present but player concept takes priority
+}
+
+# Player ignores theme entirely - still works (backward compatibility)
+POST /api/v2/factory/create
+{
+  "creation_type": "character",
+  "prompt": "Create a wizard specialist in divination magic"
+  # No theme parameter - generates standard D&D content
+}
+```
 
 ## BACKEND How files work together:
 app.py (FastAPI endpoints) 

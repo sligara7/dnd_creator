@@ -1,1208 +1,796 @@
 """
-D&D 5e 2024 Creation Validation Module
+D&D Campaign Creation Validation Module
 
-This module contains comprehensive validation methods for character, NPC, item, and creature creation.
-All validation follows D&D 5e 2024 Basic Rules (https://roll20.net/compendium/dnd5e/Rules:Free%20Basic%20Rules%20(2024)).
+This module contains comprehensive validation methods for campaign creation based on campaign_creation.md requirements.
+All validation follows D&D 5e 2024 rules and ensures campaigns meet narrative quality and structural requirements.
 
 VALIDATION REQUIREMENTS:
-- All newly created species, classes, feats, spells, armors, weapons, trinkets must adhere to D&D 5e 2024 reference rules
-- Custom content must include balance checks to ensure compatibility with D&D 5e framework
-- Character, NPC, and creature creation must include level/CR appropriateness validation
-- All content must be balanced for intended character level and game context
+- Campaign concepts must be 50-500 words (REQ-CAM-002)
+- Campaigns must have compelling narrative hooks (REQ-CAM-013)
+- Complex storylines with multiple plot layers (REQ-CAM-003, REQ-CAM-014)
+- Morally complex scenarios (REQ-CAM-005)
+- Appropriate encounter balance for party level (REQ-CAM-035, REQ-CAM-036)
+- Chapter structure and content validation (REQ-CAM-028-037)
+- Campaign length validation (REQ-CAM-027, REQ-CAM-219)
+- Performance requirements validation (REQ-CAM-216-223)
 
 Validation Functions:
-- Character data structure and balance validation
-- Custom content adherence to D&D 5e rules and balance checks
-- NPC data validation with role-appropriate balance
-- Item level appropriateness and power balance validation
-- Creature stat block validation with CR balance verification
-- Custom content power level and mechanical balance assessment
+- Campaign concept and structure validation
+- Chapter content and balance validation
+- NPC/monster appropriateness for campaign context
+- Plot complexity and narrative quality validation
+- Campaign performance and scalability validation
+- Refinement request validation
 """
 
 import logging
-from typing import Dict, Any, List, Optional
+import re
+from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
+from datetime import datetime
 
-# Import from centralized enums
-from src.core.enums import NPCType, NPCRole, ItemRarity
-
-# Import CreationResult class (will be moved to shared module later)
-# For now, we'll define a minimal version to avoid circular imports
+# Import from models
+from src.models.campaign_creation_models import (
+    CampaignCreationType, BaseCampaignRequest, CampaignFromScratchRequest,
+    CampaignSkeletonRequest, ChapterContentRequest, CampaignRefinementRequest
+)
+from src.models.core_models import ChallengeRating, EncounterDifficulty, EncounterBuilder
 
 logger = logging.getLogger(__name__)
 
 # ============================================================================
-# MINIMAL RESULT CLASS (to avoid circular imports)
+# VALIDATION RESULT CLASSES
 # ============================================================================
 
-class CreationResult:
-    """Result container for creation operations."""
+@dataclass
+class ValidationResult:
+    """Result container for validation operations."""
+    success: bool = False
+    errors: List[str] = None
+    warnings: List[str] = None
+    validated_data: Dict[str, Any] = None
     
-    def __init__(self, success: bool = False, data: Dict[str, Any] = None, 
-                 error: str = "", warnings: List[str] = None):
-        self.success = success
-        self.data = data or {}
-        self.error = error
-        self.warnings = warnings or []
-        self.creation_time: float = 0.0
+    def __post_init__(self):
+        if self.errors is None:
+            self.errors = []
+        if self.warnings is None:
+            self.warnings = []
+        if self.validated_data is None:
+            self.validated_data = {}
+    
+    def add_error(self, error: str):
+        """Add a validation error."""
+        self.errors.append(error)
+        self.success = False
     
     def add_warning(self, warning: str):
-        """Add a warning to the result."""
+        """Add a validation warning."""
         self.warnings.append(warning)
+    
+    def has_errors(self) -> bool:
+        """Check if there are any validation errors."""
+        return len(self.errors) > 0
+    
+    def has_warnings(self) -> bool:
+        """Check if there are any validation warnings."""
+        return len(self.warnings) > 0
 
 # ============================================================================
-# CHARACTER VALIDATION FUNCTIONS
+# CAMPAIGN CONCEPT VALIDATION (REQ-CAM-002, REQ-CAM-006)
 # ============================================================================
 
-def validate_basic_structure(character_data: Dict[str, Any]) -> CreationResult:
+def validate_campaign_concept(concept: str, creation_type: CampaignCreationType) -> ValidationResult:
     """
-    Validate basic character data structure and D&D 5e 2024 rule adherence.
-    Includes balance checks for character appropriateness.
+    Validate campaign concept meets requirements.
+    
+    REQ-CAM-002: Accept campaign concepts of 50-500 words
+    REQ-CAM-006: Support multiple genres
     """
-    result = CreationResult()
+    result = ValidationResult(success=True)
     
-    required_fields = ["name", "species", "level", "classes", "ability_scores"]
-    missing_fields = [field for field in required_fields if field not in character_data]
-    
-    if missing_fields:
-        result.error = f"Missing required fields: {', '.join(missing_fields)}"
+    if not concept or not isinstance(concept, str):
+        result.add_error("Campaign concept is required and must be a string")
         return result
     
-    # Validate ability scores according to D&D 5e 2024 rules
-    abilities = character_data.get("ability_scores", {})
-    required_abilities = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]
+    # Word count validation (REQ-CAM-002)
+    words = concept.split()
+    word_count = len(words)
     
-    ability_total = 0
-    for ability in required_abilities:
-        if ability not in abilities:
-            result.add_warning(f"Missing ability score: {ability}")
-        else:
-            score = abilities[ability]
-            if not isinstance(score, int) or score < 1 or score > 30:
-                result.add_warning(f"Invalid {ability} score: {score} (must be 1-30)")
-            elif score < 8 or score > 18:
-                # Standard character creation allows 8-15 + racial bonuses
-                result.add_warning(f"{ability} score {score} may be outside normal character creation range")
-            ability_total += score
+    if word_count < 50:
+        result.add_error(f"Campaign concept too short: {word_count} words (minimum 50 required)")
+    elif word_count > 500:
+        result.add_error(f"Campaign concept too long: {word_count} words (maximum 500 allowed)")
     
-    # Balance check: total ability scores should be reasonable for level
-    expected_total = 72 + (character_data.get("level", 1) - 1) * 2  # Base 72 + ASI improvements
-    if ability_total > expected_total + 10:
-        result.add_warning(f"Total ability scores ({ability_total}) may be too high for level {character_data.get('level', 1)}")
+    # Content quality validation
+    if word_count < 75:
+        result.add_warning("Concept may be too brief for complex storytelling")
     
-    # Validate level according to D&D 5e 2024 rules
-    level = character_data.get("level", 0)
-    if not isinstance(level, int) or level < 1 or level > 20:
-        result.add_warning(f"Invalid character level: {level} (must be 1-20)")
-    
-    # Validate classes and multiclass rules
-    classes = character_data.get("classes", {})
-    total_levels = sum(classes.values()) if isinstance(classes, dict) else 0
-    if total_levels != level:
-        result.add_warning(f"Class levels ({total_levels}) don't match character level ({level})")
-    
-    # Check multiclass prerequisites (simplified)
-    if len(classes) > 1:
-        result.add_warning("Multiclass character detected - ensure ability score prerequisites are met")
-    
-    result.success = True
-    result.data = character_data
-    return result
-
-def validate_custom_content(character_data: Dict[str, Any], 
-                          needs_custom_species: bool, needs_custom_class: bool) -> CreationResult:
-    """
-    Validate custom content adherence to D&D 5e 2024 framework and balance requirements.
-    Ensures custom species and classes follow official design guidelines.
-    """
-    result = CreationResult(success=True, data=character_data)
-    
-    # Check for custom species if needed
-    if needs_custom_species:
-        species = character_data.get("species", "").lower()
-        standard_species = [
-            "human", "elf", "dwarf", "halfling", "dragonborn", "gnome", 
-            "half-elf", "half-orc", "tiefling", "aasimar", "genasi", 
-            "goliath", "tabaxi", "kenku", "lizardfolk", "tortle", "warforged",
-            "githyanki", "githzerai", "triton", "firbolg", "yuan-ti"
-        ]
-        
-        if species in standard_species:
-            result.add_warning(f"Used standard species '{species}' when custom was expected")
-        else:
-            # Validate custom species follows D&D 5e design principles
-            result.add_warning(f"Custom species '{species}' detected - ensure it follows D&D 5e racial trait balance:")
-            result.add_warning("- Should provide 2-3 minor traits or 1 major trait")
-            result.add_warning("- Total power level should match existing races")
-            result.add_warning("- Should have cultural/roleplay elements, not just mechanical benefits")
-    
-    # Check for custom class if needed
-    if needs_custom_class:
-        classes = character_data.get("classes", {})
-        class_names = [name.lower() for name in classes.keys()]
-        standard_classes = [
-            "barbarian", "bard", "cleric", "druid", "fighter", "monk",
-            "paladin", "ranger", "rogue", "sorcerer", "warlock", "wizard",
-            "artificer", "blood hunter"
-        ]
-        
-        for class_name in class_names:
-            if class_name in standard_classes:
-                result.add_warning(f"Used standard class '{class_name}' when custom was expected")
-                break
-            else:
-                # Validate custom class follows D&D 5e design principles
-                result.add_warning(f"Custom class '{class_name}' detected - ensure it follows D&D 5e class design:")
-                result.add_warning("- Hit die should be d6, d8, d10, or d12 based on role")
-                result.add_warning("- Should have 2 good saves and 1-2 bad saves")
-                result.add_warning("- Features should follow level progression guidelines")
-                result.add_warning("- Should have clear role/niche that doesn't overshadow existing classes")
-    
-    # Validate equipment and starting gear balance
-    equipment = character_data.get("equipment", {})
-    if equipment:
-        expensive_items = []
-        for item_name, quantity in equipment.items():
-            # Check for obviously overpowered starting equipment
-            if any(keyword in item_name.lower() for keyword in ["legendary", "artifact", "vorpal", "+3", "+4", "+5"]):
-                expensive_items.append(item_name)
-        
-        if expensive_items:
-            result.add_warning(f"High-power equipment detected: {expensive_items} - ensure appropriate for character level")
-    
-    return result
-
-# ============================================================================
-# NPC VALIDATION FUNCTIONS
-# ============================================================================
-
-def validate_and_enhance_npc(npc_data: Dict[str, Any], npc_type: NPCType, npc_role: NPCRole) -> Dict[str, Any]:
-    """
-    Validate and enhance NPC data with D&D 5e 2024 balance checks.
-    Ensures NPC is appropriate for its type, role, and intended challenge level.
-    """
-    # Ensure required fields exist
-    required_fields = ["name", "species", "role", "alignment", "abilities"]
-    for field in required_fields:
-        if field not in npc_data:
-            logger.warning(f"Missing required field '{field}' in NPC data")
-            npc_data[field] = "Unknown" if field != "abilities" else {
-                "strength": 10, "dexterity": 10, "constitution": 10,
-                "intelligence": 10, "wisdom": 10, "charisma": 10
-            }
-    
-    # Validate ability scores according to D&D 5e NPC guidelines
-    if "abilities" in npc_data:
-        for ability, score in npc_data["abilities"].items():
-            if not isinstance(score, int) or score < 3 or score > 20:
-                logger.warning(f"NPC ability score {ability}={score} outside normal range (3-20), setting to 10")
-                npc_data["abilities"][ability] = 10
-    
-    # Balance checks based on NPC type and role
-    if npc_type == NPCType.MINOR:
-        # Minor NPCs should have modest stats and focus on roleplay
-        npc_data["focus"] = "roleplay"
-        npc_data["combat_stats_minimal"] = True
-        
-        # Ensure ability scores are appropriate for civilians
-        abilities = npc_data.get("abilities", {})
-        for ability in abilities:
-            if abilities[ability] > 16:
-                logger.warning(f"Minor NPC has high {ability} ({abilities[ability]}) - may be overpowered")
-                abilities[ability] = min(abilities[ability], 16)
-        
-        # Set low challenge rating for minor NPCs
-        npc_data["challenge_rating"] = 0.0
-        npc_data["hit_points"] = npc_data.get("hit_points", 4)
-        npc_data["armor_class"] = npc_data.get("armor_class", 10)
-        
-    else:
-        # Major NPCs can have combat capabilities
-        npc_data["focus"] = "combat"
-        npc_data["combat_ready"] = True
-        
-        # Set appropriate combat stats based on CR
-        cr = npc_data.get("challenge_rating", 0.25)
-        
-        # D&D 5e 2024 NPC stat guidelines by CR
-        if cr <= 0.5:
-            max_hp = 35
-            min_ac = 10
-            max_ac = 15
-        elif cr <= 2:
-            max_hp = 100
-            min_ac = 12
-            max_ac = 17
-        elif cr <= 5:
-            max_hp = 200
-            min_ac = 14
-            max_ac = 18
-        else:
-            max_hp = 300
-            min_ac = 15
-            max_ac = 20
-        
-        # Validate and adjust HP
-        hp = npc_data.get("hit_points", int(cr * 15 + 10))
-        if hp > max_hp:
-            logger.warning(f"NPC HP ({hp}) too high for CR {cr}, reducing to {max_hp}")
-            hp = max_hp
-        npc_data["hit_points"] = hp
-        
-        # Validate and adjust AC
-        ac = npc_data.get("armor_class", int(cr + 12))
-        if ac < min_ac:
-            ac = min_ac
-        elif ac > max_ac:
-            logger.warning(f"NPC AC ({ac}) too high for CR {cr}, reducing to {max_ac}")
-            ac = max_ac
-        npc_data["armor_class"] = ac
-    
-    # Role-specific validation
-    role_guidelines = {
-        NPCRole.CIVILIAN: {"combat_focus": False, "social_focus": True},
-        NPCRole.MERCHANT: {"wealth": "moderate", "social_focus": True},
-        NPCRole.GUARD: {"combat_focus": True, "equipment": "martial"},
-        NPCRole.NOBLE: {"social_focus": True, "resources": "high"},
-        NPCRole.CRIMINAL: {"stealth_focus": True, "social_focus": True},
-        NPCRole.SCHOLAR: {"intelligence_focus": True, "knowledge": "high"},
-        NPCRole.ARTISAN: {"skill_focus": True, "crafting": "high"},
-        NPCRole.HEALER: {"wisdom_focus": True, "healing": "high"}
-    }
-    
-    if npc_role in role_guidelines:
-        guidelines = role_guidelines[npc_role]
-        for guideline, value in guidelines.items():
-            npc_data[f"role_{guideline}"] = value
-    
-    # Add D&D 5e compliance metadata
-    npc_data["creation_method"] = "llm_generated"
-    npc_data["npc_type"] = npc_type.value
-    npc_data["npc_role"] = npc_role.value
-    npc_data["d5e_2024_compliant"] = True
-    npc_data["balance_validated"] = True
-    
-    return npc_data
-
-# ============================================================================
-# ITEM VALIDATION FUNCTIONS
-# ============================================================================
-
-def validate_item_for_level(item, character_level: int, determine_rarity_for_level_func) -> CreationResult:
-    """
-    Validate item balance and appropriateness for character level according to D&D 5e 2024 guidelines.
-    Ensures items follow official power progression and don't break game balance.
-    """
-    result = CreationResult(success=True)
-    
-    # Check rarity vs level according to D&D 5e 2024 guidelines
-    max_rarity_for_level = determine_rarity_for_level_func(character_level)
-    rarity_levels = [ItemRarity.COMMON, ItemRarity.UNCOMMON, ItemRarity.RARE, 
-                    ItemRarity.VERY_RARE, ItemRarity.LEGENDARY, ItemRarity.ARTIFACT]
-    
-    if rarity_levels.index(item.rarity) > rarity_levels.index(max_rarity_for_level):
-        result.success = False
-        result.error = f"Item rarity {item.rarity.value} too high for level {character_level}"
-        return result
-    
-    # Validate item power level matches rarity
-    item_name = getattr(item, 'name', 'Unknown Item').lower()
-    
-    # Check for obviously overpowered items
-    overpowered_indicators = [
-        ("+5", "enhancement bonus too high"),
-        ("vorpal", "extremely powerful enchantment"),
-        ("wish", "reality-altering magic"),
-        ("time stop", "game-breaking temporal magic"),
-        ("kill", "instant death effects"),
-        ("immunity to all", "blanket immunities")
+    # Check for narrative elements (REQ-CAM-013: compelling narrative hooks)
+    narrative_indicators = [
+        'conflict', 'mystery', 'adventure', 'quest', 'threat', 'danger',
+        'intrigue', 'political', 'magic', 'ancient', 'forbidden', 'lost',
+        'heroes', 'villain', 'antagonist', 'enemy', 'ally', 'betrayal'
     ]
     
-    for indicator, reason in overpowered_indicators:
-        if indicator in item_name:
-            if item.rarity not in [ItemRarity.LEGENDARY, ItemRarity.ARTIFACT]:
-                result.add_warning(f"Item contains '{indicator}' ({reason}) but isn't Legendary/Artifact rarity")
+    concept_lower = concept.lower()
+    found_indicators = [word for word in narrative_indicators if word in concept_lower]
     
-    # Spell-specific validation according to D&D 5e 2024 spell progression
-    if hasattr(item, 'level'):  # SpellCore check
-        max_spell_level = min(9, (character_level + 1) // 2)
-        if item.level > max_spell_level:
-            result.success = False
-            result.error = f"Spell level {item.level} too high for character level {character_level} (max: {max_spell_level})"
-            return result
-        
-        # Validate spell level matches rarity
-        expected_rarity_for_spell_level = {
-            0: ItemRarity.COMMON, 1: ItemRarity.COMMON, 2: ItemRarity.COMMON,
-            3: ItemRarity.UNCOMMON, 4: ItemRarity.UNCOMMON, 5: ItemRarity.RARE,
-            6: ItemRarity.RARE, 7: ItemRarity.VERY_RARE, 8: ItemRarity.VERY_RARE,
-            9: ItemRarity.LEGENDARY
-        }
-        
-        expected_rarity = expected_rarity_for_spell_level.get(item.level, ItemRarity.COMMON)
-        if rarity_levels.index(item.rarity) < rarity_levels.index(expected_rarity):
-            result.add_warning(f"Spell level {item.level} typically requires {expected_rarity.value} rarity or higher")
+    if len(found_indicators) < 2:
+        result.add_warning("Concept may lack compelling narrative elements. Consider adding conflict, mystery, or adventure themes.")
     
-    # Weapon-specific validation
-    if hasattr(item, 'damage_dice'):  # WeaponCore check
-        damage = getattr(item, 'damage_dice', '1d4')
-        if 'd20' in damage or 'd12' in damage and '2d12' in damage:
-            result.add_warning("Weapon damage may be too high - check against official weapon tables")
+    # Check for moral complexity indicators (REQ-CAM-005)
+    complexity_indicators = [
+        'choice', 'dilemma', 'difficult', 'complex', 'moral', 'ethics',
+        'sacrifice', 'consequences', 'grey', 'ambiguous', 'conflicted'
+    ]
     
-    # Armor-specific validation
-    if hasattr(item, 'armor_class_base'):  # ArmorCore check
-        ac = getattr(item, 'armor_class_base', 10)
-        if ac > 18 + (2 if item.rarity in [ItemRarity.LEGENDARY, ItemRarity.ARTIFACT] else 0):
-            result.add_warning(f"Armor AC {ac} may be too high for {item.rarity.value} rarity")
+    found_complexity = [word for word in complexity_indicators if word in concept_lower]
+    if len(found_complexity) == 0:
+        result.add_warning("Consider adding moral complexity and difficult choices to enhance storytelling")
     
-    # Attunement validation
-    requires_attunement = getattr(item, 'requires_attunement', False)
-    if item.rarity in [ItemRarity.VERY_RARE, ItemRarity.LEGENDARY, ItemRarity.ARTIFACT]:
-        if not requires_attunement:
-            result.add_warning(f"{item.rarity.value} items typically require attunement")
+    # Genre detection and validation (REQ-CAM-006)
+    genre_keywords = {
+        'fantasy': ['magic', 'dragon', 'wizard', 'knight', 'kingdom', 'realm', 'spell'],
+        'sci-fi': ['space', 'alien', 'technology', 'future', 'robot', 'cybernetic', 'galaxy'],
+        'horror': ['dark', 'evil', 'terror', 'nightmare', 'haunted', 'cursed', 'undead'],
+        'mystery': ['mystery', 'investigate', 'clues', 'detective', 'secret', 'hidden', 'puzzle'],
+        'western': ['frontier', 'outlaw', 'sheriff', 'desert', 'saloon', 'gunslinger'],
+        'cyberpunk': ['cyber', 'hacker', 'corporation', 'street', 'neon', 'virtual']
+    }
+    
+    detected_genres = []
+    for genre, keywords in genre_keywords.items():
+        if any(keyword in concept_lower for keyword in keywords):
+            detected_genres.append(genre)
+    
+    if not detected_genres:
+        detected_genres = ['fantasy']  # Default genre
+        result.add_warning("No clear genre detected in concept, defaulting to fantasy")
+    
+    result.validated_data = {
+        'concept': concept,
+        'word_count': word_count,
+        'detected_genres': detected_genres,
+        'narrative_indicators': found_indicators,
+        'complexity_indicators': found_complexity
+    }
     
     return result
 
 # ============================================================================
-# CREATURE VALIDATION FUNCTIONS
+# CAMPAIGN STRUCTURE VALIDATION (REQ-CAM-023-027)
 # ============================================================================
 
-def validate_and_enhance_creature(creature_data: Dict[str, Any], challenge_rating: float) -> Dict[str, Any]:
+def validate_campaign_structure(campaign_data: Dict[str, Any]) -> ValidationResult:
     """
-    Validate and enhance creature data with comprehensive D&D 5e 2024 balance checks.
-    Ensures creature stats are appropriate for CR and follows official design guidelines.
+    Validate campaign structure meets requirements.
+    
+    REQ-CAM-024: Main story arc with beginning, middle, end
+    REQ-CAM-025: 3-5 major plot points
+    REQ-CAM-027: Support 3-20 sessions
     """
-    # Ensure required fields exist
-    required_fields = ["name", "type", "challenge_rating", "abilities", "hit_points", "armor_class"]
+    result = ValidationResult(success=True)
+    
+    # Required fields validation
+    required_fields = ['title', 'description', 'themes', 'session_count']
     for field in required_fields:
-        if field not in creature_data:
-            logger.warning(f"Missing required field '{field}' in creature data")
+        if field not in campaign_data or not campaign_data[field]:
+            result.add_error(f"Missing required field: {field}")
+    
+    # Session count validation (REQ-CAM-027)
+    session_count = campaign_data.get('session_count', 0)
+    if not isinstance(session_count, int) or session_count < 3:
+        result.add_error(f"Session count too low: {session_count} (minimum 3 required)")
+    elif session_count > 20:
+        result.add_error(f"Session count too high: {session_count} (maximum 20 supported)")
+    elif session_count > 50:
+        # REQ-CAM-219: Support up to 50 chapters
+        result.add_warning(f"Very long campaign: {session_count} sessions may be challenging to manage")
+    
+    # Story arc validation (REQ-CAM-024)
+    if 'act_structure' in campaign_data:
+        acts = campaign_data['act_structure']
+        if isinstance(acts, list):
+            act_names = [act.get('act', '').lower() if isinstance(act, dict) else str(act).lower() for act in acts]
+            required_acts = ['beginning', 'middle', 'end']
+            missing_acts = [act for act in required_acts if act not in act_names]
+            if missing_acts:
+                result.add_warning(f"Missing story arc phases: {missing_acts}")
+    
+    # Plot points validation (REQ-CAM-025)
+    if 'major_plot_points' in campaign_data:
+        plot_points = campaign_data['major_plot_points']
+        if isinstance(plot_points, list):
+            point_count = len(plot_points)
+            if point_count < 3:
+                result.add_warning(f"Few plot points: {point_count} (recommended 3-5)")
+            elif point_count > 8:
+                result.add_warning(f"Many plot points: {point_count} (may be overwhelming)")
+    
+    # Narrative complexity validation (REQ-CAM-014: multi-layered plots)
+    complexity_score = 0
+    
+    # Check for subplots
+    if 'subplots' in campaign_data and isinstance(campaign_data['subplots'], list):
+        complexity_score += len(campaign_data['subplots'])
+    
+    # Check for interconnected elements
+    if 'interconnected_elements' in campaign_data:
+        complexity_score += 2
+    
+    # Check for multiple antagonists
+    if 'antagonists' in campaign_data and isinstance(campaign_data['antagonists'], list):
+        complexity_score += len(campaign_data['antagonists'])
+    
+    if complexity_score < 3:
+        result.add_warning("Campaign may lack complexity. Consider adding subplots or multiple antagonists.")
+    
+    result.validated_data = campaign_data
+    return result
+
+# ============================================================================
+# CHAPTER CONTENT VALIDATION (REQ-CAM-028-037)
+# ============================================================================
+
+def validate_chapter_content(chapter_data: Dict[str, Any], party_level: int, party_size: int) -> ValidationResult:
+    """
+    Validate chapter content meets requirements.
+    
+    REQ-CAM-029: Clear objective, conflict, resolution
+    REQ-CAM-030: Chapter summaries 100-300 words
+    REQ-CAM-033-037: Required content elements
+    """
+    result = ValidationResult(success=True)
+    
+    # Required fields validation
+    required_fields = ['title', 'summary']
+    for field in required_fields:
+        if field not in chapter_data or not chapter_data[field]:
+            result.add_error(f"Chapter missing required field: {field}")
+    
+    # Summary length validation (REQ-CAM-030)
+    if 'summary' in chapter_data:
+        summary = chapter_data['summary']
+        word_count = len(summary.split()) if isinstance(summary, str) else 0
+        
+        if word_count < 100:
+            result.add_warning(f"Chapter summary too short: {word_count} words (recommended 100-300)")
+        elif word_count > 300:
+            result.add_warning(f"Chapter summary too long: {word_count} words (recommended 100-300)")
+    
+    # Content elements validation (REQ-CAM-033-037)
+    required_content = {
+        'locations': 'REQ-CAM-033: Location descriptions',
+        'npcs': 'REQ-CAM-034: Key NPCs with motivations',
+        'encounters': 'REQ-CAM-035: Appropriate encounters',
+        'rewards': 'REQ-CAM-036: Treasure/rewards',
+        'chapter_hooks': 'REQ-CAM-037: Hooks to next chapters'
+    }
+    
+    for content_type, requirement in required_content.items():
+        if content_type not in chapter_data or not chapter_data[content_type]:
+            result.add_warning(f"Chapter missing {content_type} ({requirement})")
+    
+    # Encounter balance validation (REQ-CAM-035)
+    if 'encounters' in chapter_data and isinstance(chapter_data['encounters'], list):
+        encounters = chapter_data['encounters']
+        encounter_balance = validate_encounter_balance(encounters, party_level, party_size)
+        
+        if encounter_balance.has_errors():
+            result.errors.extend(encounter_balance.errors)
+        if encounter_balance.has_warnings():
+            result.warnings.extend(encounter_balance.warnings)
+    
+    # Objective-conflict-resolution validation (REQ-CAM-029)
+    structure_elements = ['objective', 'conflict', 'resolution']
+    missing_structure = []
+    
+    for element in structure_elements:
+        if element not in chapter_data:
+            # Check if it's mentioned in summary
+            summary = chapter_data.get('summary', '').lower()
+            element_keywords = {
+                'objective': ['goal', 'objective', 'mission', 'task', 'purpose'],
+                'conflict': ['conflict', 'challenge', 'obstacle', 'problem', 'difficulty'],
+                'resolution': ['resolution', 'conclusion', 'outcome', 'result', 'ending']
+            }
             
-            # Provide D&D 5e appropriate defaults
-            if field == "abilities":
-                creature_data[field] = {
-                    "strength": 10, "dexterity": 10, "constitution": 10,
-                    "intelligence": 10, "wisdom": 10, "charisma": 10
-                }
-            elif field == "challenge_rating":
-                creature_data[field] = challenge_rating
-            elif field == "hit_points":
-                creature_data[field] = _calculate_hp_for_cr(challenge_rating)
-            elif field == "armor_class":
-                creature_data[field] = _calculate_ac_for_cr(challenge_rating)
-            else:
-                creature_data[field] = "Unknown"
+            if not any(keyword in summary for keyword in element_keywords.get(element, [])):
+                missing_structure.append(element)
     
-    # Validate ability scores according to D&D 5e creature guidelines
-    if "abilities" in creature_data:
-        for ability, score in creature_data["abilities"].items():
-            if not isinstance(score, int) or score < 1 or score > 30:
-                logger.warning(f"Creature ability score {ability}={score} outside valid range (1-30), setting to 10")
-                creature_data["abilities"][ability] = 10
+    if missing_structure:
+        result.add_warning(f"Chapter may lack clear {', '.join(missing_structure)} structure")
     
-    # Comprehensive CR balance validation according to D&D 5e 2024 DMG guidelines
-    cr = float(challenge_rating)
+    result.validated_data = chapter_data
+    return result
+
+# ============================================================================
+# ENCOUNTER BALANCE VALIDATION
+# ============================================================================
+
+def validate_encounter_balance(encounters: List[Dict[str, Any]], party_level: int, party_size: int) -> ValidationResult:
+    """
+    Validate encounter balance for party level and size.
     
-    # Expected stat ranges by CR (based on D&D 5e 2024 monster creation guidelines)
-    cr_guidelines = _get_cr_stat_guidelines(cr)
+    REQ-CAM-035: Appropriate encounters
+    REQ-CAM-036: Appropriate rewards
+    """
+    result = ValidationResult(success=True)
     
-    # Validate hit points
-    hp = creature_data.get("hit_points", 0)
-    if hp < cr_guidelines["hp_min"] or hp > cr_guidelines["hp_max"]:
-        logger.warning(f"Creature HP ({hp}) outside expected range for CR {cr} ({cr_guidelines['hp_min']}-{cr_guidelines['hp_max']})")
-        if hp > cr_guidelines["hp_max"]:
-            creature_data["hit_points"] = cr_guidelines["hp_max"]
+    if party_level < 1 or party_level > 20:
+        result.add_error(f"Invalid party level: {party_level} (must be 1-20)")
+        return result
     
-    # Validate armor class
-    ac = creature_data.get("armor_class", 10)
-    if ac < cr_guidelines["ac_min"] or ac > cr_guidelines["ac_max"]:
-        logger.warning(f"Creature AC ({ac}) outside expected range for CR {cr} ({cr_guidelines['ac_min']}-{cr_guidelines['ac_max']})")
-        if ac > cr_guidelines["ac_max"]:
-            creature_data["armor_class"] = cr_guidelines["ac_max"]
+    if party_size < 1 or party_size > 8:  # REQ-CAM-222: Up to 8 characters
+        result.add_error(f"Invalid party size: {party_size} (must be 1-8)")
+        return result
     
-    # Validate attack bonuses and damage (if present)
-    if "actions" in creature_data:
-        for action in creature_data["actions"]:
-            if "attack_bonus" in action:
+    encounter_types = {'combat': 0, 'social': 0, 'exploration': 0, 'puzzle': 0}
+    total_difficulty_budget = 0
+    
+    for encounter in encounters:
+        if not isinstance(encounter, dict):
+            continue
+        
+        encounter_type = encounter.get('type', 'unknown').lower()
+        if encounter_type in encounter_types:
+            encounter_types[encounter_type] += 1
+        
+        # Validate combat encounters
+        if encounter_type == 'combat':
+            combat_validation = validate_combat_encounter(encounter, party_level, party_size)
+            if combat_validation.has_errors():
+                result.errors.extend(combat_validation.errors)
+            if combat_validation.has_warnings():
+                result.warnings.extend(combat_validation.warnings)
+    
+    # Check encounter variety
+    total_encounters = sum(encounter_types.values())
+    if total_encounters == 0:
+        result.add_warning("No encounters defined in chapter")
+    else:
+        # Recommend balanced encounter types
+        if encounter_types['combat'] == total_encounters:
+            result.add_warning("All encounters are combat - consider adding social or exploration encounters")
+        elif encounter_types['social'] == 0 and total_encounters > 2:
+            result.add_warning("No social encounters - consider adding roleplay opportunities")
+    
+    result.validated_data = {
+        'encounter_types': encounter_types,
+        'total_encounters': total_encounters,
+        'party_level': party_level,
+        'party_size': party_size
+    }
+    
+    return result
+
+def validate_combat_encounter(encounter: Dict[str, Any], party_level: int, party_size: int) -> ValidationResult:
+    """Validate individual combat encounter balance."""
+    result = ValidationResult(success=True)
+    
+    # Use encounter builder for validation
+    try:
+        builder = EncounterBuilder(party_level, party_size)
+        
+        # Check if creatures are specified
+        creatures = encounter.get('creatures', [])
+        if not creatures:
+            result.add_warning("Combat encounter missing creature details")
+            return result
+        
+        # Extract challenge ratings
+        challenge_ratings = []
+        for creature in creatures:
+            if isinstance(creature, dict):
+                cr_value = creature.get('challenge_rating', 0.25)
                 try:
-                    bonus = int(action["attack_bonus"].replace("+", ""))
-                    if bonus > cr_guidelines["attack_bonus_max"]:
-                        logger.warning(f"Attack bonus {bonus} too high for CR {cr} (max: {cr_guidelines['attack_bonus_max']})")
-                except ValueError:
-                    pass
+                    if isinstance(cr_value, str):
+                        cr_value = float(cr_value)
+                    cr = ChallengeRating(cr_value)
+                    challenge_ratings.append(cr)
+                except (ValueError, KeyError):
+                    result.add_warning(f"Invalid challenge rating: {cr_value}")
+        
+        if challenge_ratings:
+            # Validate encounter balance
+            validation = builder.validate_encounter(challenge_ratings)
+            
+            target_difficulty = encounter.get('difficulty', 'medium')
+            actual_difficulty = validation['actual_difficulty']
+            
+            if validation['actual_difficulty'] != target_difficulty:
+                result.add_warning(f"Encounter difficulty mismatch: expected {target_difficulty}, got {actual_difficulty}")
+            
+            # Check for TPK risk
+            if actual_difficulty == EncounterDifficulty.DEADLY:
+                adjusted_xp = validation['adjusted_xp']
+                deadly_threshold = validation['party_thresholds']['deadly']
+                if adjusted_xp > deadly_threshold * 1.5:
+                    result.add_warning("Encounter may be too dangerous - risk of TPK")
     
-    # Validate saving throws don't exceed reasonable limits
-    if "saving_throws" in creature_data:
-        max_save_bonus = cr_guidelines["save_bonus_max"]
-        for save in creature_data["saving_throws"]:
-            try:
-                bonus = int(save.split("+")[1]) if "+" in save else 0
-                if bonus > max_save_bonus:
-                    logger.warning(f"Saving throw bonus {bonus} may be too high for CR {cr}")
-            except (ValueError, IndexError):
-                pass
+    except Exception as e:
+        result.add_warning(f"Could not validate encounter balance: {str(e)}")
     
-    # Validate proficiency bonus matches CR
-    expected_prof_bonus = _calculate_proficiency_bonus_for_cr(cr)
-    if "proficiency_bonus" in creature_data:
-        prof_bonus = creature_data["proficiency_bonus"]
-        if prof_bonus != expected_prof_bonus:
-            logger.warning(f"Proficiency bonus {prof_bonus} doesn't match CR {cr} (expected: {expected_prof_bonus})")
-            creature_data["proficiency_bonus"] = expected_prof_bonus
-    else:
-        creature_data["proficiency_bonus"] = expected_prof_bonus
-    
-    # Ensure challenge rating consistency
-    creature_data["challenge_rating"] = challenge_rating
-    
-    # Add D&D 5e 2024 compliance metadata
-    creature_data["creation_method"] = "llm_generated"
-    creature_data["stat_block_complete"] = True
-    creature_data["d5e_2024_compliant"] = True
-    creature_data["cr_balanced"] = True
-    creature_data["balance_validated"] = True
-    
-    return creature_data
-
-def _calculate_hp_for_cr(cr: float) -> int:
-    """Calculate appropriate HP for CR based on D&D 5e guidelines."""
-    if cr <= 0.125:
-        return max(1, int(cr * 35))
-    elif cr <= 1:
-        return int(cr * 50 + 10)
-    elif cr <= 4:
-        return int(cr * 60 + 40)
-    elif cr <= 10:
-        return int(cr * 80 + 120)
-    elif cr <= 16:
-        return int(cr * 100 + 200)
-    else:
-        return int(cr * 120 + 400)
-
-def _calculate_ac_for_cr(cr: float) -> int:
-    """Calculate appropriate AC for CR based on D&D 5e guidelines."""
-    base_ac = 10
-    if cr <= 0.25:
-        return base_ac + 1
-    elif cr <= 2:
-        return base_ac + 2 + int(cr)
-    elif cr <= 8:
-        return base_ac + 3 + int(cr // 2)
-    elif cr <= 16:
-        return base_ac + 5 + int(cr // 4)
-    else:
-        return base_ac + 8
-
-def _calculate_proficiency_bonus_for_cr(cr: float) -> int:
-    """Calculate proficiency bonus for CR based on D&D 5e progression."""
-    if cr <= 4:
-        return 2
-    elif cr <= 8:
-        return 3
-    elif cr <= 12:
-        return 4
-    elif cr <= 16:
-        return 5
-    elif cr <= 20:
-        return 6
-    elif cr <= 24:
-        return 7
-    elif cr <= 28:
-        return 8
-    else:
-        return 9
-
-def _get_cr_stat_guidelines(cr: float) -> Dict[str, int]:
-    """Get stat guidelines for a given CR based on D&D 5e design principles."""
-    if cr <= 0.25:
-        return {
-            "hp_min": 1, "hp_max": 35,
-            "ac_min": 10, "ac_max": 13,
-            "attack_bonus_max": 4,
-            "save_bonus_max": 3
-        }
-    elif cr <= 1:
-        return {
-            "hp_min": 15, "hp_max": 70,
-            "ac_min": 10, "ac_max": 15,
-            "attack_bonus_max": 5,
-            "save_bonus_max": 4
-        }
-    elif cr <= 4:
-        return {
-            "hp_min": 35, "hp_max": 160,
-            "ac_min": 12, "ac_max": 17,
-            "attack_bonus_max": 7,
-            "save_bonus_max": 6
-        }
-    elif cr <= 10:
-        return {
-            "hp_min": 80, "hp_max": 320,
-            "ac_min": 14, "ac_max": 18,
-            "attack_bonus_max": 10,
-            "save_bonus_max": 8
-        }
-    elif cr <= 16:
-        return {
-            "hp_min": 200, "hp_max": 500,
-            "ac_min": 16, "ac_max": 20,
-            "attack_bonus_max": 13,
-            "save_bonus_max": 11
-        }
-    else:
-        return {
-            "hp_min": 400, "hp_max": 800,
-            "ac_min": 18, "ac_max": 22,
-            "attack_bonus_max": 16,
-            "save_bonus_max": 14
-        }
+    return result
 
 # ============================================================================
-# ADDITIONAL BALANCE VALIDATION FUNCTIONS
+# REFINEMENT REQUEST VALIDATION (REQ-CAM-007-012)
 # ============================================================================
 
-def validate_custom_species_balance(species_data: Dict[str, Any]) -> CreationResult:
+def validate_refinement_request(request: CampaignRefinementRequest) -> ValidationResult:
     """
-    Validate custom species follows D&D 5e 2024 racial design guidelines.
-    Ensures balanced traits that don't overshadow existing races.
+    Validate campaign refinement request.
+    
+    REQ-CAM-007: Iterative refinement support
+    REQ-CAM-008: Multiple refinement cycles
+    REQ-CAM-009: Narrative consistency
+    REQ-CAM-011: Partial refinements
     """
-    result = CreationResult(success=True, data=species_data)
+    result = ValidationResult(success=True)
     
-    # Check for overpowered ability score increases
-    asi_bonuses = species_data.get("ability_score_increase", {})
-    total_asi = sum(asi_bonuses.values()) if isinstance(asi_bonuses, dict) else 0
+    # Basic validation
+    if not request.existing_data:
+        result.add_error("Refinement requires existing campaign data")
     
-    if total_asi > 3:
-        result.add_warning(f"Total ASI bonus ({total_asi}) exceeds typical limit of 3")
-    elif total_asi < 2:
-        result.add_warning(f"Total ASI bonus ({total_asi}) below typical minimum of 2")
+    if not request.refinement_prompt or len(request.refinement_prompt.strip()) < 10:
+        result.add_error("Refinement prompt must be at least 10 characters")
     
-    # Check for appropriate trait count and power level
-    traits = species_data.get("racial_traits", [])
-    if len(traits) > 5:
-        result.add_warning(f"Species has {len(traits)} traits - may be too many (typical: 2-4)")
-    elif len(traits) < 2:
-        result.add_warning(f"Species has only {len(traits)} traits - may be too few")
+    # Refinement cycles validation (REQ-CAM-008)
+    if request.refinement_cycles < 1:
+        result.add_error("Refinement cycles must be at least 1")
+    elif request.refinement_cycles > 5:
+        result.add_warning("Many refinement cycles may lead to inconsistency")
     
-    # Flag potentially overpowered traits
-    overpowered_keywords = [
-        "immunity", "resistance to all", "advantage on all", "double", 
-        "triple", "unlimited", "at will", "permanent", "always"
-    ]
+    # Preserve elements validation (REQ-CAM-011: partial refinements)
+    if request.preserve_elements:
+        available_elements = list(request.existing_data.keys()) if request.existing_data else []
+        invalid_elements = [elem for elem in request.preserve_elements if elem not in available_elements]
+        if invalid_elements:
+            result.add_warning(f"Cannot preserve non-existent elements: {invalid_elements}")
     
-    for trait in traits:
-        trait_text = str(trait).lower()
-        for keyword in overpowered_keywords:
-            if keyword in trait_text:
-                result.add_warning(f"Trait contains '{keyword}' - may be overpowered")
+    # Refinement type validation
+    valid_types = ['enhance', 'modify', 'expand', 'simplify', 'player_driven']
+    if request.refinement_type not in valid_types:
+        result.add_warning(f"Unknown refinement type: {request.refinement_type}")
     
-    return result
-
-def validate_custom_class_balance(class_data: Dict[str, Any]) -> CreationResult:
-    """
-    Validate custom class follows D&D 5e 2024 class design guidelines.
-    Ensures balanced progression and appropriate power level.
-    """
-    result = CreationResult(success=True, data=class_data)
-    
-    # Validate hit die
-    hit_die = class_data.get("hit_die", "d8")
-    valid_hit_dice = ["d6", "d8", "d10", "d12"]
-    if hit_die not in valid_hit_dice:
-        result.add_warning(f"Hit die {hit_die} not standard (should be d6, d8, d10, or d12)")
-    
-    # Check saving throw proficiencies
-    save_profs = class_data.get("saving_throw_proficiencies", [])
-    if len(save_profs) != 2:
-        result.add_warning(f"Class has {len(save_profs)} save proficiencies (should be exactly 2)")
-    
-    # Validate feature progression
-    features = class_data.get("class_features", {})
-    expected_feature_levels = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
-    
-    for level in [1, 3, 5, 7, 9, 11, 13, 15, 17, 19]:  # Key feature levels
-        if str(level) not in features:
-            result.add_warning(f"No feature at level {level} - may affect class balance")
-    
-    # Check for overpowered early features
-    level_1_features = features.get("1", [])
-    if len(level_1_features) > 3:
-        result.add_warning(f"Level 1 has {len(level_1_features)} features - may be too many")
-    
-    return result
-
-def validate_custom_spell_balance(spell_data: Dict[str, Any]) -> CreationResult:
-    """
-    Validate custom spell follows D&D 5e 2024 spell design guidelines.
-    Ensures appropriate power level for spell level.
-    """
-    result = CreationResult(success=True, data=spell_data)
-    
-    spell_level = spell_data.get("level", 0)
-    if not isinstance(spell_level, int) or spell_level < 0 or spell_level > 9:
-        result.error = f"Invalid spell level: {spell_level} (must be 0-9)"
-        result.success = False
-        return result
-    
-    # Check damage scaling for spell level
-    damage = spell_data.get("damage", "")
-    if damage and spell_level > 0:
-        # Extract dice count and type
-        import re
-        dice_match = re.search(r'(\d+)d(\d+)', damage)
-        if dice_match:
-            dice_count = int(dice_match.group(1))
-            die_size = int(dice_match.group(2))
-            
-            # Rough damage guidelines by spell level
-            max_damage_guidelines = {
-                1: 3 * 8,    # 3d8 (Burning Hands)
-                2: 6 * 6,    # 6d6 (Fireball at base)
-                3: 8 * 6,    # 8d6 (Fireball)
-                4: 12 * 6,   # 12d6 
-                5: 14 * 6,   # 14d6
-                6: 16 * 6,   # 16d6
-                7: 20 * 6,   # 20d6
-                8: 24 * 6,   # 24d6
-                9: 30 * 6    # 30d6
-            }
-            
-            estimated_damage = dice_count * (die_size / 2 + 0.5)
-            max_expected = max_damage_guidelines.get(spell_level, 100)
-            
-            if estimated_damage > max_expected:
-                result.add_warning(f"Spell damage ({estimated_damage:.1f} avg) may be too high for level {spell_level}")
-    
-    # Check for overpowered effects
-    description = str(spell_data.get("description", "")).lower()
-    overpowered_effects = [
-        ("save or die", "instant death effects are typically 9th level or require specific conditions"),
-        ("permanent", "permanent effects should be rare and high level"),
-        ("no save", "effects without saves should be limited"),
-        ("reality", "reality-altering effects typically reserved for 9th level"),
-        ("time stop", "time manipulation is extremely powerful"),
-        ("wish", "wish-like effects are 9th level")
-    ]
-    
-    for effect, warning in overpowered_effects:
-        if effect in description:
-            result.add_warning(f"Spell contains '{effect}' - {warning}")
-    
-    return result
-
-def validate_custom_item_balance(item_data: Dict[str, Any]) -> CreationResult:
-    """
-    Validate custom item follows D&D 5e 2024 magic item design guidelines.
-    Ensures appropriate power level for rarity.
-    """
-    result = CreationResult(success=True, data=item_data)
-    
-    rarity = item_data.get("rarity", "common").lower()
-    description = str(item_data.get("description", "")).lower()
-    
-    # Check for effects inappropriate for rarity
-    rarity_guidelines = {
-        "common": {
-            "max_bonus": 1,
-            "forbidden": ["save or die", "teleport", "fly", "immunity"],
-            "typical": ["minor utility", "small bonus", "flavor effect"]
-        },
-        "uncommon": {
-            "max_bonus": 2,
-            "forbidden": ["save or die", "reality", "time"],
-            "typical": ["moderate utility", "+1 weapons/armor", "limited magic"]
-        },
-        "rare": {
-            "max_bonus": 3,
-            "forbidden": ["save or die", "reality", "unlimited"],
-            "typical": ["+2 weapons/armor", "significant magic", "major utility"]
-        },
-        "very rare": {
-            "max_bonus": 4,
-            "forbidden": ["save or die without save", "reality alteration"],
-            "typical": ["+3 weapons/armor", "powerful magic", "game-changing"]
-        },
-        "legendary": {
-            "max_bonus": 5,
-            "forbidden": ["unlimited reality alteration"],
-            "typical": ["+4/+5 weapons/armor", "legendary effects", "campaign-defining"]
-        }
+    result.validated_data = {
+        'refinement_prompt': request.refinement_prompt,
+        'refinement_type': request.refinement_type,
+        'cycles': request.refinement_cycles,
+        'preserve_elements': request.preserve_elements or []
     }
     
-    if rarity in rarity_guidelines:
-        guidelines = rarity_guidelines[rarity]
-        
-        # Check for forbidden effects
-        for forbidden in guidelines["forbidden"]:
-            if forbidden in description:
-                result.add_warning(f"Effect '{forbidden}' typically too powerful for {rarity} rarity")
-        
-        # Check for enhancement bonuses
-        import re
-        bonus_match = re.search(r'\+(\d+)', description)
-        if bonus_match:
-            bonus = int(bonus_match.group(1))
-            if bonus > guidelines["max_bonus"]:
-                result.add_warning(f"+{bonus} bonus too high for {rarity} rarity (max: +{guidelines['max_bonus']})")
+    return result
+
+# ============================================================================
+# PERFORMANCE VALIDATION (REQ-CAM-216-223)
+# ============================================================================
+
+def validate_performance_requirements(campaign_data: Dict[str, Any], creation_type: CampaignCreationType) -> ValidationResult:
+    """
+    Validate performance requirements are met.
     
-    # Check attunement requirements
-    requires_attunement = item_data.get("requires_attunement", False)
-    if rarity in ["very rare", "legendary", "artifact"] and not requires_attunement:
-        result.add_warning(f"{rarity.title()} items typically require attunement")
+    REQ-CAM-216: Skeleton generation < 30s
+    REQ-CAM-217: Chapter generation < 60s
+    REQ-CAM-219: Up to 50 chapters
+    REQ-CAM-220: Refinement < 45s
+    REQ-CAM-221: 10 concurrent generations
+    REQ-CAM-222: Up to 8 player characters
+    """
+    result = ValidationResult(success=True)
+    
+    # Chapter count validation (REQ-CAM-219)
+    if 'session_count' in campaign_data:
+        session_count = campaign_data['session_count']
+        if session_count > 50:
+            result.add_error(f"Too many chapters: {session_count} (maximum 50 supported)")
+    
+    if 'chapters' in campaign_data:
+        chapter_count = len(campaign_data['chapters'])
+        if chapter_count > 50:
+            result.add_error(f"Too many chapters: {chapter_count} (maximum 50 supported)")
+    
+    # Party size validation (REQ-CAM-222)
+    if 'party_size' in campaign_data:
+        party_size = campaign_data['party_size']
+        if party_size > 8:
+            result.add_error(f"Party size too large: {party_size} (maximum 8 supported)")
+        elif party_size < 1:
+            result.add_error(f"Invalid party size: {party_size} (minimum 1 required)")
+    
+    # Content complexity validation for performance
+    complexity_indicators = {
+        'npcs': 100,  # Max NPCs per campaign
+        'locations': 50,  # Max locations per campaign
+        'encounters': 200,  # Max encounters per campaign
+        'plot_points': 20  # Max major plot points
+    }
+    
+    for element, max_count in complexity_indicators.items():
+        if element in campaign_data:
+            element_data = campaign_data[element]
+            if isinstance(element_data, list) and len(element_data) > max_count:
+                result.add_warning(f"High {element} count: {len(element_data)} (may impact performance)")
+    
+    # Timeout expectations based on creation type
+    timeout_limits = {
+        CampaignCreationType.CAMPAIGN_SKELETON: 30,  # REQ-CAM-216
+        CampaignCreationType.CHAPTER_CONTENT: 60,    # REQ-CAM-217
+        CampaignCreationType.ITERATIVE_REFINEMENT: 45  # REQ-CAM-220
+    }
+    
+    expected_timeout = timeout_limits.get(creation_type, 300)  # Default 5 minutes
+    
+    result.validated_data = {
+        'expected_timeout': expected_timeout,
+        'performance_validated': True
+    }
     
     return result
 
 # ============================================================================
-# DATABASE VALIDATION FUNCTIONS
+# NARRATIVE QUALITY VALIDATION (REQ-CAM-013-018)
 # ============================================================================
 
-def validate_spell_database() -> bool:
-    """Validate the integrity of the spell database."""
-    try:
-        from src.services.dnd_data import DND_SPELL_DATABASE
-        
-        required_fields = ["description", "level", "school", "casting_time", "range", "components", "duration"]
-        
-        for level_key, level_spells in DND_SPELL_DATABASE.items():
-            if isinstance(level_spells, dict):
-                for school, spells in level_spells.items():
-                    for spell_name in spells:
-                        # For now, we just check that spell names are strings
-                        if not isinstance(spell_name, str):
-                            logger.error(f"Invalid spell name type: {type(spell_name)}")
-                            return False
-                        
-                        if len(spell_name.strip()) == 0:
-                            logger.error(f"Empty spell name found in {level_key}/{school}")
-                            return False
-        
-        logger.info("Spell database validation passed")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Spell database validation failed: {e}")
-        return False
-
-def validate_weapon_database() -> bool:
-    """Validate the integrity of the weapon database."""
-    try:
-        from src.services.dnd_data import DND_WEAPON_DATABASE
-        
-        required_fields = ["damage", "damage_type", "properties", "weight", "cost", "category"]
-        
-        for category, weapons in DND_WEAPON_DATABASE.items():
-            for weapon_name, weapon_data in weapons.items():
-                for field in required_fields:
-                    if field not in weapon_data:
-                        logger.error(f"Weapon {weapon_name} missing field: {field}")
-                        return False
-                
-                # Validate damage format
-                damage = weapon_data.get("damage", "")
-                if damage and not any(die in damage for die in ["d4", "d6", "d8", "d10", "d12"]):
-                    logger.error(f"Weapon {weapon_name} has invalid damage format: {damage}")
-                    return False
-        
-        logger.info("Weapon database validation passed")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Weapon database validation failed: {e}")
-        return False
-
-def validate_feat_database() -> bool:
-    """Validate the integrity of the feat database."""
-    try:
-        from src.services.dnd_data import DND_FEAT_DATABASE
-        
-        required_fields = ["description", "benefits", "prerequisites", "asi_bonus", "category"]
-        
-        for category, feats in DND_FEAT_DATABASE.items():
-            for feat_name, feat_data in feats.items():
-                for field in required_fields:
-                    if field not in feat_data:
-                        logger.error(f"Feat {feat_name} missing field: {field}")
-                        return False
-        
-        logger.info("Feat database validation passed")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Feat database validation failed: {e}")
-        return False
-
-def validate_armor_database() -> bool:
-    """Validate the integrity of the armor database."""
-    try:
-        from src.services.dnd_data import DND_ARMOR_DATABASE
-        
-        required_fields = ["dex_modifier", "weight", "cost", "category", "properties"]
-        
-        for category, armors in DND_ARMOR_DATABASE.items():
-            for armor_name, armor_data in armors.items():
-                # Check for required fields
-                for field in required_fields:
-                    if field not in armor_data:
-                        logger.error(f"Armor {armor_name} missing field: {field}")
-                        return False
-                
-                # Armor must have either ac_base OR ac_bonus (for shields)
-                if "ac_base" not in armor_data and "ac_bonus" not in armor_data:
-                    logger.error(f"Armor {armor_name} missing both ac_base and ac_bonus")
-                    return False
-        
-        logger.info("Armor database validation passed")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Armor database validation failed: {e}")
-        return False
-
-def validate_tools_database() -> bool:
-    """Validate the integrity of the tools database."""
-    try:
-        from src.services.dnd_data import DND_TOOLS_DATABASE
-        
-        required_fields = ["cost", "weight", "category", "description"]
-        
-        for category, tools in DND_TOOLS_DATABASE.items():
-            for tool_name, tool_data in tools.items():
-                for field in required_fields:
-                    if field not in tool_data:
-                        logger.error(f"Tool {tool_name} missing field: {field}")
-                        return False
-        
-        logger.info("Tools database validation passed")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Tools database validation failed: {e}")
-        return False
-
-def validate_gear_database() -> bool:
-    """Validate the integrity of the adventuring gear database."""
-    try:
-        from src.services.dnd_data import DND_ADVENTURING_GEAR_DATABASE
-        
-        required_fields = ["cost", "weight", "category", "description"]
-        
-        for category, gears in DND_ADVENTURING_GEAR_DATABASE.items():
-            for gear_name, gear_data in gears.items():
-                for field in required_fields:
-                    if field not in gear_data:
-                        logger.error(f"Gear {gear_name} missing field: {field}")
-                        return False
-        
-        logger.info("Adventuring gear database validation passed")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Adventuring gear database validation failed: {e}")
-        return False
-
-def validate_feat_prerequisites(feat_name: str, character_data: Dict[str, Any]) -> bool:
-    """Validate that a character meets the prerequisites for a specific feat."""
-    try:
-        from src.services.dnd_data import get_feat_data
-        
-        feat_data = get_feat_data(feat_name)
-        if not feat_data:
-            logger.error(f"Feat {feat_name} not found")
-            return False
-        
-        prerequisites = feat_data.get("prerequisites", {})
-        if not prerequisites:
-            return True  # No prerequisites
-        
-        # Check ability score requirements
-        ability_requirements = prerequisites.get("abilities", {})
-        character_abilities = character_data.get("abilities", {})
-        
-        for ability, min_score in ability_requirements.items():
-            character_score = character_abilities.get(ability, 10)
-            if character_score < min_score:
-                logger.warning(f"Character {ability} score {character_score} does not meet feat requirement {min_score}")
-                return False
-        
-        # Check level requirements
-        min_level = prerequisites.get("level", 1)
-        character_level = character_data.get("level", 1)
-        if character_level < min_level:
-            logger.warning(f"Character level {character_level} does not meet feat requirement {min_level}")
-            return False
-        
-        # Check class requirements
-        required_classes = prerequisites.get("classes", [])
-        if required_classes:
-            character_classes = list(character_data.get("classes", {}).keys())
-            if not any(cls in character_classes for cls in required_classes):
-                logger.warning(f"Character classes {character_classes} do not meet feat requirements {required_classes}")
-                return False
-        
-        return True
-        
-    except Exception as e:
-        logger.error(f"Feat prerequisite validation failed: {e}")
-        return False
-
-def validate_all_databases() -> bool:
-    """Validate all D&D data databases for integrity."""
-    validations = [
-        validate_spell_database,
-        validate_weapon_database, 
-        validate_feat_database,
-        validate_armor_database,
-        validate_tools_database,
-        validate_gear_database
-    ]
-    
-    for validation_func in validations:
-        if not validation_func():
-            logger.error(f"Database validation failed: {validation_func.__name__}")
-            return False
-    
-    logger.info("All database validations passed")
-    return True
-
-# ============================================================================
-# ALLOCATION VALIDATION (Task 2C)
-# ============================================================================
-
-def validate_item_allocation(character_data: Dict[str, Any], item_data: Dict[str, Any], 
-                           access_type: str = "inventory") -> CreationResult:
+def validate_narrative_quality(campaign_data: Dict[str, Any]) -> ValidationResult:
     """
-    Validate that a character can use/access an item based on class restrictions,
-    proficiencies, and D&D 5e 2024 rules.
+    Validate narrative quality requirements.
     
-    Args:
-        character_data: Character information (classes, proficiencies, etc.)
-        item_data: Item to validate (from unified catalog)
-        access_type: Type of access (inventory, equipped, spells_known, spells_prepared)
-    
-    Returns:
-        CreationResult with validation outcome
+    REQ-CAM-013: Compelling narrative hooks
+    REQ-CAM-014: Multi-layered plots
+    REQ-CAM-015: Complex antagonists
+    REQ-CAM-016: Organic plot twists
+    REQ-CAM-017: Emotional stakes
+    REQ-CAM-018: Narrative pacing
     """
-    result = CreationResult(success=True)
+    result = ValidationResult(success=True)
     
-    item_type = item_data.get("item_type", "").lower()
-    item_name = item_data.get("name", "Unknown Item")
+    # Narrative hooks validation (REQ-CAM-013)
+    hooks = campaign_data.get('campaign_hooks', [])
+    if not hooks or len(hooks) < 2:
+        result.add_warning("Campaign needs more narrative hooks to engage players")
     
-    # Validate based on item type
-    if item_type == "spell":
-        return _validate_spell_allocation(character_data, item_data, access_type)
-    elif item_type == "weapon":
-        return _validate_weapon_allocation(character_data, item_data, access_type)
-    elif item_type == "armor":
-        return _validate_armor_allocation(character_data, item_data, access_type)
-    elif item_type in ["tool", "equipment"]:
-        return _validate_tool_equipment_allocation(character_data, item_data, access_type)
-    else:
-        # Generic items (adventuring gear, etc.) - usually no restrictions
-        result.add_warning(f"No specific validation rules for item type: {item_type}")
-        return result
-
-def _validate_spell_allocation(character_data: Dict[str, Any], spell_data: Dict[str, Any], 
-                             access_type: str) -> CreationResult:
-    """Validate spell allocation based on class spell lists and caster level."""
-    result = CreationResult(success=True)
+    # Check hook quality
+    hook_quality_indicators = ['mystery', 'urgent', 'personal', 'threat', 'opportunity', 'intrigue']
+    for i, hook in enumerate(hooks):
+        if isinstance(hook, str):
+            hook_lower = hook.lower()
+            quality_score = sum(1 for indicator in hook_quality_indicators if indicator in hook_lower)
+            if quality_score == 0:
+                result.add_warning(f"Hook {i+1} may lack compelling elements")
     
-    spell_name = spell_data.get("name", "Unknown Spell")
-    spell_level = spell_data.get("spell_level", 0)
-    spell_school = spell_data.get("spell_school", "")
-    class_restrictions = spell_data.get("class_restrictions", [])
+    # Multi-layered plot validation (REQ-CAM-014)
+    plot_layers = 0
+    if 'main_plot' in campaign_data:
+        plot_layers += 1
+    if 'subplots' in campaign_data and isinstance(campaign_data['subplots'], list):
+        plot_layers += len(campaign_data['subplots'])
+    if 'interconnected_elements' in campaign_data:
+        plot_layers += 1
     
-    # Get character classes
-    character_classes = character_data.get("character_classes", {})
-    if not character_classes:
-        result.success = False
-        result.error = f"Character has no classes to learn spell: {spell_name}"
-        return result
+    if plot_layers < 2:
+        result.add_warning("Campaign may lack plot complexity - consider adding subplots")
     
-    # Check if character has a class that can use this spell
-    character_class_names = [cls.lower() for cls in character_classes.keys()]
-    spell_class_names = [cls.lower() for cls in class_restrictions]
+    # Antagonist complexity validation (REQ-CAM-015)
+    antagonists = campaign_data.get('antagonists', [])
+    if not antagonists:
+        antagonists = [campaign_data.get('main_antagonist')] if 'main_antagonist' in campaign_data else []
     
-    can_use_spell = any(char_class in spell_class_names for char_class in character_class_names)
+    for antagonist in antagonists:
+        if isinstance(antagonist, dict):
+            if 'motivation' not in antagonist or not antagonist['motivation']:
+                result.add_warning("Antagonist missing clear motivation")
+            if 'goals' not in antagonist or not antagonist['goals']:
+                result.add_warning("Antagonist missing believable goals")
     
-    if not can_use_spell and class_restrictions:
-        result.success = False
-        result.error = f"Character classes {list(character_classes.keys())} cannot use spell: {spell_name} (requires: {class_restrictions})"
-        return result
+    # Emotional stakes validation (REQ-CAM-017)
+    stakes_indicators = ['consequence', 'lose', 'save', 'protect', 'sacrifice', 'death', 'betrayal']
+    description = campaign_data.get('description', '').lower()
+    plot_summary = campaign_data.get('plot_summary', '').lower()
     
-    # Check caster level for spell level
-    if access_type in ["spells_known", "spells_prepared"]:
-        max_spell_level = _get_max_spell_level_for_character(character_data)
-        if spell_level > max_spell_level:
-            result.success = False
-            result.error = f"Character level too low for {spell_name} (level {spell_level} spell, character can cast up to level {max_spell_level})"
-            return result
+    combined_text = f"{description} {plot_summary}"
+    stakes_score = sum(1 for indicator in stakes_indicators if indicator in combined_text)
     
-    # Check known spell limits for class
-    if access_type == "spells_known":
-        spell_limit_warning = _check_spell_known_limits(character_data, spell_level)
-        if spell_limit_warning:
-            result.add_warning(spell_limit_warning)
+    if stakes_score == 0:
+        result.add_warning("Campaign may lack emotional stakes and consequences")
     
-    logger.info(f"Spell allocation validated: {spell_name} for character classes {list(character_classes.keys())}")
+    # Pacing validation (REQ-CAM-018)
+    if 'chapters' in campaign_data:
+        chapters = campaign_data['chapters']
+        if isinstance(chapters, list) and len(chapters) > 2:
+            # Check for pacing variety
+            pacing_types = set()
+            for chapter in chapters:
+                if isinstance(chapter, dict):
+                    chapter_type = chapter.get('pacing', 'standard')
+                    pacing_types.add(chapter_type)
+            
+            if len(pacing_types) == 1:
+                result.add_warning("Consider varying chapter pacing for better narrative flow")
+    
+    result.validated_data = {
+        'narrative_hooks': len(hooks),
+        'plot_layers': plot_layers,
+        'antagonist_count': len(antagonists),
+        'emotional_stakes_score': stakes_score
+    }
+    
     return result
 
-def _validate_weapon_allocation(character_data: Dict[str, Any], weapon_data: Dict[str, Any], 
-                              access_type: str) -> CreationResult:
-    """Validate weapon allocation based on weapon proficiencies."""
-    result = CreationResult(success=True)
+# ============================================================================
+# MAIN VALIDATION FUNCTIONS
+# ============================================================================
+
+def validate_campaign_request(request: BaseCampaignRequest) -> ValidationResult:
+    """
+    Main validation function for all campaign creation requests.
+    Routes to appropriate validators based on request type.
+    """
+    result = ValidationResult(success=True)
     
-    weapon_name = weapon_data.get("name", "Unknown Weapon")
-    weapon_subtype = weapon_data.get("item_subtype", "")
-    weapon_content = weapon_data.get("content_data", {})
-    weapon_category = weapon_content.get("category", "")
-    
-    # Get character weapon proficiencies
-    weapon_proficiencies = character_data.get("weapon_proficiencies", [])
-    if isinstance(weapon_proficiencies, dict):
-        weapon_proficiencies = list(weapon_proficiencies.keys())
-    
-    # Check for specific weapon proficiency
-    if weapon_name.lower() in [prof.lower() for prof in weapon_proficiencies]:
+    # Basic request validation
+    if not request:
+        result.add_error("Request cannot be None")
         return result
     
-    # Check for category proficiency (simple weapons, martial weapons)
-    category_proficiencies = [
-        "simple weapons" if "simple" in weapon_subtype.lower() else "",
-        "martial weapons" if "martial" in weapon_subtype.lower() else "",
-        f"{weapon_category.lower()} weapons" if weapon_category else ""
-    ]
+    if not hasattr(request, 'creation_type') or not request.creation_type:
+        result.add_error("Request missing creation_type")
+        return result
     
-    has_category_proficiency = any(
-        cat_prof in [prof.lower() for prof in weapon_proficiencies] 
-        for cat_prof in category_proficiencies if cat_prof
+    # Concept validation (applies to all request types)
+    if hasattr(request, 'concept') and request.concept:
+        concept_validation = validate_campaign_concept(request.concept, request.creation_type)
+        if concept_validation.has_errors():
+            result.errors.extend(concept_validation.errors)
+        if concept_validation.has_warnings():
+            result.warnings.extend(concept_validation.warnings)
+    
+    # Type-specific validation
+    try:
+        if isinstance(request, CampaignFromScratchRequest):
+            type_validation = validate_campaign_from_scratch_request(request)
+        elif isinstance(request, CampaignSkeletonRequest):
+            type_validation = validate_campaign_skeleton_request(request)
+        elif isinstance(request, ChapterContentRequest):
+            type_validation = validate_chapter_content_request(request)
+        elif isinstance(request, CampaignRefinementRequest):
+            type_validation = validate_refinement_request(request)
+        else:
+            result.add_warning(f"No specific validator for request type: {type(request)}")
+            type_validation = ValidationResult(success=True)
+        
+        if type_validation.has_errors():
+            result.errors.extend(type_validation.errors)
+        if type_validation.has_warnings():
+            result.warnings.extend(type_validation.warnings)
+    
+    except Exception as e:
+        result.add_error(f"Validation error: {str(e)}")
+    
+    return result
+
+def validate_campaign_from_scratch_request(request: CampaignFromScratchRequest) -> ValidationResult:
+    """Validate campaign from scratch request."""
+    result = ValidationResult(success=True)
+    
+    # Session count validation
+    if request.session_count < 3 or request.session_count > 20:
+        result.add_error(f"Invalid session count: {request.session_count} (must be 3-20)")
+    
+    # Party validation
+    if request.party_level < 1 or request.party_level > 20:
+        result.add_error(f"Invalid party level: {request.party_level} (must be 1-20)")
+    
+    if request.party_size < 1 or request.party_size > 8:
+        result.add_error(f"Invalid party size: {request.party_size} (must be 1-8)")
+    
+    # Theme validation
+    if not request.themes or len(request.themes) == 0:
+        result.add_warning("No themes specified - campaign may lack thematic coherence")
+    
+    return result
+
+def validate_campaign_skeleton_request(request: CampaignSkeletonRequest) -> ValidationResult:
+    """Validate campaign skeleton request."""
+    result = ValidationResult(success=True)
+    
+    # Session count validation
+    if request.session_count < 3 or request.session_count > 20:
+        result.add_error(f"Invalid session count: {request.session_count} (must be 3-20)")
+    
+    # Detail level validation
+    valid_detail_levels = ['basic', 'medium', 'detailed']
+    if request.detail_level not in valid_detail_levels:
+        result.add_warning(f"Unknown detail level: {request.detail_level} (using 'medium')")
+    
+    return result
+
+def validate_chapter_content_request(request: ChapterContentRequest) -> ValidationResult:
+    """Validate chapter content request."""
+    result = ValidationResult(success=True)
+    
+    # Required fields validation
+    if not request.chapter_title or len(request.chapter_title.strip()) < 3:
+        result.add_error("Chapter title must be at least 3 characters")
+    
+    if not request.campaign_title or len(request.campaign_title.strip()) < 3:
+        result.add_error("Campaign title must be at least 3 characters")
+    
+    # Party validation
+    if request.party_level < 1 or request.party_level > 20:
+        result.add_error(f"Invalid party level: {request.party_level} (must be 1-20)")
+    
+    if request.party_size < 1 or request.party_size > 8:
+        result.add_error(f"Invalid party size: {request.party_size} (must be 1-8)")
+    
+    return result
+
+# ============================================================================
+# GENERATED CONTENT VALIDATION
+# ============================================================================
+
+def validate_generated_campaign(campaign_data: Dict[str, Any]) -> ValidationResult:
+    """
+    Validate generated campaign content meets all requirements.
+    This is the main validation function for completed campaigns.
+    """
+    result = ValidationResult(success=True)
+    
+    # Structure validation
+    structure_validation = validate_campaign_structure(campaign_data)
+    if structure_validation.has_errors():
+        result.errors.extend(structure_validation.errors)
+    if structure_validation.has_warnings():
+        result.warnings.extend(structure_validation.warnings)
+    
+    # Narrative quality validation
+    narrative_validation = validate_narrative_quality(campaign_data)
+    if narrative_validation.has_errors():
+        result.errors.extend(narrative_validation.errors)
+    if narrative_validation.has_warnings():
+        result.warnings.extend(narrative_validation.warnings)
+    
+    # Performance validation
+    performance_validation = validate_performance_requirements(
+        campaign_data, 
+        CampaignCreationType.CAMPAIGN_FROM_SCRATCH
     )
+    if performance_validation.has_errors():
+        result.errors.extend(performance_validation.errors)
+    if performance_validation.has_warnings():
+        result.warnings.extend(performance_validation.warnings)
     
-    if not has_category_proficiency and access_type == "equipped":
-        result.add_warning(f"Character not proficient with {weapon_name} - will have disadvantage on attack rolls")
-    
-    logger.info(f"Weapon allocation validated: {weapon_name} for character proficiencies {weapon_proficiencies}")
-    return result
-
-def _validate_armor_allocation(character_data: Dict[str, Any], armor_data: Dict[str, Any], 
-                             access_type: str) -> CreationResult:
-    """Validate armor allocation based on armor proficiencies."""
-    result = CreationResult(success=True)
-    
-    armor_name = armor_data.get("name", "Unknown Armor")
-    armor_subtype = armor_data.get("item_subtype", "")
-    
-    # Get character armor proficiencies
-    armor_proficiencies = character_data.get("armor_proficiencies", [])
-    if isinstance(armor_proficiencies, dict):
-        armor_proficiencies = list(armor_proficiencies.keys())
-    
-    # Check for specific armor proficiency
-    if armor_name.lower() in [prof.lower() for prof in armor_proficiencies]:
-        return result
-    
-    # Check for category proficiency
-    armor_category_map = {
-        "light_armor": "light armor",
-        "medium_armor": "medium armor", 
-        "heavy_armor": "heavy armor"
-    }
-    
-    required_proficiency = armor_category_map.get(armor_subtype.lower(), armor_subtype)
-    has_proficiency = required_proficiency.lower() in [prof.lower() for prof in armor_proficiencies]
-    
-    if not has_proficiency and access_type == "equipped":
-        result.add_warning(f"Character not proficient with {armor_name} - may have disadvantage on ability checks, saving throws, and attack rolls")
-    
-    logger.info(f"Armor allocation validated: {armor_name} for character proficiencies {armor_proficiencies}")
-    return result
-
-def _validate_tool_equipment_allocation(character_data: Dict[str, Any], item_data: Dict[str, Any], 
-                                      access_type: str) -> CreationResult:
-    """Validate tool/equipment allocation based on tool proficiencies."""
-    result = CreationResult(success=True)
-    
-    item_name = item_data.get("name", "Unknown Item")
-    item_subtype = item_data.get("item_subtype", "")
-    
-    # Most equipment doesn't require proficiency, but tools do
-    if item_data.get("item_type") == "tool":
-        tool_proficiencies = character_data.get("tool_proficiencies", {})
-        if isinstance(tool_proficiencies, list):
-            tool_proficiencies = {tool: "proficient" for tool in tool_proficiencies}
+    # Chapter validation if chapters exist
+    if 'chapters' in campaign_data and isinstance(campaign_data['chapters'], list):
+        party_level = campaign_data.get('party_level', 1)
+        party_size = campaign_data.get('party_size', 4)
         
-        # Check if character has proficiency with this tool
-        has_tool_proficiency = any(
-            tool_name.lower() in item_name.lower() or item_name.lower() in tool_name.lower()
-            for tool_name in tool_proficiencies.keys()
-        )
-        
-        if not has_tool_proficiency:
-            result.add_warning(f"Character not proficient with {item_name} - cannot add proficiency bonus to ability checks")
+        for i, chapter in enumerate(campaign_data['chapters']):
+            if isinstance(chapter, dict):
+                chapter_validation = validate_chapter_content(chapter, party_level, party_size)
+                if chapter_validation.has_errors():
+                    chapter_errors = [f"Chapter {i+1}: {error}" for error in chapter_validation.errors]
+                    result.errors.extend(chapter_errors)
+                if chapter_validation.has_warnings():
+                    chapter_warnings = [f"Chapter {i+1}: {warning}" for warning in chapter_validation.warnings]
+                    result.warnings.extend(chapter_warnings)
     
-    logger.info(f"Tool/Equipment allocation validated: {item_name}")
+    result.validated_data = campaign_data
     return result
 
-def _get_max_spell_level_for_character(character_data: Dict[str, Any]) -> int:
-    """Calculate the maximum spell level a character can cast based on their classes and levels."""
-    character_classes = character_data.get("character_classes", {})
-    max_spell_level = 0
-    
-    # Standard D&D 5e spell progression
-    spell_level_progression = {
-        1: 0, 2: 1, 3: 2, 4: 2, 5: 3, 6: 3, 7: 4, 8: 4, 9: 5, 10: 5,
-        11: 6, 12: 6, 13: 7, 14: 7, 15: 8, 16: 8, 17: 9, 18: 9, 19: 9, 20: 9
-    }
-    
-    # Full caster classes
-    full_casters = ["wizard", "sorcerer", "cleric", "druid", "bard", "warlock"]
-    
-    # Half caster classes (Paladin, Ranger)
-    half_casters = ["paladin", "ranger"]
-    
-    for class_name, class_level in character_classes.items():
-        class_name_lower = class_name.lower()
-        
-        if class_name_lower in full_casters:
-            # Full casters use standard progression
-            class_max_level = spell_level_progression.get(class_level, 0)
-            max_spell_level = max(max_spell_level, class_max_level)
-        elif class_name_lower in half_casters:
-            # Half casters start at level 2 and progress at half rate
-            if class_level >= 2:
-                effective_level = (class_level - 1) // 2 + 1
-                class_max_level = min(spell_level_progression.get(effective_level, 0), 5)  # Capped at 5th level
-                max_spell_level = max(max_spell_level, class_max_level)
-    
-    return max_spell_level
+# ============================================================================
+# EXPORT FUNCTIONS
+# ============================================================================
 
-def _check_spell_known_limits(character_data: Dict[str, Any], spell_level: int) -> Optional[str]:
-    """Check if character is approaching spell known limits for their class."""
-    # This is a simplified check - in a full implementation, this would check
-    # specific class spell progression tables
-    character_classes = character_data.get("character_classes", {})
-    total_level = sum(character_classes.values())
-    
-    # Basic heuristic: warn if character has many high-level spells
-    if spell_level >= 6 and total_level < 12:
-        return f"High-level spell ({spell_level}) for character level {total_level} - ensure spell slot availability"
-    
-    return None
-
-def validate_character_can_allocate_item(character_id: str, item_id: str, access_type: str = "inventory") -> CreationResult:
-    """
-    Convenience function to validate item allocation by loading character and item data.
-    This would typically be called from the allocation service.
-    
-    Args:
-        character_id: UUID of the character
-        item_id: UUID of the item
-        access_type: Type of access being granted
-    
-    Returns:
-        CreationResult with validation outcome
-    """
-    # Note: This function would need database access to load character and item data
-    # For now, it's a placeholder that shows the intended interface
-    result = CreationResult(success=False)
-    result.error = "Function requires database integration - use validate_item_allocation with loaded data"
-    return result
+__all__ = [
+    'ValidationResult',
+    'validate_campaign_request',
+    'validate_campaign_concept',
+    'validate_campaign_structure',
+    'validate_chapter_content',
+    'validate_encounter_balance',
+    'validate_refinement_request',
+    'validate_performance_requirements',
+    'validate_narrative_quality',
+    'validate_generated_campaign'
+]

@@ -1,3 +1,155 @@
+# =========================
+# CAMPAIGN DATABASE ACCESS LAYER
+# =========================
+
+import uuid
+import enum
+import logging
+import hashlib
+from typing import TYPE_CHECKING, Optional, List, Dict, Any
+from datetime import datetime
+from sqlalchemy.orm import Session
+
+if TYPE_CHECKING:
+    from .database_models import Campaign, Chapter, PlotFork
+
+class CampaignDB:
+    """
+    Database access layer for campaign, chapter, and plot fork operations.
+    """
+    # ----------- CAMPAIGN CRUD -----------
+    @staticmethod
+    def create_campaign(db: Session, campaign_data: Dict[str, Any]):
+        # Import here to avoid circular imports
+        from . import database_models as dm
+        db_campaign = dm.Campaign(
+            id=campaign_data.get("id", str(uuid.uuid4())),
+            title=campaign_data["title"],
+            description=campaign_data.get("description"),
+            themes=campaign_data.get("themes", []),
+            gm_notes=campaign_data.get("gm_notes"),
+            status=campaign_data.get("status", dm.CampaignStatusEnum.DRAFT.value),
+        )
+        db.add(db_campaign)
+        db.commit()
+        db.refresh(db_campaign)
+        return db_campaign
+
+    @staticmethod
+    def get_campaign(db: Session, campaign_id: str):
+        from . import database_models as dm
+        return db.query(dm.Campaign).filter(dm.Campaign.id == campaign_id).first()
+
+    @staticmethod
+    def update_campaign(db: Session, campaign_id: str, updates: Dict[str, Any]):
+        db_campaign = CampaignDB.get_campaign(db, campaign_id)
+        if not db_campaign:
+            return None
+        for key, value in updates.items():
+            if hasattr(db_campaign, key):
+                setattr(db_campaign, key, value)
+        db.commit()
+        db.refresh(db_campaign)
+        return db_campaign
+
+    @staticmethod
+    def delete_campaign(db: Session, campaign_id: str) -> bool:
+        db_campaign = CampaignDB.get_campaign(db, campaign_id)
+        if not db_campaign:
+            return False
+        db.delete(db_campaign)
+        db.commit()
+        return True
+
+    @staticmethod
+    def list_campaigns(db: Session, limit: int = 100, offset: int = 0):
+        from . import database_models as dm
+        return db.query(dm.Campaign).offset(offset).limit(limit).all()
+
+    # ----------- CHAPTER CRUD -----------
+    @staticmethod
+    def create_chapter(db: Session, chapter_data: Dict[str, Any]):
+        from . import database_models as dm
+        db_chapter = dm.Chapter(
+            id=chapter_data.get("id", str(uuid.uuid4())),
+            campaign_id=chapter_data["campaign_id"],
+            title=chapter_data["title"],
+            summary=chapter_data.get("summary"),
+            content=chapter_data.get("content"),
+            status=chapter_data.get("status", dm.ChapterStatusEnum.DRAFT.value),
+        )
+        db.add(db_chapter)
+        db.commit()
+        db.refresh(db_chapter)
+        return db_chapter
+
+    @staticmethod
+    def get_chapter(db: Session, chapter_id: str):
+        from . import database_models as dm
+        return db.query(dm.Chapter).filter(dm.Chapter.id == chapter_id).first()
+
+    @staticmethod
+    def update_chapter(db: Session, chapter_id: str, updates: Dict[str, Any]):
+        db_chapter = CampaignDB.get_chapter(db, chapter_id)
+        if not db_chapter:
+            return None
+        for key, value in updates.items():
+            if hasattr(db_chapter, key):
+                setattr(db_chapter, key, value)
+        db.commit()
+        db.refresh(db_chapter)
+        return db_chapter
+
+    @staticmethod
+    def delete_chapter(db: Session, chapter_id: str) -> bool:
+        db_chapter = CampaignDB.get_chapter(db, chapter_id)
+        if not db_chapter:
+            return False
+        db.delete(db_chapter)
+        db.commit()
+        return True
+
+    @staticmethod
+    def list_chapters(db: Session, campaign_id: str):
+        from . import database_models as dm
+        return db.query(dm.Chapter).filter(dm.Chapter.campaign_id == campaign_id).all()
+
+    # ----------- PLOT FORK CRUD -----------
+    @staticmethod
+    def create_plot_fork(db: Session, fork_data: Dict[str, Any]):
+        from . import database_models as dm
+        db_fork = dm.PlotFork(
+            id=fork_data.get("id", str(uuid.uuid4())),
+            campaign_id=fork_data["campaign_id"],
+            chapter_id=fork_data["chapter_id"],
+            fork_type=fork_data["fork_type"],
+            description=fork_data.get("description"),
+            options=fork_data.get("options", []),
+        )
+        db.add(db_fork)
+        db.commit()
+        db.refresh(db_fork)
+        return db_fork
+
+    @staticmethod
+    def get_plot_fork(db: Session, fork_id: str):
+        from . import database_models as dm
+        return db.query(dm.PlotFork).filter(dm.PlotFork.id == fork_id).first()
+
+    @staticmethod
+    def list_plot_forks(db: Session, campaign_id: str):
+        from . import database_models as dm
+        return db.query(dm.PlotFork).filter(dm.PlotFork.campaign_id == campaign_id).all()
+
+    @staticmethod
+    def delete_plot_fork(db: Session, fork_id: str) -> bool:
+        db_fork = CampaignDB.get_plot_fork(db, fork_id)
+        if not db_fork:
+            return False
+        db.delete(db_fork)
+        db.commit()
+        return True
+
 """
 Database models for the D&D Character Creator with Git-like versioning system.
 """
@@ -568,7 +720,7 @@ def register_custom_npc(db: Session, name: str, npc_type: str, description: str 
         "npc_type": npc_type,
         "description": description,
         "stats": stats,
-        "challenge_rating": stats.get("challenge_rating"),
+        "challenge_rating": challenge_rating,
     }
     db_npc = CustomContent(
         name=name,
@@ -1012,29 +1164,892 @@ class CharacterEquipmentAccess(Base):
             "updated_at": self.updated_at.isoformat() if self.updated_at else None
         }
 
+############################################################
+# CAMPAIGN MANAGEMENT MODELS (Campaign, Chapter, PlotFork) #
+############################################################
+import enum
+
+class CampaignStatusEnum(str, enum.Enum):
+    DRAFT = "draft"
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+class ChapterStatusEnum(str, enum.Enum):
+    DRAFT = "draft"
+    FINALIZED = "finalized"
+    IN_PROGRESS = "in_progress"
+
+class PlotForkTypeEnum(str, enum.Enum):
+    BRANCH = "branch"
+    MERGE = "merge"
+    ALTERNATE = "alternate"
+
+class Campaign(Base):
+    __tablename__ = "campaigns"
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+    title = Column(String(200), nullable=False)
+    description = Column(Text)
+    themes = Column(JSON, default=list)
+    gm_notes = Column(Text)
+    status = Column(String(20), default=CampaignStatusEnum.DRAFT.value)
+    
+    # Git-like versioning metadata
+    current_branch = Column(String(100), default="main")
+    total_chapters = Column(Integer, default=0)
+    total_branches = Column(Integer, default=1)
+    last_played_session = Column(String(36), nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Traditional relationships (maintained for backward compatibility)
+    chapters = relationship("Chapter", back_populates="campaign", cascade="all, delete-orphan")
+    
+    # New git-like versioning relationships
+    chapter_versions = relationship("ChapterVersion", back_populates="campaign", cascade="all, delete-orphan")
+    branches = relationship("CampaignBranch", back_populates="campaign", cascade="all, delete-orphan")
+    choices = relationship("ChapterChoice", back_populates="campaign", cascade="all, delete-orphan")
+    play_sessions = relationship("PlaySession", back_populates="campaign", cascade="all, delete-orphan")
+    merges = relationship("ChapterMerge", back_populates="campaign", cascade="all, delete-orphan")
+    
+    # Campaign content relationships
+    campaign_characters = relationship("CampaignCharacter", cascade="all, delete-orphan")
+    campaign_maps = relationship("CampaignMap", cascade="all, delete-orphan")
+
+class Chapter(Base):
+    __tablename__ = "chapters"
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+    campaign_id = Column(String(36), ForeignKey("campaigns.id"), nullable=False)
+    title = Column(String(200), nullable=False)
+    summary = Column(Text)
+    content = Column(Text)
+    status = Column(String(20), default=ChapterStatusEnum.DRAFT.value)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    campaign = relationship("Campaign", back_populates="chapters")
+    plot_forks = relationship("PlotFork", back_populates="chapter", cascade="all, delete-orphan")
+
+class PlotFork(Base):
+    __tablename__ = "plot_forks"
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+    campaign_id = Column(String(36), ForeignKey("campaigns.id"), nullable=False)
+    chapter_id = Column(String(36), ForeignKey("chapters.id"), nullable=False)
+    fork_type = Column(String(20), nullable=False)
+    description = Column(Text)
+    options = Column(JSON, default=list)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    chapter = relationship("Chapter", back_populates="plot_forks")
+
+
+
 # ============================================================================
-# DATABASE ACCESS LAYER - CRUD OPERATIONS
+# GIT-LIKE CHAPTER VERSIONING MODELS
 # ============================================================================
-"""
-This section addresses the comments about database access patterns:
 
-ARCHITECTURE OVERVIEW:
-- Database models (Character, CharacterSession, CustomContent) define the schema
-- CharacterDB class provides all database operations with proper error handling
-- Integration with character_models.py CharacterSheet class for gameplay
-- Session management for character creation workflows
+class ChapterVersionTypeEnum(str, enum.Enum):
+    """Types of chapter versions in the git-like system."""
+    SKELETON = "skeleton"          # Initial bare-bones chapter outline
+    DRAFT = "draft"               # Work-in-progress chapter content
+    PUBLISHED = "published"       # Finalized chapter ready for play
+    PLAYED = "played"            # Chapter that has been played by players
+    BRANCH = "branch"            # Alternative storyline branch
+    MERGE = "merge"              # Merged multiple storylines
 
-OPERATION FLOW:
-1. CREATE NEW CHARACTER: CharacterSheet -> CharacterDB.save_character_sheet() -> Database
-2. UPDATE EXISTING: Database -> CharacterDB.load_character_sheet() -> modify -> save back
-3. IN-GAME PLAY: Load -> use getter/setter methods -> real-time updates -> save back
+class BranchTypeEnum(str, enum.Enum):
+    """Types of story branches."""
+    MAIN = "main"                # Primary storyline (like git main/master)
+    ALTERNATE = "alternate"      # Alternative story path
+    PLAYER_CHOICE = "player_choice"  # Branch created by player decisions
+    EXPERIMENTAL = "experimental"    # Testing new story ideas
+    PARALLEL = "parallel"       # Concurrent storylines
 
-ACCESS PATTERNS:
-- All database access goes through CharacterDB static methods
-- Database sessions are properly managed with get_db() context manager
-- Character data is converted between CharacterSheet objects and database models
-- Supports both direct database operations and CharacterSheet integration
-"""
+class PlaySessionStatusEnum(str, enum.Enum):
+    """Status of play sessions."""
+    SCHEDULED = "scheduled"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+class ChapterVersion(Base):
+    """
+    Enhanced Chapter model with git-like versioning capabilities.
+    
+    Each chapter can have multiple versions (like git commits),
+    with full lineage tracking and branching support.
+    """
+    __tablename__ = "chapter_versions"
+    
+    # Core identification
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    campaign_id = Column(String(36), ForeignKey("campaigns.id"), nullable=False, index=True)
+    
+    # Git-like versioning fields
+    version_hash = Column(String(12), unique=True, nullable=False, index=True)
+    parent_hashes = Column(JSON, default=list)  # List of parent version hashes
+    branch_name = Column(String(100), default="main", nullable=False, index=True)
+    version_type = Column(String(20), default=ChapterVersionTypeEnum.DRAFT.value)
+    
+    # Content fields
+    title = Column(String(200), nullable=False)
+    summary = Column(Text)
+    content = Column(JSON)  # Full chapter content as JSON
+    chapter_order = Column(Integer, default=0)  # Order within campaign
+    
+    # Commit metadata
+    commit_message = Column(Text)
+    author = Column(String(100), default="system")
+    commit_timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    
+    # Player interaction data
+    player_choices = Column(JSON, default=dict)  # Choices that led to this version
+    player_consequences = Column(JSON, default=dict)  # Results of player actions
+    dm_notes = Column(Text)
+    
+    # Session tracking
+    play_session_id = Column(String(36), ForeignKey("play_sessions.id"), nullable=True)
+    session_date = Column(DateTime, nullable=True)
+    
+    # Version management
+    is_head = Column(Boolean, default=True)  # Is this the latest version in its branch?
+    is_active = Column(Boolean, default=True)
+    merge_parent_hashes = Column(JSON, default=list)  # For merge commits
+    
+    # Standard timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    campaign = relationship("Campaign", back_populates="chapter_versions")
+    play_session = relationship("PlaySession", back_populates="chapter_versions")
+    choices = relationship("ChapterChoice", back_populates="chapter_version")
+
+class CampaignBranch(Base):
+    """
+    Story branches within a campaign (like git branches).
+    
+    Tracks different storyline paths and alternate endings.
+    """
+    __tablename__ = "campaign_branches"
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    campaign_id = Column(String(36), ForeignKey("campaigns.id"), nullable=False, index=True)
+    
+    # Branch identification
+    name = Column(String(100), nullable=False, index=True)
+    branch_type = Column(String(20), default=BranchTypeEnum.MAIN.value)
+    
+    # Branch metadata
+    description = Column(Text)
+    head_commit = Column(String(12), nullable=False)  # Latest chapter version hash
+    parent_branch = Column(String(100), nullable=True)
+    
+    # Branch status
+    is_active = Column(Boolean, default=True)
+    is_merged = Column(Boolean, default=False)
+    merged_into_branch = Column(String(100), nullable=True)
+    merge_timestamp = Column(DateTime, nullable=True)
+    
+    # Creation tracking
+    created_by = Column(String(100), default="system")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    campaign = relationship("Campaign", back_populates="branches")
+
+class ChapterChoice(Base):
+    """
+    Player choices that create new branches or affect story direction.
+    
+    Tracks significant player decisions and their consequences.
+    """
+    __tablename__ = "chapter_choices"
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    campaign_id = Column(String(36), ForeignKey("campaigns.id"), nullable=False, index=True)
+    chapter_version_id = Column(String(36), ForeignKey("chapter_versions.id"), nullable=False)
+    play_session_id = Column(String(36), ForeignKey("play_sessions.id"), nullable=True)
+    
+    # Choice description
+    choice_description = Column(Text, nullable=False)
+    choice_context = Column(JSON, default=dict)  # Situation when choice was made
+    
+    # Choice details
+    options_presented = Column(JSON, default=list)  # What options were available
+    choice_made = Column(JSON, default=dict)  # What the players chose
+    players_involved = Column(JSON, default=list)  # Which players made the choice
+    
+    # Consequences
+    immediate_consequences = Column(JSON, default=dict)
+    long_term_consequences = Column(JSON, default=dict)
+    narrative_impact = Column(Text)
+    
+    # Branching
+    resulted_in_branch = Column(String(100), nullable=True)
+    alternative_branches = Column(JSON, default=list)  # Other possible outcomes
+    
+    # Timing
+    choice_timestamp = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    campaign = relationship("Campaign", back_populates="choices")
+    chapter_version = relationship("ChapterVersion", back_populates="choices")
+    play_session = relationship("PlaySession", back_populates="choices")
+
+class PlaySession(Base):
+    """
+    Actual play sessions where chapters are experienced.
+    
+    Tracks when and how chapters were played.
+    """
+    __tablename__ = "play_sessions"
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    campaign_id = Column(String(36), ForeignKey("campaigns.id"), nullable=False, index=True)
+    
+    # Session identification
+    session_number = Column(Integer, nullable=False)
+    session_title = Column(String(200))
+    session_date = Column(DateTime, nullable=False)
+    
+    # Session details
+    chapters_played = Column(JSON, default=list)  # List of chapter hashes played
+    duration_minutes = Column(Integer)
+    players_present = Column(JSON, default=list)
+    dm_name = Column(String(100))
+    
+    # Session outcomes
+    major_events = Column(JSON, default=list)
+    player_decisions = Column(JSON, default=dict)
+    story_progression = Column(Text)
+    
+    # Session notes
+    dm_notes = Column(Text)
+    player_feedback = Column(JSON, default=dict)
+    
+    # Session status
+    status = Column(String(20), default=PlaySessionStatusEnum.SCHEDULED.value)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    campaign = relationship("Campaign", back_populates="play_sessions")
+    chapter_versions = relationship("ChapterVersion", back_populates="play_session")
+    choices = relationship("ChapterChoice", back_populates="play_session")
+
+class ChapterMerge(Base):
+    """
+    Records of branch merges (combining storylines).
+    
+    Tracks when and how different story branches were combined.
+    """
+    __tablename__ = "chapter_merges"
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    campaign_id = Column(String(36), ForeignKey("campaigns.id"), nullable=False, index=True)
+    
+    # Merge details
+    source_branch = Column(String(100), nullable=False)
+    target_branch = Column(String(100), nullable=False)
+    merge_commit_hash = Column(String(12), nullable=False)
+    
+    # Merge metadata
+    merge_strategy = Column(String(50))  # "manual", "auto", "cherry-pick"
+    merge_message = Column(Text)
+    conflicts_resolved = Column(JSON, default=list)
+    
+    # Merge author
+    merged_by = Column(String(100), nullable=False)
+    merge_timestamp = Column(DateTime, default=datetime.utcnow)
+    
+    # Merge notes
+    merge_notes = Column(Text)
+    
+    # Relationships
+    campaign = relationship("Campaign", back_populates="merges")
+
+# ============================================================================
+# DATABASE ACCESS LAYER FOR GIT-LIKE OPERATIONS
+# ============================================================================
+
+class ChapterVersionDB:
+    """Database operations for git-like chapter versioning."""
+    
+    @staticmethod
+    def create_chapter_version(db: Session, version_data: Dict[str, Any]) -> ChapterVersion:
+        """Create a new chapter version (git commit)."""
+        chapter_version = ChapterVersion(
+            campaign_id=version_data["campaign_id"],
+            version_hash=version_data["version_hash"],
+            parent_hashes=version_data.get("parent_hashes", []),
+            branch_name=version_data.get("branch_name", "main"),
+            version_type=version_data.get("version_type", ChapterVersionTypeEnum.DRAFT.value),
+            title=version_data["title"],
+            summary=version_data.get("summary"),
+            content=version_data.get("content", {}),
+            chapter_order=version_data.get("chapter_order", 0),
+            commit_message=version_data.get("commit_message", ""),
+            author=version_data.get("author", "system"),
+            player_choices=version_data.get("player_choices", {}),
+            dm_notes=version_data.get("dm_notes"),
+            play_session_id=version_data.get("play_session_id")
+        )
+        
+        db.add(chapter_version)
+        db.commit()
+        db.refresh(chapter_version)
+        return chapter_version
+    
+    @staticmethod
+    def get_chapter_by_hash(db: Session, version_hash: str) -> ChapterVersion:
+        """Get chapter by version hash."""
+        return db.query(ChapterVersion).filter(
+            ChapterVersion.version_hash == version_hash
+        ).first()
+    
+    @staticmethod
+    def get_branch_head(db: Session, campaign_id: str, branch_name: str) -> ChapterVersion:
+        """Get the head (latest) chapter in a branch."""
+        return db.query(ChapterVersion).filter(
+            ChapterVersion.campaign_id == campaign_id,
+            ChapterVersion.branch_name == branch_name,
+            ChapterVersion.is_head == True
+        ).first()
+    
+    @staticmethod
+    def get_campaign_branches(db: Session, campaign_id: str) -> List[CampaignBranch]:
+        """Get all branches for a campaign."""
+        return db.query(CampaignBranch).filter(
+            CampaignBranch.campaign_id == campaign_id,
+            CampaignBranch.is_active == True
+        ).all()
+    
+    @staticmethod
+    def create_branch(db: Session, branch_data: Dict[str, Any]) -> CampaignBranch:
+        """Create a new story branch."""
+        branch = CampaignBranch(
+            campaign_id=branch_data["campaign_id"],
+            name=branch_data["name"],
+            branch_type=branch_data.get("branch_type", BranchTypeEnum.ALTERNATE.value),
+            description=branch_data.get("description", ""),
+            head_commit=branch_data["head_commit"],
+            parent_branch=branch_data.get("parent_branch"),
+            created_by=branch_data.get("created_by", "system")
+        )
+        
+        db.add(branch)
+        db.commit()
+        db.refresh(branch)
+        return branch
+    
+    @staticmethod
+    def record_player_choice(db: Session, choice_data: Dict[str, Any]) -> ChapterChoice:
+        """Record a player choice."""
+        choice = ChapterChoice(
+            campaign_id=choice_data["campaign_id"],
+            chapter_version_id=choice_data["chapter_version_id"],
+            choice_description=choice_data["choice_description"],
+            choice_context=choice_data.get("choice_context", {}),
+            options_presented=choice_data.get("options_presented", []),
+            choice_made=choice_data.get("choice_made", {}),
+            players_involved=choice_data.get("players_involved", []),
+            immediate_consequences=choice_data.get("immediate_consequences", {}),
+            resulted_in_branch=choice_data.get("resulted_in_branch"),
+            play_session_id=choice_data.get("play_session_id")
+        )
+        
+        db.add(choice)
+        db.commit()
+        db.refresh(choice)
+        return choice
+# ============================================================================
+# CAMPAIGN CONTENT MODELS - CHARACTERS, NPCS, MONSTERS, AND MAPS
+# ============================================================================
+
+class CampaignCharacterTypeEnum(str, enum.Enum):
+    """Types of characters in campaigns."""
+    PLAYER_CHARACTER = "player_character"
+    NPC = "npc"
+    MONSTER = "monster"
+    VILLAIN = "villain"
+    ALLY = "ally"
+    NEUTRAL = "neutral"
+
+class CampaignCharacterStatusEnum(str, enum.Enum):
+    """Status of characters in campaigns."""
+    ACTIVE = "active"
+    DECEASED = "deceased"
+    RETIRED = "retired"
+    MISSING = "missing"
+    CAPTURED = "captured"
+    TRANSFORMED = "transformed"
+
+class MapTypeEnum(str, enum.Enum):
+    """Types of maps in campaigns."""
+    WORLD = "world"
+    REGION = "region"
+    CITY = "city"
+    DUNGEON = "dungeon"
+    BUILDING = "building"
+    BATTLE = "battle"
+    CUSTOM = "custom"
+
+class MapStatusEnum(str, enum.Enum):
+    """Status of maps in campaigns."""
+    DRAFT = "draft"
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+    HIDDEN = "hidden"
+
+class CampaignCharacter(Base):
+    """
+    Characters (PCs, NPCs, monsters) within a specific campaign.
+    
+    Each character gets a unique UUID and is linked to campaign chapters
+    where they appear. This tracks campaign-specific character data.
+    """
+    __tablename__ = "campaign_characters"
+    
+    # Core identification
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    campaign_id = Column(String(36), ForeignKey("campaigns.id"), nullable=False, index=True)
+    
+    # Character identification
+    name = Column(String(100), nullable=False, index=True)
+    character_type = Column(String(20), default=CampaignCharacterTypeEnum.NPC.value)
+    status = Column(String(20), default=CampaignCharacterStatusEnum.ACTIVE.value)
+    
+    # Basic character information
+    species = Column(String(50), nullable=True)
+    character_classes = Column(JSON, default=dict)  # Class levels if applicable
+    level = Column(Integer, nullable=True)
+    alignment = Column(String(20), nullable=True)
+    
+    # Physical description
+    description = Column(Text, nullable=True)
+    appearance = Column(Text, nullable=True)
+    portrait_url = Column(String(500), nullable=True)
+    
+    # Character stats (flexible JSON storage)
+    stats = Column(JSON, default=dict)  # AC, HP, abilities, saves, etc.
+    abilities = Column(JSON, default=dict)  # Strength, Dex, etc.
+    skills = Column(JSON, default=dict)
+    equipment = Column(JSON, default=dict)
+    spells = Column(JSON, default=dict)
+    features = Column(JSON, default=dict)
+    
+    # Campaign-specific data
+    role_in_campaign = Column(String(100), nullable=True)  # "Quest giver", "Final boss", etc.
+    backstory = Column(Text, nullable=True)
+    motivations = Column(JSON, default=list)
+    relationships = Column(JSON, default=dict)  # Relationships with other characters
+    secrets = Column(Text, nullable=True)  # DM-only information
+    
+    # Story progression
+    character_arc = Column(JSON, default=dict)  # Character development over time
+    first_appearance_chapter = Column(String(12), nullable=True)  # Chapter hash
+    last_seen_chapter = Column(String(12), nullable=True)  # Chapter hash
+    chapters_appeared = Column(JSON, default=list)  # List of chapter hashes
+    
+    # Combat and mechanics
+    challenge_rating = Column(String(10), nullable=True)  # For monsters/NPCs
+    legendary_actions = Column(JSON, default=list)
+    lair_actions = Column(JSON, default=list)
+    regional_effects = Column(JSON, default=list)
+    
+    # Player information (for PCs)
+    player_name = Column(String(100), nullable=True)
+    player_notes = Column(Text, nullable=True)
+    character_sheet_data = Column(JSON, default=dict)  # Full character sheet if PC
+    
+    # Generation metadata
+    generated_by = Column(String(50), default="manual")  # "manual", "llm", "import"
+    generation_prompt = Column(Text, nullable=True)  # Original prompt if LLM-generated
+    source_material = Column(String(100), nullable=True)  # "PHB", "Custom", etc.
+    
+    # Metadata
+    created_by = Column(String(100), default="system")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+    is_public = Column(Boolean, default=False)
+    
+    # Relationships
+    campaign = relationship("Campaign")
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert character to dictionary format."""
+        return {
+            "id": self.id,
+            "campaign_id": self.campaign_id,
+            "name": self.name,
+            "character_type": self.character_type,
+            "status": self.status,
+            "species": self.species,
+            "character_classes": self.character_classes,
+            "level": self.level,
+            "alignment": self.alignment,
+            "description": self.description,
+            "appearance": self.appearance,
+            "portrait_url": self.portrait_url,
+            "stats": self.stats,
+            "abilities": self.abilities,
+            "skills": self.skills,
+            "equipment": self.equipment,
+            "spells": self.spells,
+            "features": self.features,
+            "role_in_campaign": self.role_in_campaign,
+            "backstory": self.backstory,
+            "motivations": self.motivations,
+            "relationships": self.relationships,
+            "secrets": self.secrets,
+            "character_arc": self.character_arc,
+            "first_appearance_chapter": self.first_appearance_chapter,
+            "last_seen_chapter": self.last_seen_chapter,
+            "chapters_appeared": self.chapters_appeared,
+            "challenge_rating": self.challenge_rating,
+            "legendary_actions": self.legendary_actions,
+            "lair_actions": self.lair_actions,
+            "regional_effects": self.regional_effects,
+            "player_name": self.player_name,
+            "player_notes": self.player_notes,
+            "character_sheet_data": self.character_sheet_data,
+            "generated_by": self.generated_by,
+            "generation_prompt": self.generation_prompt,
+            "source_material": self.source_material,
+            "created_by": self.created_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "is_active": self.is_active,
+            "is_public": self.is_public
+        }
+
+class CampaignMap(Base):
+    """
+    Maps associated with campaigns.
+    
+    Each map gets a unique UUID and can be linked to specific chapters
+    or used throughout the campaign.
+    """
+    __tablename__ = "campaign_maps"
+    
+    # Core identification
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    campaign_id = Column(String(36), ForeignKey("campaigns.id"), nullable=False, index=True)
+    
+    # Map identification
+    name = Column(String(100), nullable=False, index=True)
+    map_type = Column(String(20), default=MapTypeEnum.CUSTOM.value)
+    status = Column(String(20), default=MapStatusEnum.DRAFT.value)
+    
+    # Map information
+    description = Column(Text, nullable=True)
+    scale = Column(String(50), nullable=True)  # "1 square = 5 feet", "1 hex = 1 mile", etc.
+    dimensions = Column(String(50), nullable=True)  # "30x40 squares", "100x150 pixels"
+    
+    # Map files and data
+    image_url = Column(String(500), nullable=True)  # URL to map image
+    thumbnail_url = Column(String(500), nullable=True)  # URL to thumbnail
+    map_data = Column(JSON, default=dict)  # Grid data, tokens, annotations, etc.
+    layers = Column(JSON, default=list)  # Map layers (background, objects, tokens, etc.)
+    
+    # Geographic information
+    parent_map_id = Column(String(36), ForeignKey("campaign_maps.id"), nullable=True)  # For nested maps
+    coordinates = Column(JSON, default=dict)  # Position within parent map
+    connected_maps = Column(JSON, default=list)  # List of connected map IDs
+    
+    # Campaign integration
+    associated_chapters = Column(JSON, default=list)  # Chapter hashes where this map is used
+    first_used_chapter = Column(String(12), nullable=True)  # First chapter hash
+    last_used_chapter = Column(String(12), nullable=True)  # Last chapter hash
+    
+    # Interactive elements
+    points_of_interest = Column(JSON, default=list)  # POIs on the map
+    hidden_areas = Column(JSON, default=list)  # Areas hidden from players
+    dynamic_elements = Column(JSON, default=list)  # Elements that change over time
+    
+    # Tokens and characters
+    character_positions = Column(JSON, default=dict)  # Current character positions
+    npc_positions = Column(JSON, default=dict)  # NPC positions
+    monster_positions = Column(JSON, default=dict)  # Monster positions
+    
+    # Battle map specific
+    grid_type = Column(String(20), nullable=True)  # "square", "hex", "none"
+    grid_size = Column(Integer, nullable=True)  # Size in pixels
+    initiative_order = Column(JSON, default=list)  # Combat initiative if battle map
+    
+    # Generation metadata
+    generated_by = Column(String(50), default="manual")  # "manual", "llm", "import"
+    generation_prompt = Column(Text, nullable=True)  # Original prompt if LLM-generated
+    source_material = Column(String(100), nullable=True)  # Source of map
+    
+    # Access control
+    player_visible = Column(Boolean, default=True)  # Can players see this map?
+    dm_notes = Column(Text, nullable=True)  # DM-only notes about the map
+    
+    # Metadata
+    created_by = Column(String(100), default="system")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+    
+    # Relationships
+    campaign = relationship("Campaign")
+    parent_map = relationship("CampaignMap", remote_side=[id])
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert map to dictionary format."""
+        return {
+            "id": self.id,
+            "campaign_id": self.campaign_id,
+            "name": self.name,
+            "map_type": self.map_type,
+            "status": self.status,
+            "description": self.description,
+            "scale": self.scale,
+            "dimensions": self.dimensions,
+            "image_url": self.image_url,
+            "thumbnail_url": self.thumbnail_url,
+            "map_data": self.map_data,
+            "layers": self.layers,
+            "parent_map_id": self.parent_map_id,
+            "coordinates": self.coordinates,
+            "connected_maps": self.connected_maps,
+            "associated_chapters": self.associated_chapters,
+            "first_used_chapter": self.first_used_chapter,
+            "last_used_chapter": self.last_used_chapter,
+            "points_of_interest": self.points_of_interest,
+            "hidden_areas": self.hidden_areas,
+            "dynamic_elements": self.dynamic_elements,
+            "character_positions": self.character_positions,
+            "npc_positions": self.npc_positions,
+            "monster_positions": self.monster_positions,
+            "grid_type": self.grid_type,
+            "grid_size": self.grid_size,
+            "initiative_order": self.initiative_order,
+            "generated_by": self.generated_by,
+            "generation_prompt": self.generation_prompt,
+            "source_material": self.source_material,
+            "player_visible": self.player_visible,
+            "dm_notes": self.dm_notes,
+            "created_by": self.created_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "is_active": self.is_active
+        }
+
+class CharacterChapterAppearance(Base):
+    """
+    Junction table tracking which characters appear in which chapter versions.
+    
+    This allows tracking character appearances across the git-like campaign structure.
+    """
+    __tablename__ = "character_chapter_appearances"
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    campaign_id = Column(String(36), ForeignKey("campaigns.id"), nullable=False, index=True)
+    character_id = Column(String(36), ForeignKey("campaign_characters.id"), nullable=False, index=True)
+    chapter_version_id = Column(String(36), ForeignKey("chapter_versions.id"), nullable=False, index=True)
+    
+    # Appearance details
+    role_in_chapter = Column(String(100), nullable=True)  # "Main antagonist", "Quest giver", etc.
+    importance_level = Column(String(20), default="minor")  # "major", "minor", "cameo", "mentioned"
+    scene_descriptions = Column(JSON, default=list)  # Descriptions of scenes they're in
+    
+    # Character state in this chapter
+    character_status = Column(String(20), default="active")  # Status at time of chapter
+    location = Column(String(100), nullable=True)  # Where they are in this chapter
+    character_notes = Column(Text, nullable=True)  # Chapter-specific character notes
+    
+    # Story progression
+    character_development = Column(Text, nullable=True)  # How character develops in this chapter
+    relationships_changed = Column(JSON, default=dict)  # Relationship changes in this chapter
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    campaign = relationship("Campaign")
+    character = relationship("CampaignCharacter")
+    chapter_version = relationship("ChapterVersion")
+
+class MapChapterUsage(Base):
+    """
+    Junction table tracking which maps are used in which chapter versions.
+    
+    This allows tracking map usage across the git-like campaign structure.
+    """
+    __tablename__ = "map_chapter_usage"
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    campaign_id = Column(String(36), ForeignKey("campaigns.id"), nullable=False, index=True)
+    map_id = Column(String(36), ForeignKey("campaign_maps.id"), nullable=False, index=True)
+    chapter_version_id = Column(String(36), ForeignKey("chapter_versions.id"), nullable=False, index=True)
+    
+    # Usage details
+    usage_type = Column(String(50), default="location")  # "location", "battle", "reference", "travel"
+    importance_level = Column(String(20), default="minor")  # "primary", "secondary", "minor", "reference"
+    scene_descriptions = Column(JSON, default=list)  # Descriptions of scenes using this map
+    
+    # Map state in this chapter
+    map_modifications = Column(JSON, default=dict)  # Temporary changes to the map for this chapter
+    active_areas = Column(JSON, default=list)  # Which areas of the map are active/important
+    hidden_from_players = Column(JSON, default=list)  # Areas hidden in this chapter
+    
+    # Token positions for this chapter
+    character_positions = Column(JSON, default=dict)  # Character positions specific to this chapter
+    dynamic_elements_state = Column(JSON, default=dict)  # State of dynamic elements
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    campaign = relationship("Campaign")
+    map = relationship("CampaignMap")
+    chapter_version = relationship("ChapterVersion")
+
+# ============================================================================
+# DATABASE ACCESS LAYER FOR CAMPAIGN CONTENT
+# ============================================================================
+
+class CampaignContentDB:
+    """Database operations for campaign characters and maps."""
+    
+    @staticmethod
+    def create_campaign_character(db: Session, character_data: Dict[str, Any]) -> CampaignCharacter:
+        """Create a new campaign character."""
+        character = CampaignCharacter(
+            campaign_id=character_data["campaign_id"],
+            name=character_data["name"],
+            character_type=character_data.get("character_type", CampaignCharacterTypeEnum.NPC.value),
+            species=character_data.get("species"),
+            level=character_data.get("level"),
+            description=character_data.get("description"),
+            stats=character_data.get("stats", {}),
+            role_in_campaign=character_data.get("role_in_campaign"),
+            backstory=character_data.get("backstory"),
+            challenge_rating=character_data.get("challenge_rating"),
+            player_name=character_data.get("player_name"),
+            created_by=character_data.get("created_by", "system")
+        )
+        
+        db.add(character)
+        db.commit()
+        db.refresh(character)
+        return character
+    
+    @staticmethod
+    def get_campaign_character(db: Session, character_id: str) -> CampaignCharacter:
+        """Get campaign character by ID."""
+        return db.query(CampaignCharacter).filter(
+            CampaignCharacter.id == character_id,
+            CampaignCharacter.is_active == True
+        ).first()
+    
+    @staticmethod
+    def get_campaign_characters(db: Session, campaign_id: str, character_type: str = None) -> List[CampaignCharacter]:
+        """Get all characters for a campaign, optionally filtered by type."""
+        query = db.query(CampaignCharacter).filter(
+            CampaignCharacter.campaign_id == campaign_id,
+            CampaignCharacter.is_active == True
+        )
+        
+        if character_type:
+            query = query.filter(CampaignCharacter.character_type == character_type)
+        
+        return query.all()
+    
+    @staticmethod
+    def create_campaign_map(db: Session, map_data: Dict[str, Any]) -> CampaignMap:
+        """Create a new campaign map."""
+        map_obj = CampaignMap(
+            campaign_id=map_data["campaign_id"],
+            name=map_data["name"],
+            map_type=map_data.get("map_type", MapTypeEnum.CUSTOM.value),
+            description=map_data.get("description"),
+            scale=map_data.get("scale"),
+            image_url=map_data.get("image_url"),
+            map_data=map_data.get("map_data", {}),
+            points_of_interest=map_data.get("points_of_interest", []),
+            grid_type=map_data.get("grid_type"),
+            created_by=map_data.get("created_by", "system")
+        )
+        
+        db.add(map_obj)
+        db.commit()
+        db.refresh(map_obj)
+        return map_obj
+    
+    @staticmethod
+    def get_campaign_map(db: Session, map_id: str) -> CampaignMap:
+        """Get campaign map by ID."""
+        return db.query(CampaignMap).filter(
+            CampaignMap.id == map_id,
+            CampaignMap.is_active == True
+        ).first()
+    
+    @staticmethod
+    def get_campaign_maps(db: Session, campaign_id: str, map_type: str = None) -> List[CampaignMap]:
+        """Get all maps for a campaign, optionally filtered by type."""
+        query = db.query(CampaignMap).filter(
+            CampaignMap.campaign_id == campaign_id,
+            CampaignMap.is_active == True
+        )
+        
+        if map_type:
+            query = query.filter(CampaignMap.map_type == map_type)
+        
+        return query.all()
+    
+    @staticmethod
+    def link_character_to_chapter(db: Session, link_data: Dict[str, Any]) -> CharacterChapterAppearance:
+        """Link a character to a chapter version."""
+        appearance = CharacterChapterAppearance(
+            campaign_id=link_data["campaign_id"],
+            character_id=link_data["character_id"],
+            chapter_version_id=link_data["chapter_version_id"],
+            role_in_chapter=link_data.get("role_in_chapter"),
+            importance_level=link_data.get("importance_level", "minor"),
+            character_development=link_data.get("character_development")
+        )
+        
+        db.add(appearance)
+        db.commit()
+        db.refresh(appearance)
+        return appearance
+    
+    @staticmethod
+    def link_map_to_chapter(db: Session, link_data: Dict[str, Any]) -> MapChapterUsage:
+        """Link a map to a chapter version."""
+        usage = MapChapterUsage(
+            campaign_id=link_data["campaign_id"],
+            map_id=link_data["map_id"],
+            chapter_version_id=link_data["chapter_version_id"],
+            usage_type=link_data.get("usage_type", "location"),
+            importance_level=link_data.get("importance_level", "minor"),
+            character_positions=link_data.get("character_positions", {})
+        )
+        
+        db.add(usage)
+        db.commit()
+        db.refresh(usage)
+        return usage
+
+# ============================================================================
+# UPDATE CAMPAIGN MODEL WITH NEW RELATIONSHIPS
+# ============================================================================
+
+# Add these relationships to the existing Campaign model via monkey patching
+# (This approach allows us to extend without redefining the whole class)
+
+def add_campaign_content_relationships():
+    """Add content relationships to Campaign model."""
+    # This would be called during database initialization
+    Campaign.campaign_characters = relationship("CampaignCharacter", cascade="all, delete-orphan")
+    Campaign.campaign_maps = relationship("CampaignMap", cascade="all, delete-orphan")
 
 # Database connection setup (to be configured in main app)
 engine = None
@@ -1046,6 +2061,9 @@ def init_database(database_url: str):
     engine = create_engine(database_url)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     Base.metadata.create_all(bind=engine)
+    
+    # Add content relationships
+    add_campaign_content_relationships()
 
 def get_db():
     """Get database session."""
@@ -1056,1402 +2074,28 @@ def get_db():
         db.close()
 
 # ============================================================================
-# CHARACTER DATABASE OPERATIONS
+# EXPORTS
 # ============================================================================
 
-class CharacterDB:
-    """
-    Database access layer for character operations.
+__all__ = [
+    # Campaign core models
+    'Campaign', 'Chapter', 'PlotFork', 'CampaignDB',
     
-    Order of operations:
-    1) Create new character -> save to database
-    2) Load existing character from database -> update -> save back
-    3) Import for in-game play -> use getter/setter methods -> save back
-    """
+    # Git-like versioning models
+    'ChapterVersion', 'CampaignBranch', 'ChapterChoice', 'PlaySession', 'ChapterMerge',
+    'ChapterVersionDB',
     
-    @staticmethod
-    def create_character(db: Session, character_data: Dict[str, Any]) -> Character:
-        """Create a new character in the database."""
-        db_character = Character(
-            id=str(uuid.uuid4()),  # Generate UUID for new character
-            name=character_data.get("name", ""),
-            player_name=character_data.get("player_name"),
-            species=character_data.get("species", ""),
-            background=character_data.get("background"),
-            alignment=character_data.get("alignment"),
-            level=character_data.get("level", 1),
-            character_classes=character_data.get("character_classes", {}),
-            strength=character_data.get("abilities", {}).get("strength", 10),
-            dexterity=character_data.get("abilities", {}).get("dexterity", 10),
-            constitution=character_data.get("abilities", {}).get("constitution", 10),
-            intelligence=character_data.get("abilities", {}).get("intelligence", 10),
-            wisdom=character_data.get("abilities", {}).get("wisdom", 10),
-            charisma=character_data.get("abilities", {}).get("charisma", 10),
-            armor_class=character_data.get("armor_class", 10),
-            hit_points=character_data.get("hit_points", 1),
-            proficiency_bonus=character_data.get("proficiency_bonus", 2),
-            equipment=character_data.get("equipment", {}),
-            features=character_data.get("features", {}),
-            spells=character_data.get("spells", {}),
-            skills=character_data.get("skills", {}),
-            backstory=character_data.get("backstory"),
-            notes=character_data.get("notes")
-        )
-        
-        db.add(db_character)
-        db.commit()
-        db.refresh(db_character)
-        return db_character
+    # Campaign content models
+    'CampaignCharacter', 'CampaignMap', 'CharacterChapterAppearance', 'MapChapterUsage',
+    'CampaignContentDB',
     
-    @staticmethod
-    def get_character(db: Session, character_id: str) -> Optional[Character]:
-        """Retrieve a character from the database."""
-        try:
-            # character_id is now a string UUID, use it directly
-            return db.query(Character).filter(Character.id == character_id, Character.is_active == True).first()
-        except Exception:
-            # Invalid UUID format or other error
-            return None
+    # Enums
+    'CampaignStatusEnum', 'ChapterStatusEnum', 'PlotForkTypeEnum',
+    'ChapterVersionTypeEnum', 'BranchTypeEnum', 'PlaySessionStatusEnum',
+    'CampaignCharacterTypeEnum', 'CampaignCharacterStatusEnum', 
+    'MapTypeEnum', 'MapStatusEnum',
     
-    @staticmethod
-    def get_character_by_name(db: Session, name: str, player_name: str = None) -> Optional[Character]:
-        """Retrieve a character by name and optionally player name."""
-        query = db.query(Character).filter(Character.name == name, Character.is_active == True)
-        if player_name:
-            query = query.filter(Character.player_name == player_name)
-        return query.first()
-    
-    @staticmethod
-    def update_character(db: Session, character_id: str, updates: Dict[str, Any]) -> Optional[Character]:
-        """Update an existing character in the database."""
-        db_character = CharacterDB.get_character(db, character_id)
-        if not db_character:
-            return None
-        
-        # Update character fields with provided data
-        for key, value in updates.items():
-            if hasattr(db_character, key):
-                setattr(db_character, key, value)
-        
-        db.commit()
-        db.refresh(db_character)
-        return db_character
-    
-    @staticmethod
-    def delete_character(db: Session, character_id: str) -> bool:
-        """Soft delete a character (set is_active = False)."""
-        db_character = CharacterDB.get_character(db, character_id)
-        if not db_character:
-            return False
-        
-        db_character.is_active = False
-        db.commit()
-        return True
-    
-    @staticmethod
-    def list_characters(db: Session, player_name: str = None, limit: int = 50, offset: int = 0) -> List[Character]:
-        """List characters with optional filtering."""
-        query = db.query(Character).filter(Character.is_active == True)
-        
-        if player_name:
-            query = query.filter(Character.player_name == player_name)
-        
-        return query.offset(offset).limit(limit).all()
-    
-    @staticmethod
-    def save_character_sheet(db: Session, character_sheet, character_id: str = None) -> Character:
-        """
-        Save a CharacterSheet object to the database.
-        This bridges the gap between the new character models and database storage.
-        """
-        # Type check to prevent dict attribute errors
-        if isinstance(character_sheet, dict):
-            logger.error(f"save_character_sheet received a dict instead of CharacterSheet object: {character_sheet}")
-            raise ValueError("Expected CharacterSheet object, got dict. Please pass a properly constructed CharacterSheet.")
-        
-        if not hasattr(character_sheet, 'core'):
-            logger.error(f"save_character_sheet received object without 'core' attribute. Type: {type(character_sheet)}")
-            raise ValueError("Object passed to save_character_sheet must have a 'core' attribute")
-        
-        # Convert CharacterSheet to flat database format
-        character_data = {
-            # Core character data
-            "name": character_sheet.core.name,
-            "species": character_sheet.core.species,
-            "background": character_sheet.core.background,
-            "alignment": " ".join(character_sheet.core.alignment) if isinstance(character_sheet.core.alignment, list) else character_sheet.core.alignment,
-            "level": character_sheet.core.level,
-            "character_classes": character_sheet.core.character_classes,
-            "backstory": character_sheet.core.backstory,
-            
-            # Ability scores
-            "strength": character_sheet.core.strength.total_score,
-            "dexterity": character_sheet.core.dexterity.total_score,
-            "constitution": character_sheet.core.constitution.total_score,
-            "intelligence": character_sheet.core.intelligence.total_score,
-            "wisdom": character_sheet.core.wisdom.total_score,
-            "charisma": character_sheet.core.charisma.total_score,
-            
-            # Calculated stats
-            "armor_class": character_sheet.stats.armor_class,
-            "hit_points": character_sheet.stats.max_hit_points,
-            "proficiency_bonus": character_sheet.stats.proficiency_bonus,
-            "skills": character_sheet.stats.skills,
-        }
-        
-        # Use provided character_id or try to get from character sheet
-        char_id = character_id or getattr(character_sheet.core, 'id', None)
-        
-        if char_id:
-            return CharacterDB.update_character(db, char_id, character_data)
-        else:
-            return CharacterDB.create_character(db, character_data)
-    
-    @staticmethod
-    def load_character_sheet(db: Session, character_id: str):
-        """
-        Load a character from database and convert to CharacterSheet object with allocated items.
-        Returns None if character not found.
-        """
-        db_character = CharacterDB.get_character(db, character_id)
-        if not db_character:
-            return None
-        
-        # Import here to avoid circular imports
-        from src.models.character_models import CharacterSheet, CharacterCore, CharacterState
-        from src.services.unified_catalog_service import UnifiedCatalogService
-        
-        # Create a full CharacterSheet instead of just CharacterCore
-        character_sheet = CharacterSheet(db_character.name)
-        
-        # Set core character data
-        character_sheet.core.species = db_character.species
-        character_sheet.core.background = db_character.background or ""
-        character_sheet.core.alignment = db_character.alignment.split() if db_character.alignment else ["Neutral", "Neutral"]
-        character_sheet.core.character_classes = db_character.character_classes or {}
-        character_sheet.core.backstory = db_character.backstory or ""
-        
-        # Set ability scores
-        character_sheet.core.strength.base_score = db_character.strength
-        character_sheet.core.dexterity.base_score = db_character.dexterity
-        character_sheet.core.constitution.base_score = db_character.constitution
-        character_sheet.core.intelligence.base_score = db_character.intelligence
-        character_sheet.core.wisdom.base_score = db_character.wisdom
-        character_sheet.core.charisma.base_score = db_character.charisma
-        
-        # Store database ID for future saves
-        character_sheet.core.id = db_character.id
-        
-        # Load allocated items from unified catalog
-        try:
-            catalog_service = UnifiedCatalogService(db)
-            
-            # Get spells
-            character_spells = catalog_service.get_character_spells(character_id)
-            character_sheet.state.allocated_spells = character_spells
-            
-            # Get equipment
-            character_equipment = catalog_service.get_character_equipment(character_id)
-            character_sheet.state.allocated_equipment = character_equipment
-            
-            # Get all allocations for comprehensive view
-            all_allocations = catalog_service.get_character_allocations(character_id)
-            character_sheet.state.all_allocated_items = all_allocations
-            
-        except Exception as e:
-            # Log error but don't fail the entire load
-            logger.error(f"Failed to load allocated items for character {character_id}: {e}")
-            character_sheet.state.allocated_spells = {"spells_known": [], "spells_prepared": []}
-            character_sheet.state.allocated_equipment = {"inventory": [], "equipped": []}
-            character_sheet.state.all_allocated_items = []
-        
-        return character_sheet
-    
-    # ============================================================================
-    # INVENTORY MANAGEMENT METHODS
-    # ============================================================================
-    
-    @staticmethod
-    def get_inventory(db: Session, character_id: str) -> List[Dict[str, Any]]:
-        """Get character's inventory items."""
-        character = CharacterDB.get_character(db, character_id)
-        if not character:
-            return []
-        
-        # Extract inventory from equipment JSON field
-        equipment_data = character.equipment or {}
-        return equipment_data.get("inventory", [])
-    
-    @staticmethod
-    def add_inventory_item(db: Session, character_id: str, item_data: Dict[str, Any]) -> bool:
-        """Add an item to character's inventory."""
-        character = CharacterDB.get_character(db, character_id)
-        if not character:
-            return False
-        
-        # Initialize equipment if it doesn't exist
-        if not character.equipment:
-            character.equipment = {}
-        
-        # Initialize inventory list if it doesn't exist
-        if "inventory" not in character.equipment:
-            character.equipment["inventory"] = []
-        
-        # Add timestamp and unique ID to item
-        item_data["added_at"] = datetime.utcnow().isoformat()
-        item_data["item_id"] = str(uuid.uuid4())
-        
-        # Add item to inventory
-        character.equipment["inventory"].append(item_data)
-        
-        # Mark the JSON field as modified (SQLAlchemy doesn't auto-detect JSON changes)
-        flag_modified(character, "equipment")
-        
-        db.commit()
-        db.refresh(character)
-        return True
-    
-    @staticmethod
-    def update_inventory_item(db: Session, character_id: str, item_name: str, updates: Dict[str, Any]) -> bool:
-        """Update an existing inventory item."""
-        character = CharacterDB.get_character(db, character_id)
-        if not character or not character.equipment:
-            return False
-        
-        inventory = character.equipment.get("inventory", [])
-        
-        # Find item by name
-        for item in inventory:
-            if item.get("name") == item_name:
-                # Update item fields
-                for key, value in updates.items():
-                    if value is not None:  # Only update non-None values
-                        item[key] = value
-                
-                item["updated_at"] = datetime.utcnow().isoformat()
-                
-                # Mark the JSON field as modified
-                flag_modified(character, "equipment")
-                
-                db.commit()
-                db.refresh(character)
-                return True
-        
-        return False  # Item not found
-    
-    @staticmethod
-    def remove_inventory_item(db: Session, character_id: str, item_name: str) -> bool:
-        """Remove an item from character's inventory."""
-        character = CharacterDB.get_character(db, character_id)
-        if not character or not character.equipment:
-            return False
-        
-        inventory = character.equipment.get("inventory", [])
-        
-        # Find and remove item by name
-        for i, item in enumerate(inventory):
-            if item.get("name") == item_name:
-                inventory.pop(i)
-                
-                # Mark the JSON field as modified
-                flag_modified(character, "equipment")
-                
-                db.commit()
-                db.refresh(character)
-                return True
-        
-        return False  # Item not found
-    
-    @staticmethod
-    def get_equipped_items(db: Session, character_id: str) -> Dict[str, str]:
-        """Get character's equipped items."""
-        character = CharacterDB.get_character(db, character_id)
-        if not character:
-            return {}
-        
-        equipment_data = character.equipment or {}
-        return equipment_data.get("equipped_items", {})
-    
-    @staticmethod
-    def equip_item(db: Session, character_id: str, item_name: str, slot: str) -> bool:
-        """Equip an item to a specific slot."""
-        character = CharacterDB.get_character(db, character_id)
-        if not character:
-            return False
-        
-        # Initialize equipment if it doesn't exist
-        if not character.equipment:
-            character.equipment = {}
-        
-        # Initialize equipped_items if it doesn't exist
-        if "equipped_items" not in character.equipment:
-            character.equipment["equipped_items"] = {}
-        
-        # Equip the item
-        character.equipment["equipped_items"][slot] = item_name
-        
-        # Mark the JSON field as modified
-        flag_modified(character, "equipment")
-        
-        db.commit()
-        db.refresh(character)
-        return True
-    
-    @staticmethod
-    def unequip_item(db: Session, character_id: str, slot: str) -> bool:
-        """Unequip an item from a specific slot."""
-        character = CharacterDB.get_character(db, character_id)
-        if not character or not character.equipment:
-            return False
-        
-        equipped_items = character.equipment.get("equipped_items", {})
-        
-        if slot in equipped_items:
-            del equipped_items[slot]
-            
-            # Mark the JSON field as modified
-            flag_modified(character, "equipment")
-            
-            db.commit()
-            db.refresh(character)
-            return True
-        
-        return False  # Slot not equipped
-    
-    @staticmethod
-    def get_attuned_items(db: Session, character_id: str) -> List[str]:
-        """Get character's attuned items."""
-        character = CharacterDB.get_character(db, character_id)
-        if not character:
-            return []
-        
-        equipment_data = character.equipment or {}
-        return equipment_data.get("attuned_items", [])
-    
-    @staticmethod
-    def add_attuned_item(db: Session, character_id: str, item_name: str) -> bool:
-        """Add an item to attuned items (max 3). Only items that require attunement can be attuned."""
-        character = CharacterDB.get_character(db, character_id)
-        if not character:
-            return False
-        
-        # Initialize equipment if it doesn't exist
-        if not character.equipment:
-            character.equipment = {}
-        
-        # Initialize attuned_items if it doesn't exist
-        if "attuned_items" not in character.equipment:
-            character.equipment["attuned_items"] = []
-        
-        # Check if the item exists in inventory and requires attunement
-        inventory = character.equipment.get("inventory", [])
-        item_found = False
-        requires_attunement = False
-        
-        for item in inventory:
-            if item.get("name") == item_name:
-                item_found = True
-                requires_attunement = item.get("requires_attunement", False)
-                break
-        
-        if not item_found:
-            logger.warning(f"Item {item_name} not found in character's inventory")
-            return False
-        
-        if not requires_attunement:
-            logger.warning(f"Item {item_name} does not require attunement")
-            return False
-        
-        attuned_items = character.equipment["attuned_items"]
-        
-        # Check attunement limit (D&D 5e limit is 3)
-        if len(attuned_items) >= 3:
-            return False
-        
-        # Check if already attuned
-        if item_name in attuned_items:
-            return False
-        
-        # Add to attuned items
-        attuned_items.append(item_name)
-        
-        # Mark the JSON field as modified
-        flag_modified(character, "equipment")
-        
-        db.commit()
-        db.refresh(character)
-        return True
-    
-    @staticmethod
-    def remove_attuned_item(db: Session, character_id: str, item_name: str) -> bool:
-        """Remove an item from attuned items."""
-        character = CharacterDB.get_character(db, character_id)
-        if not character or not character.equipment:
-            return False
-        
-        attuned_items = character.equipment.get("attuned_items", [])
-        
-        if item_name in attuned_items:
-            attuned_items.remove(item_name)
-            
-            # Mark the JSON field as modified
-            flag_modified(character, "equipment")
-            
-            db.commit()
-            db.refresh(character)
-            return True
-        
-        return False
-    
-    @staticmethod
-    def get_attunement_info(db: Session, character_id: str) -> Dict[str, Any]:
-        """Get detailed attunement information for a character."""
-        character = CharacterDB.get_character(db, character_id)
-        if not character:
-            return {"error": "Character not found"}
-        
-        equipment_data = character.equipment or {}
-        attuned_items = equipment_data.get("attuned_items", [])
-        inventory = equipment_data.get("inventory", [])
-        
-        # Categorize inventory items by attunement status
-        attuned_item_details = []
-        attuneable_items = []
-        non_attuneable_items = []
-        
-        for item in inventory:
-            item_name = item.get("name", "Unknown Item")
-            requires_attunement = item.get("requires_attunement", False)
-            is_attuned = item_name in attuned_items
-            
-            item_info = {
-                "name": item_name,
-                "rarity": item.get("rarity", "common"),
-                "requires_attunement": requires_attunement,
-                "is_attuned": is_attuned,
-                "description": item.get("description", "")
-            }
-            
-            if is_attuned:
-                attuned_item_details.append(item_info)
-            elif requires_attunement:
-                attuneable_items.append(item_info)
-            else:
-                non_attuneable_items.append(item_info)
-        
-        return {
-            "character_id": character_id,
-            "attunement_slots_used": len(attuned_items),
-            "attunement_slots_available": max(0, 3 - len(attuned_items)),
-            "max_attunement_slots": 3,
-            "attuned_items": attuned_item_details,
-            "attuneable_items": attuneable_items,
-            "non_attuneable_items": non_attuneable_items,
-            "can_attune_more": len(attuned_items) < 3,
-            "rules": {
-                "attunement_limit": 3,
-                "attunement_process": "Requires a short rest (1 hour) while focusing on the item",
-                "breaking_attunement": "Can be done instantly at any time",
-                "note": "Only magic items that specifically require attunement can be attuned to"
-            }
-        }
-    
-    # ============================================================================
-    # UNIFIED ITEM CATALOG OPERATIONS
-    # ============================================================================
-    
-    @staticmethod
-    def create_unified_item(db: Session, item_data: Dict[str, Any]) -> UnifiedItem:
-        """Create a new unified item (spell, weapon, armor, etc.) in the catalog."""
-        db_item = UnifiedItem(
-            name=item_data["name"],
-            item_type=item_data["item_type"],
-            item_subtype=item_data.get("item_subtype"),
-            source_type=item_data.get("source_type", "custom"),
-            content_data=item_data["content_data"],
-            short_description=item_data.get("short_description"),
-            rarity=item_data.get("rarity"),
-            requires_attunement=item_data.get("requires_attunement", False),
-            spell_level=item_data.get("spell_level"),
-            spell_school=item_data.get("spell_school"),
-            class_restrictions=item_data.get("class_restrictions"),
-            value_gp=item_data.get("value_gp"),
-            weight_lbs=item_data.get("weight_lbs"),
-            created_by=item_data.get("created_by"),
-            is_public=item_data.get("is_public", True),
-            source_book=item_data.get("source_book")
-        )
-        
-        db.add(db_item)
-        db.commit()
-        db.refresh(db_item)
-        return db_item
-    
-    @staticmethod
-    def get_unified_item(db: Session, item_id: str) -> Optional[UnifiedItem]:
-        """Get a unified item by its UUID."""
-        try:
-            return db.query(UnifiedItem).filter(UnifiedItem.id == item_id, UnifiedItem.is_active == True).first()
-        except Exception as e:
-            logger.error(f"Failed to get unified item {item_id}: {e}")
-            return None
-    
-    @staticmethod
-    def search_unified_items(db: Session, 
-                           item_type: Optional[str] = None,
-                           source_type: Optional[str] = None,
-                           spell_level: Optional[int] = None,
-                           spell_school: Optional[str] = None,
-                           rarity: Optional[str] = None,
-                           class_restrictions: Optional[List[str]] = None,
-                           search_text: Optional[str] = None,
-                           limit: int = 100) -> List[UnifiedItem]:
-        """Search unified items catalog with filters."""
-        try:
-            query = db.query(UnifiedItem).filter(UnifiedItem.is_active == True)
-            
-            # Apply filters
-            if item_type:
-                query = query.filter(UnifiedItem.item_type == item_type)
-            if source_type:
-                query = query.filter(UnifiedItem.source_type == source_type)
-            if spell_level is not None:
-                query = query.filter(UnifiedItem.spell_level == spell_level)
-            if spell_school:
-                query = query.filter(UnifiedItem.spell_school == spell_school)
-            if rarity:
-                query = query.filter(UnifiedItem.rarity == rarity)
-            if search_text:
-                query = query.filter(UnifiedItem.name.ilike(f"%{search_text}%"))
-            
-            # Class restrictions filter (if item has restrictions, check if any match)
-            if class_restrictions:
-                # This is a complex JSON query - for now, fetch all and filter in Python
-                # In production, you'd want a proper JSON query
-                pass
-            
-            return query.limit(limit).all()
-        except Exception as e:
-            logger.error(f"Failed to search unified items: {e}")
-            return []
-    
-    @staticmethod
-    def add_character_item_access(db: Session, character_id: str, item_id: str, 
-                                access_type: str, access_subtype: Optional[str] = None,
-                                quantity: int = 1, acquired_method: Optional[str] = None) -> CharacterItemAccess:
-        """Add an item to a character's access list (spells known, inventory, etc.)."""
-        db_access = CharacterItemAccess(
-            character_id=character_id,
-            item_id=item_id,
-            access_type=access_type,
-            access_subtype=access_subtype,
-            quantity=quantity,
-            acquired_method=acquired_method or "manual"
-        )
-        
-        db.add(db_access)
-        db.commit()
-        db.refresh(db_access)
-        return db_access
-    
-    @staticmethod
-    def get_character_item_access(db: Session, character_id: str, 
-                                access_type: Optional[str] = None) -> List[CharacterItemAccess]:
-        """Get all items a character has access to, optionally filtered by access type."""
-        try:
-            query = db.query(CharacterItemAccess).filter(
-                CharacterItemAccess.character_id == character_id,
-                CharacterItemAccess.is_active == True
-            )
-            
-            if access_type:
-                query = query.filter(CharacterItemAccess.access_type == access_type)
-            
-            return query.all()
-        except Exception as e:
-            logger.error(f"Failed to get character item access for {character_id}: {e}")
-            return []
-    
-    @staticmethod
-    def remove_character_item_access(db: Session, character_id: str, item_id: str, 
-                                   access_type: Optional[str] = None) -> bool:
-        """Remove an item from a character's access list."""
-        try:
-            query = db.query(CharacterItemAccess).filter(
-                CharacterItemAccess.character_id == character_id,
-                CharacterItemAccess.item_id == item_id
-            )
-            
-            if access_type:
-                query = query.filter(CharacterItemAccess.access_type == access_type)
-            
-            access_records = query.all()
-            for record in access_records:
-                db.delete(record)
-            
-            db.commit()
-            return True
-        except Exception as e:
-            logger.error(f"Failed to remove character item access: {e}")
-            return False
-    
-    @staticmethod
-    def update_character_item_access(db: Session, access_id: str, 
-                                   update_data: Dict[str, Any]) -> Optional[CharacterItemAccess]:
-        """Update a character's item access record."""
-        try:
-            access_record = db.query(CharacterItemAccess).filter(CharacterItemAccess.id == access_id).first()
-            if not access_record:
-                return None
-            
-            # Update allowed fields
-            for field, value in update_data.items():
-                if hasattr(access_record, field):
-                    setattr(access_record, field, value)
-            
-            db.commit()
-            db.refresh(access_record)
-            return access_record
-        except Exception as e:
-            logger.error(f"Failed to update character item access {access_id}: {e}")
-            return None
-    
-    # ============================================================================
-# CHARACTER SESSION OPERATIONS
-# ============================================================================
-
-class CharacterSessionDB:
-    """Database operations for character creation sessions."""
-    
-    @staticmethod
-    def create_session(db: Session, session_id: str, initial_data: Dict[str, Any] = None) -> CharacterSession:
-        """Create a new character creation session."""
-        session = CharacterSession(
-            session_id=session_id,
-            session_data=initial_data or {},
-            current_step="basic_info"
-        )
-        db.add(session)
-        db.commit()
-        db.refresh(session)
-        return session
-    
-    @staticmethod
-    def get_session(db: Session, session_id: str) -> Optional[CharacterSession]:
-        """Get a character creation session."""
-        return db.query(CharacterSession).filter(
-            CharacterSession.session_id == session_id,
-            CharacterSession.is_active == True
-        ).first()
-    
-    @staticmethod
-    def update_session(db: Session, session_id: str, updates: Dict[str, Any]) -> Optional[CharacterSession]:
-        """Update a character creation session."""
-        session = CharacterSessionDB.get_session(db, session_id)
-        if not session:
-            return None
-        
-        for key, value in updates.items():
-            if hasattr(session, key):
-                setattr(session, key, value)
-        
-        db.commit()
-        db.refresh(session)
-        return session
-
-
-# ============================================================================
-# CHARACTER REPOSITORY MANAGER - GIT-LIKE OPERATIONS
-# ============================================================================
-
-class CharacterRepositoryManager:
-    """
-    High-level manager for Git-like character versioning operations.
-    
-    This class provides convenient methods for:
-    - Creating and managing character repositories
-    - Branch operations (create, merge, list)
-    - Commit operations (create, retrieve, compare)
-    - Character state management across versions
-    """
-    
-    @staticmethod
-    def create_repository(db: Session, name: str, description: str = None, 
-                         player_name: str = None, initial_character_data: Dict[str, Any] = None) -> CharacterRepository:
-        """
-        Create a new character repository with initial commit.
-        
-        Args:
-            db: Database session
-            name: Repository name (character name)
-            description: Repository description
-            player_name: Player name
-            initial_character_data: Initial character state
-            
-        Returns:
-            CharacterRepository: Created repository
-        """
-        # Create repository
-        repo = CharacterRepository(
-            id=str(uuid.uuid4()),  # Generate UUID for new repository
-            name=name,
-            description=description,
-            player_name=player_name
-        )
-        db.add(repo)
-        db.flush()  # Get the ID
-        
-        # Create main branch
-        main_branch = CharacterBranch(
-            id=str(uuid.uuid4()),  # Generate UUID for main branch
-            repository_id=repo.id,
-            branch_name="main",
-            description="Main character development branch",
-            branch_type="main"
-        )
-        db.add(main_branch)
-        db.flush()
-        
-        # Create initial commit if character data provided
-        if initial_character_data:
-            initial_commit = CharacterRepositoryManager.create_commit(
-                db=db,
-                repository_id=repo.id,
-                branch_name="main",
-                commit_message="Initial character creation",
-                character_data=initial_character_data,
-                character_level=initial_character_data.get("level", 1),
-                commit_type="initial"
-            )
-            repo.initial_commit_hash = initial_commit.commit_hash
-            main_branch.head_commit_hash = initial_commit.commit_hash
-        
-        db.commit()
-        return repo
-    
-    @staticmethod
-    def create_branch(db: Session, repository_id: str, branch_name: str, 
-                     description: str = None, parent_branch: str = "main",
-                     branch_point_hash: str = None) -> CharacterBranch:
-        """
-        Create a new development branch.
-        
-        Args:
-            db: Database session
-            repository_id: Repository ID
-            branch_name: New branch name
-            description: Branch description
-            parent_branch: Branch to create from
-            branch_point_hash: Specific commit to branch from
-            
-        Returns:
-            CharacterBranch: Created branch
-        """
-        # character_id is now a string UUID, use it directly
-        # Get parent branch info
-        parent = db.query(CharacterBranch).filter(
-            CharacterBranch.repository_id == repository_id,
-            CharacterBranch.branch_name == parent_branch
-        ).first()
-        
-        if not parent:
-            raise ValueError(f"Parent branch '{parent_branch}' not found")
-        
-        # Use parent's head commit if no specific branch point
-        if not branch_point_hash:
-            branch_point_hash = parent.head_commit_hash
-        
-        # Create new branch
-        branch = CharacterBranch(
-            id=str(uuid.uuid4()),  # Generate UUID for new branch
-            repository_id=repository_id,
-            branch_name=branch_name,
-            description=description,
-            parent_branch=parent_branch,
-            branch_point_hash=branch_point_hash,
-            head_commit_hash=branch_point_hash  # Start at branch point
-        )
-        
-        db.add(branch)
-        db.commit()
-        return branch
-    
-    @staticmethod
-    def create_commit(db: Session, repository_id: str, branch_name: str,
-                     commit_message: str, character_data: Dict[str, Any],
-                     character_level: int, commit_type: str = "update",
-                     milestone_name: str = None, session_date: datetime = None,
-                     campaign_context: str = None, created_by: str = None) -> CharacterCommit:
-        """
-        Create a new character commit.
-        
-        Args:
-            db: Database session
-            repository_id: Repository ID
-            branch_name: Target branch
-            commit_message: Commit message
-            character_data: Character state data
-            character_level: Character level
-            commit_type: Type of commit (initial, level_up, story, etc.)
-            milestone_name: Milestone name
-            session_date: Game session date
-            campaign_context: Campaign context
-            created_by: Creator name
-            
-        Returns:
-            CharacterCommit: Created commit
-        """
-        # repository_id is now a string UUID, use it directly
-        # Get branch
-        branch = db.query(CharacterBranch).filter(
-            CharacterBranch.repository_id == repository_id,
-            CharacterBranch.branch_name == branch_name
-        ).first()
-        
-        if not branch:
-            raise ValueError(f"Branch '{branch_name}' not found")
-        
-        # Generate commit hash
-        import time
-        hash_input = f"{character_data}{commit_message}{time.time()}{branch.head_commit_hash}"
-        commit_hash = hashlib.sha256(hash_input.encode()).hexdigest()
-        short_hash = commit_hash[:8]
-        
-        # Create commit
-        commit = CharacterCommit(
-            id=str(uuid.uuid4()),  # Generate UUID for new commit
-            repository_id=repository_id,
-            branch_id=branch.id,
-            commit_hash=commit_hash,
-            short_hash=short_hash,
-            commit_message=commit_message,
-            commit_type=commit_type,
-            character_level=character_level,
-            character_data=character_data,
-            parent_commit_hash=branch.head_commit_hash,
-            milestone_name=milestone_name,
-            session_date=session_date,
-            campaign_context=campaign_context,
-            created_by=created_by
-        )
-        
-        db.add(commit)
-        
-        # Update branch head
-        branch.head_commit_hash = commit_hash
-        branch.updated_at = datetime.utcnow()
-        
-        db.commit()
-        return commit
-    
-    @staticmethod
-    def get_commit_history(db: Session, repository_id: str, branch_name: str = None,
-                          limit: int = 50) -> List[CharacterCommit]:
-        """
-        Get commit history for a repository or branch.
-        
-        Args:
-            db: Database session
-            repository_id: Repository ID
-            branch_name: Branch name (optional)
-            limit: Maximum commits to return
-            
-        Returns:
-            List[CharacterCommit]: List of commits
-        """
-        query = db.query(CharacterCommit).filter(
-            CharacterCommit.repository_id == repository_id
-        )
-        
-        if branch_name:
-            branch = db.query(CharacterBranch).filter(
-                CharacterBranch.repository_id == repository_id,
-                CharacterBranch.branch_name == branch_name
-            ).first()
-            if branch:
-                query = query.filter(CharacterCommit.branch_id == branch.id)
-        
-        return query.order_by(CharacterCommit.created_at.desc()).limit(limit).all()
-    
-    @staticmethod
-    def get_character_at_commit(db: Session, commit_hash: str) -> Dict[str, Any]:
-        """
-        Get character data at a specific commit.
-        
-        Args:
-            db: Database session
-            commit_hash: Commit hash
-            
-        Returns:
-            Dict: Character data at commit
-        """
-        commit = db.query(CharacterCommit).filter(
-            CharacterCommit.commit_hash == commit_hash
-        ).first()
-        
-        if not commit:
-            raise ValueError(f"Commit '{commit_hash}' not found")
-        
-        return commit.character_data
-    
-    @staticmethod
-    def create_tag(db: Session, repository_id: str, tag_name: str,
-                   commit_hash: str, description: str = None,
-                   tag_type: str = "milestone", created_by: str = None) -> CharacterTag:
-        """
-        Create a tag for a specific commit.
-        
-        Args:
-            db: Database session
-            repository_id: Repository ID
-            tag_name: Tag name
-            commit_hash: Target commit hash
-            description: Tag description
-            tag_type: Tag type
-            created_by: Creator name
-            
-        Returns:
-            CharacterTag: Created tag
-        """
-        tag = CharacterTag(
-            id=str(uuid.uuid4()),  # Generate UUID for the tag
-            repository_id=repository_id,
-            tag_name=tag_name,
-            commit_hash=commit_hash,
-            description=description,
-            tag_type=tag_type,
-            created_by=created_by
-        )
-        
-        db.add(tag)
-        db.commit()
-        return tag
-    
-    @staticmethod
-    def get_repository_tree(db: Session, repository_id: str) -> Dict[str, Any]:
-        """
-        Get complete repository tree structure for visualization.
-        
-        Args:
-            db: Database session
-            repository_id: Repository ID
-            
-        Returns:
-            Dict: Repository tree data
-        """
-        repo = db.query(CharacterRepository).filter(
-            CharacterRepository.id == repository_id
-        ).first()
-        
-        if not repo:
-            raise ValueError(f"Repository {repository_id} not found")
-        
-        branches = db.query(CharacterBranch).filter(
-            CharacterBranch.repository_id == repository_id
-        ).all()
-        
-        commits = db.query(CharacterCommit).filter(
-            CharacterCommit.repository_id == repository_id
-        ).order_by(CharacterCommit.created_at.desc()).all()
-        
-        tags = db.query(CharacterTag).filter(
-            CharacterTag.repository_id == repository_id
-        ).all()
-        
-        return {
-            "repository": repo.to_dict(),
-            "branches": [branch.to_dict() for branch in branches],
-            "commits": [commit.to_dict() for commit in commits],
-            "tags": [tag.to_dict() for tag in tags]
-        }
-
-
-# ============================================================================
-# CHARACTER VERSIONING API - FRONTEND-FRIENDLY METHODS
-# ============================================================================
-
-class CharacterVersioningAPI:
-    """
-    Frontend-friendly API methods for character versioning.
-    
-    This class provides methods optimized for frontend consumption:
-    - Timeline data for visualization components
-    - Graph data for D3.js/vis.js integration
-    - Simplified data structures for JavaScript consumption
-    """
-    
-    @staticmethod
-    def get_character_timeline_for_frontend(db: Session, repository_id: str) -> Dict[str, Any]:
-        """
-        Get timeline data optimized for frontend visualization.
-        
-        Args:
-            db: Database session
-            repository_id: Repository ID
-            
-        Returns:
-            Dict: Timeline data for frontend
-        """
-        commits = db.query(CharacterCommit).filter(
-            CharacterCommit.repository_id == repository_id
-        ).order_by(CharacterCommit.created_at.asc()).all()
-        
-        branches = db.query(CharacterBranch).filter(
-            CharacterBranch.repository_id == repository_id
-        ).all()
-        
-        # Build timeline events
-        events = []
-        for commit in commits:
-            branch_name = next((b.branch_name for b in branches if b.id == commit.branch_id), "main")
-            
-            events.append({
-                "id": commit.commit_hash,
-                "type": "commit",
-                "timestamp": commit.created_at.isoformat(),
-                "level": commit.character_level,
-                "message": commit.commit_message,
-                "branch": branch_name,
-                "milestone": commit.milestone_name,
-                "commit_type": commit.commit_type,
-                "short_hash": commit.short_hash
-            })
-        
-        # Add branch creation events
-        for branch in branches:
-            if branch.branch_name != "main":  # Skip main branch
-                events.append({
-                    "id": f"branch_{branch.id}",
-                    "type": "branch_create",
-                    "timestamp": branch.created_at.isoformat(),
-                    "message": f"Created branch: {branch.branch_name}",
-                    "branch": branch.branch_name,
-                    "description": branch.description
-                })
-        
-        # Sort by timestamp
-        events.sort(key=lambda x: x["timestamp"])
-        
-        return {
-            "repository_id": repository_id,
-            "events": events,
-            "branch_count": len(branches),
-            "commit_count": len(commits)
-        }
-    
-    @staticmethod
-    def get_character_visualization_data(db: Session, repository_id: str) -> Dict[str, Any]:
-        """
-        Get graph visualization data for D3.js/vis.js.
-        
-        Args:
-            db: Database session
-            repository_id: Repository ID
-            
-        Returns:
-            Dict: Graph data with nodes and edges
-        """
-        commits = db.query(CharacterCommit).filter(
-            CharacterCommit.repository_id == repository_id
-        ).all()
-        
-        branches = db.query(CharacterBranch).filter(
-            CharacterBranch.repository_id == repository_id
-        ).all()
-        
-        # Create branch color mapping
-        branch_colors = {
-            "main": "#2563eb",  # Blue
-            "development": "#16a34a",  # Green
-            "experimental": "#dc2626",  # Red
-            "alternate": "#7c3aed"  # Purple
-        }
-        
-        # Build nodes (commits)
-        nodes = []
-        for commit in commits:
-            branch = next((b for b in branches if b.id == commit.branch_id), None)
-            branch_name = branch.branch_name if branch else "main"
-            
-            nodes.append({
-                "id": commit.commit_hash,
-                "label": f"L{commit.character_level}: {commit.short_hash}",
-                "title": commit.commit_message,
-                "group": branch_name,
-                "color": branch_colors.get(branch.branch_type if branch else "main", "#6b7280"),
-                "level": commit.character_level,
-                "timestamp": commit.created_at.isoformat(),
-                "commit_type": commit.commit_type,
-                "milestone": commit.milestone_name
-            })
-        
-        # Build edges (commit relationships)
-        edges = []
-        for commit in commits:
-            if commit.parent_commit_hash:
-                edges.append({
-                    "from": commit.parent_commit_hash,
-                    "to": commit.commit_hash,
-                    "arrows": "to"
-                })
-            
-            # Handle merge commits
-            if commit.merge_parent_hash:
-                edges.append({
-                    "from": commit.merge_parent_hash,
-                    "to": commit.commit_hash,
-                    "arrows": "to",
-                    "dashes": True,
-                    "color": {"color": "#f59e0b"}  # Orange for merge
-                })
-        
-        return {
-            "nodes": nodes,
-            "edges": edges,
-            "branches": [
-                {
-                    "name": branch.branch_name,
-                    "type": branch.branch_type,
-                    "color": branch_colors.get(branch.branch_type, "#6b7280"),
-                    "active": branch.is_active,
-                    "merged": branch.is_merged
-                }
-                for branch in branches
-            ]
-        }
-    
-    @staticmethod
-    def level_up_character(db: Session, repository_id: str, branch_name: str,
-                          new_character_data: Dict[str, Any], level_up_choices: Dict[str, Any] = None) -> CharacterCommit:
-        """
-        Handle character level up with automatic commit creation.
-        
-        Args:
-            db: Database session
-            repository_id: Repository ID
-            branch_name: Target branch
-            new_character_data: Updated character data
-            level_up_choices: Level up choices made
-            
-        Returns:
-            CharacterCommit: Level up commit
-        """
-        current_level = new_character_data.get("level", 1)
-        previous_level = current_level - 1
-        
-        # Build commit message
-        class_info = new_character_data.get("character_classes", {})
-        class_names = ", ".join([f"{cls} {lvl}" for cls, lvl in class_info.items()])
-        commit_message = f"Level {current_level}: {class_names}"
-        
-        if level_up_choices:
-            choices_summary = []
-            if "new_spells" in level_up_choices:
-                choices_summary.append(f"Learned {len(level_up_choices['new_spells'])} spells")
-            if "ability_score_improvement" in level_up_choices:
-                choices_summary.append("ASI applied")
-            if "new_features" in level_up_choices:
-                choices_summary.append(f"Gained {len(level_up_choices['new_features'])} features")
-            
-            if choices_summary:
-                commit_message += f" - {', '.join(choices_summary)}"
-        
-        # Create level up commit
-        return CharacterRepositoryManager.create_commit(
-            db=db,
-            repository_id=repository_id,
-            branch_name=branch_name,
-            commit_message=commit_message,
-            character_data=new_character_data,
-            character_level=current_level,
-            commit_type="level_up",
-            milestone_name=f"Level {current_level}"
-        )
-
-
-# ============================================================================
-# USAGE EXAMPLES AND DOCUMENTATION
-# ============================================================================
-
-"""
-CHARACTER VERSIONING SYSTEM USAGE EXAMPLES:
-
-1. CREATE A NEW CHARACTER WITH VERSIONING:
-   ```python
-   # Create character data
-   character_data = {
-       "name": "Gandalf the Grey",
-       "species": "Wizard (Maiar)",
-       "level": 1,
-       "character_classes": {"Wizard": 1},
-       "abilities": {"strength": 10, "intelligence": 18, ...}
-   }
-   
-   # Create repository with initial commit
-   repo = CharacterRepositoryManager.create_repository(
-       db=db,
-       name="Gandalf the Grey",
-       initial_character_data=character_data,
-       player_name="Tolkien",
-       description="The wise wizard of Middle-earth"
-   )
-   ```
-
-2. LEVEL UP CHARACTER:
-   ```python
-   # Update character data for level 2
-   level_2_data = character_data.copy()
-   level_2_data["level"] = 2
-   level_2_data["character_classes"] = {"Wizard": 2}
-   
-   # Commit the level up
-   commit = CharacterRepositoryManager.commit_character_change(
-       db=db,
-       repository_id=repo.id,
-       branch_name="main",
-       character_data=level_2_data,
-       commit_message="Level 2: Gained Arcane Recovery",
-       commit_type="level_up",
-       milestone_name="First Level Up"
-   )
-   ```
-
-3. CREATE ALTERNATE CHARACTER PATH:
-   ```python
-   # Create branch for multiclass path at level 3
-   multiclass_branch = CharacterRepositoryManager.create_branch(
-       db=db,
-       repository_id=repo.id,
-       new_branch_name="multiclass-fighter",
-       source_commit_hash=level_2_commit.commit_hash,
-       description="Exploring multiclass with Fighter"
-   )
-   
-   # Commit multiclass level 3
-   multiclass_data = level_2_data.copy()
-   multiclass_data["level"] = 3
-   multiclass_data["character_classes"] = {"Wizard": 2, "Fighter": 1}
-   
-   multiclass_commit = CharacterRepositoryManager.commit_character_change(
-       db=db,
-       repository_id=repo.id,
-       branch_name="multiclass-fighter",
-       character_data=multiclass_data,
-       commit_message="Level 3: Multiclassed into Fighter",
-       commit_type="level_up"
-   )
-   ```
-
-4. GET CHARACTER TIMELINE FOR FRONTEND:
-   ```python
-   timeline = CharacterVersioningAPI.get_character_timeline_for_frontend(
-       db=db,
-       repository_id=repo.id
-   )
-   # Returns formatted data for graph visualization
-   ```
-
-5. RETRIEVE CHARACTER AT SPECIFIC POINT:
-   ```python
-   # Get character data at level 2
-   level_2_character = CharacterRepositoryManager.get_character_at_commit(
-       db=db,
-       commit_hash=level_2_commit.commit_hash
-   )
-   ```
-
-FRONTEND INTEGRATION:
-- Use CharacterVersioningAPI.get_character_timeline_for_frontend() for graph data
-- Display branches as different colored lines
-- Show commits as nodes with level/milestone information
-- Allow users to click commits to view character state at that point
-- Provide branch creation UI for "What if?" scenarios
-- Show diff between commits to highlight changes
-
-DATABASE SCHEMA:
-- character_repositories: Main character containers
-- character_branches: Different development paths
-- character_commits: Individual character states/versions
-- character_tags: Mark important milestones
-- characters: Legacy table (kept for compatibility)
-
-The system enables:
-- Complete character development history
-- "What if?" exploration with branches
-- Visual timeline of character progression
-- Rollback to previous character states
-- Comparison between different development paths
-- Story/campaign context tracking
-- Collaborative character development
-"""
-
-
-# ============================================================================
-# MODULE SUMMARY
-# ============================================================================
-"""
-ENHANCED DATABASE MODELS WITH GIT-LIKE CHARACTER VERSIONING
-
-This module provides a comprehensive database layer for D&D character management
-with a revolutionary Git-like versioning system that allows players to explore
-alternate character development paths.
-
-KEY FEATURES:
-
-1. CHARACTER REPOSITORIES (Git-like System):
-   - CharacterRepository: Container for all versions of a character concept
-   - CharacterBranch: Different development paths (main, multiclass, alternate stories)
-   - CharacterCommit: Individual character states with full data snapshots
-   - CharacterTag: Mark important milestones (deaths, resurrections, epic levels)
-
-2. VERSION CONTROL OPERATIONS:
-   - Create repositories with initial character commits
-   - Branch from any commit to explore alternate paths
-   - Commit character changes with detailed change tracking
-   - Tag important milestones and story events
-   - Retrieve character state at any point in history
-
-3. VISUALIZATION SUPPORT:
-   - Complete repository tree data for frontend graphs
-   - Parent-child commit relationships for timeline display
-   - Branch visualization with merge/split points
-   - Diff calculation between character states
-
-4. INTEGRATION SYSTEMS:
-   - CharacterRepositoryManager: High-level Git-like operations
-   - CharacterVersioningAPI: Frontend-friendly API methods
-   - Integration with existing CharacterCore/CharacterState classes
-   - Backwards compatibility with legacy Character model
-
-5. USE CASES:
-   - Track complete character development history
-   - Explore "What if I multiclassed?" scenarios
-   - Compare different character builds
-   - Rollback to previous character states
-   - Visualize character evolution over campaigns
-   - Create alternate storyline branches
-   - Collaborative character development
-
-6. DATABASE OPERATIONS:
-   - CharacterDB: CRUD operations for legacy characters
-   - CharacterSessionDB: Character creation session management
-   - Proper database session management with context managers
-   - Integration with SQLAlchemy ORM
-
-The system transforms character management from a simple database record into
-a rich, explorable history that enhances storytelling and player engagement.
-Players can see their character's journey visually, explore alternate paths,
-and make informed decisions about character development.
-
-FRONTEND VISUALIZATION:
-The system is designed to support rich frontend visualizations showing:
-- Character development timelines as interactive graphs
-- Branch points where different paths diverged
-- Commit nodes with level, XP, and milestone information
-- Visual diffs between character states
-- Tag markers for important story moments
-
-This creates a "comic book multiverse" experience where players can explore
-all the different paths their character might have taken.
-"""
+    # Database utilities
+    'init_database', 'get_db', 'Base'
+]
 

@@ -25,6 +25,23 @@ class CreationOptions(Enum):
     OTHER_ITEM = "other_item"
 
 # ============================================================================
+# CAMPAIGN CREATION ENUMS
+# ============================================================================
+
+class CampaignCreationOptions(Enum):
+    """Types of campaign content that can be created."""
+    CAMPAIGN = "campaign"
+    CAMPAIGN_SKELETON = "campaign_skeleton"
+    CHAPTER = "chapter"
+    PLOT_FORK = "plot_fork"
+    NPC_FOR_CAMPAIGN = "npc_for_campaign"
+    MONSTER_FOR_CAMPAIGN = "monster_for_campaign"
+    LOCATION = "location"
+    PSYCHOLOGICAL_EXPERIMENT = "psychological_experiment"
+    SETTING_THEME = "setting_theme"
+    CAMPAIGN_REFINEMENT = "campaign_refinement"
+
+# ============================================================================
 # CREATURE ENUMS
 # ============================================================================
 

@@ -97,5 +97,7 @@ class Settings(BaseSettings):
 # Global settings instance
 settings = Settings()
 
-# Validate required settings on import
-settings.validate_required_settings()
+# Validate required settings on import only if not in testing mode
+import os
+if not os.getenv("TESTING_MODE", "false").lower() == "true":
+    settings.validate_required_settings()

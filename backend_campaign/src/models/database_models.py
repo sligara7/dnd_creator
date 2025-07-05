@@ -1212,6 +1212,10 @@ class Campaign(Base):
     play_sessions = relationship("PlaySession", back_populates="campaign", cascade="all, delete-orphan")
     merges = relationship("ChapterMerge", back_populates="campaign", cascade="all, delete-orphan")
     
+    # Backend service integration relationships
+    character_links = relationship("CampaignCharacterLink", back_populates="campaign", cascade="all, delete-orphan")
+    item_links = relationship("CampaignItemLink", back_populates="campaign", cascade="all, delete-orphan")
+    
     # Campaign content relationships
     campaign_characters = relationship("CampaignCharacter", cascade="all, delete-orphan")
     campaign_maps = relationship("CampaignMap", cascade="all, delete-orphan")
@@ -2037,6 +2041,149 @@ class CampaignContentDB:
         db.commit()
         db.refresh(usage)
         return usage
+
+# ============================================================================
+# BACKEND SERVICE INTEGRATION MODELS
+# ============================================================================
+
+class CampaignCharacterLink(Base):
+    """
+    Links between campaigns and characters from the backend service.
+    
+    Stores campaign-specific metadata for characters without duplicating 
+    the character data stored in the backend service.
+    """
+    __tablename__ = "campaign_character_links"
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    campaign_id = Column(String(36), ForeignKey("campaigns.id"), nullable=False, index=True)
+    character_id = Column(String(36), nullable=False, index=True)  # ID from backend service
+    
+    # Campaign-specific metadata
+    role_in_campaign = Column(String(100), nullable=True)
+    campaign_notes = Column(Text, nullable=True)
+    
+    # Tracking
+    added_to_campaign_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    campaign = relationship("Campaign", back_populates="character_links")
+
+class CampaignItemLink(Base):
+    """
+    Links between campaigns and items from the backend service.
+    
+    Stores campaign-specific metadata for items without duplicating 
+    the item data stored in the backend service.
+    """
+    __tablename__ = "campaign_item_links"
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    campaign_id = Column(String(36), ForeignKey("campaigns.id"), nullable=False, index=True)
+    item_id = Column(String(36), nullable=False, index=True)  # ID from backend service
+    
+    # Campaign-specific metadata
+    location_found = Column(String(200), nullable=True)
+    owner_character_id = Column(String(36), nullable=True)  # References backend character ID
+    campaign_notes = Column(Text, nullable=True)
+    
+    # Tracking
+    added_to_campaign_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    campaign = relationship("Campaign", back_populates="item_links")
+
+# ============================================================================
+# DATABASE ACCESS LAYER FOR BACKEND INTEGRATION
+# ============================================================================
+
+class CampaignBackendLinkDB:
+    """Database operations for backend service integration."""
+    
+    @staticmethod
+    def link_character(db: Session, campaign_id: str, character_id: str, 
+                      role: str = None, notes: str = None) -> CampaignCharacterLink:
+        """Link a backend character to a campaign."""
+        link = CampaignCharacterLink(
+            campaign_id=campaign_id,
+            character_id=character_id,
+            role_in_campaign=role,
+            campaign_notes=notes
+        )
+        db.add(link)
+        db.commit()
+        db.refresh(link)
+        return link
+    
+    @staticmethod
+    def get_character_link(db: Session, campaign_id: str, character_id: str) -> CampaignCharacterLink:
+        """Get character link by campaign and character ID."""
+        return db.query(CampaignCharacterLink).filter(
+            CampaignCharacterLink.campaign_id == campaign_id,
+            CampaignCharacterLink.character_id == character_id
+        ).first()
+    
+    @staticmethod
+    def list_campaign_characters(db: Session, campaign_id: str) -> List[CampaignCharacterLink]:
+        """List all characters linked to a campaign."""
+        return db.query(CampaignCharacterLink).filter(
+            CampaignCharacterLink.campaign_id == campaign_id
+        ).all()
+    
+    @staticmethod
+    def unlink_character(db: Session, campaign_id: str, character_id: str) -> bool:
+        """Remove character link from campaign."""
+        link = CampaignBackendLinkDB.get_character_link(db, campaign_id, character_id)
+        if link:
+            db.delete(link)
+            db.commit()
+            return True
+        return False
+    
+    @staticmethod
+    def link_item(db: Session, campaign_id: str, item_id: str, 
+                 location: str = None, owner_id: str = None, notes: str = None) -> CampaignItemLink:
+        """Link a backend item to a campaign."""
+        link = CampaignItemLink(
+            campaign_id=campaign_id,
+            item_id=item_id,
+            location_found=location,
+            owner_character_id=owner_id,
+            campaign_notes=notes
+        )
+        db.add(link)
+        db.commit()
+        db.refresh(link)
+        return link
+    
+    @staticmethod
+    def get_item_link(db: Session, campaign_id: str, item_id: str) -> CampaignItemLink:
+        """Get item link by campaign and item ID."""
+        return db.query(CampaignItemLink).filter(
+            CampaignItemLink.campaign_id == campaign_id,
+            CampaignItemLink.item_id == item_id
+        ).first()
+    
+    @staticmethod
+    def list_campaign_items(db: Session, campaign_id: str) -> List[CampaignItemLink]:
+        """List all items linked to a campaign."""
+        return db.query(CampaignItemLink).filter(
+            CampaignItemLink.campaign_id == campaign_id
+        ).all()
+    
+    @staticmethod
+    def unlink_item(db: Session, campaign_id: str, item_id: str) -> bool:
+        """Remove item link from campaign."""
+        link = CampaignBackendLinkDB.get_item_link(db, campaign_id, item_id)
+        if link:
+            db.delete(link)
+            db.commit()
+            return True
+        return False
 
 # ============================================================================
 # UPDATE CAMPAIGN MODEL WITH NEW RELATIONSHIPS

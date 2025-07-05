@@ -6,6 +6,7 @@ All endpoints, models, and features are designed for campaign-level operations, 
 """
 
 import time
+import uuid
 from typing import List, Dict, Any, Optional
 from fastapi import FastAPI, HTTPException, Query, Path, Depends
 from pydantic import BaseModel, Field
@@ -16,7 +17,14 @@ from sqlalchemy.orm import Session
 from src.models.database_models import (
     Campaign, Chapter, PlotFork, 
     CampaignDB, init_database, get_db,
-    CampaignStatusEnum, ChapterStatusEnum, PlotForkTypeEnum
+    CampaignStatusEnum, ChapterStatusEnum, PlotForkTypeEnum,
+    CampaignBackendLinkDB
+)
+
+# Import backend service integration
+from src.services.backend_integration import (
+    BackendIntegrationService, BackendContentRequest, 
+    create_backend_integration_service
 )
 
 app = FastAPI(title="D&D Campaign Creation API", version="2.0")
@@ -870,908 +878,1040 @@ Length: 500-800 words
         raise HTTPException(status_code=500, detail=f"Chapter content generation failed: {str(e)}")
 
 # =========================
-# CAMPAIGN CONTENT MANAGEMENT ENDPOINTS
+# BACKEND INTEGRATION FOR CONTENT GENERATION  
 # =========================
 
-class CampaignCharacterRequest(BaseModel):
-    """Request to add/update a character in a campaign."""
-    name: str = Field(..., min_length=2, max_length=100)
-    player_name: Optional[str] = Field(None, max_length=100)
-    character_class: str = Field(..., max_length=50)
-    level: int = Field(default=1, ge=1, le=20)
-    race: str = Field(..., max_length=50)
-    background: str = Field(default="", max_length=100)
-    alignment: str = Field(default="Neutral", max_length=50)
-    abilities: Dict[str, int] = Field(default_factory=dict)
-    hit_points: int = Field(default=1, ge=1)
-    armor_class: int = Field(default=10, ge=1)
-    backstory: Optional[str] = Field(None, max_length=2000)
-    notes: Optional[str] = Field(None, max_length=1000)
-    is_active: bool = Field(default=True)
+import httpx
+from typing import Union
 
-class CampaignNPCRequest(BaseModel):
-    """Request to add/update an NPC in a campaign."""
-    name: str = Field(..., min_length=2, max_length=100)
-    npc_type: str = Field(..., max_length=50)  # "friendly", "neutral", "hostile", "merchant", "quest_giver"
-    description: str = Field(..., min_length=10, max_length=500)
-    location: Optional[str] = Field(None, max_length=100)
-    role: str = Field(default="background", max_length=50)  # "major", "minor", "background"
-    stats: Optional[Dict[str, Any]] = Field(default_factory=dict)
-    personality: Optional[str] = Field(None, max_length=500)
-    motivations: Optional[str] = Field(None, max_length=500)
-    relationships: Optional[Dict[str, str]] = Field(default_factory=dict)
-    dialogue_notes: Optional[str] = Field(None, max_length=1000)
-    is_active: bool = Field(default=True)
+class BackendIntegrationRequest(BaseModel):
+    creation_type: str = Field(..., description="Type to create (npc, monster, character, weapon, armor, spell, other_item)")
+    parameters: Optional[Dict[str, Any]] = Field(default={}, description="Creation parameters")
+    campaign_context: Optional[str] = Field(None, description="Campaign context for thematic consistency")
 
-class CampaignMonsterRequest(BaseModel):
-    """Request to add/update a monster in a campaign."""
-    name: str = Field(..., min_length=2, max_length=100)
-    monster_type: str = Field(..., max_length=50)
-    challenge_rating: float = Field(..., ge=0, le=30)
-    stat_block: Dict[str, Any] = Field(..., description="Complete monster stat block")
-    description: str = Field(..., min_length=10, max_length=500)
-    habitat: Optional[str] = Field(None, max_length=100)
-    behavior: Optional[str] = Field(None, max_length=500)
-    tactics: Optional[str] = Field(None, max_length=500)
-    loot_table: Optional[List[str]] = Field(default_factory=list)
-    encounter_notes: Optional[str] = Field(None, max_length=1000)
-    is_active: bool = Field(default=True)
-
-class CampaignItemRequest(BaseModel):
-    """Request to add/update an item in a campaign."""
-    name: str = Field(..., min_length=2, max_length=100)
-    item_type: str = Field(..., max_length=50)  # "weapon", "armor", "potion", "scroll", "wondrous", "treasure"
-    rarity: str = Field(default="common", max_length=20)  # "common", "uncommon", "rare", "very_rare", "legendary"
-    description: str = Field(..., min_length=10, max_length=500)
-    properties: Dict[str, Any] = Field(default_factory=dict)
-    value_gp: Optional[int] = Field(None, ge=0)
-    weight_lbs: Optional[float] = Field(None, ge=0)
-    requires_attunement: bool = Field(default=False)
-    magic_properties: Optional[str] = Field(None, max_length=500)
-    location_found: Optional[str] = Field(None, max_length=100)
-    notes: Optional[str] = Field(None, max_length=500)
-    is_active: bool = Field(default=True)
-
-class ChapterMapRequest(BaseModel):
-    """Request to add/update a map for a chapter."""
-    map_name: str = Field(..., min_length=2, max_length=100)
-    map_type: str = Field(..., max_length=50)  # "battle", "exploration", "town", "dungeon", "region"
-    description: str = Field(..., min_length=10, max_length=500)
-    grid_size: Optional[str] = Field(None, max_length=20)  # "5ft", "10ft", "1mile", etc.
-    dimensions: Optional[str] = Field(None, max_length=50)  # "30x40", "large", etc.
-    map_url: Optional[str] = Field(None, max_length=500)
-    thumbnail_url: Optional[str] = Field(None, max_length=500)
-    map_features: Optional[List[str]] = Field(default_factory=list)
-    encounter_areas: Optional[Dict[str, str]] = Field(default_factory=dict)
-    dm_notes: Optional[str] = Field(None, max_length=1000)
-    is_active: bool = Field(default=True)
-
-class ContentResponse(BaseModel):
-    """Generic response for campaign content."""
-    id: str
+class ContentGenerationBatchRequest(BaseModel):
     campaign_id: str
-    content_type: str
-    name: str
-    created_at: str
-    updated_at: str
-    is_active: bool
+    chapter_id: Optional[str] = None
+    content_types: List[str] = Field(..., description="Types of content to generate (npcs, monsters, items, spells)")
+    quantity: Optional[Dict[str, int]] = Field(default={}, description="Quantity of each content type")
 
-class ChapterMapResponse(BaseModel):
-    """Response for chapter map."""
-    id: str
-    campaign_id: str
-    chapter_id: str
-    map_name: str
-    map_type: str
-    description: str
-    map_url: Optional[str]
-    created_at: str
-    updated_at: str
-    is_active: bool
+async def call_backend_factory_endpoint(creation_type: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Call the /backend/api/v2/factory/create endpoint for content generation.
+    Implements REQ-CAM-153-157: Content Generation Service Utilization
+    """
+    # This would be the actual backend URL in production
+    backend_url = "http://localhost:8000"  # Adjust as needed
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{backend_url}/api/v2/factory/create",
+                json={
+                    "creation_type": creation_type,
+                    "parameters": parameters
+                },
+                timeout=30.0
+            )
+            response.raise_for_status()
+            return response.json()
+    except httpx.RequestError:
+        # Fallback to LLM generation if backend is unavailable
+        return {"error": "Backend unavailable", "fallback": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Backend integration failed: {str(e)}")
 
-# =========================
-# CHARACTER MANAGEMENT ENDPOINTS
-# =========================
-
-@app.post("/api/v2/campaigns/{campaign_id}/characters", response_model=ContentResponse, tags=["campaign-content"])
-async def add_character_to_campaign(
-    campaign_id: str, 
-    request: CampaignCharacterRequest, 
+@app.post("/api/v2/campaigns/{campaign_id}/generate-via-backend", tags=["backend-integration"])
+async def generate_content_via_backend(
+    campaign_id: str,
+    request: BackendIntegrationRequest,
     db: Session = Depends(get_db)
 ):
-    """Add a character to a campaign for in-game play."""
+    """
+    Generate campaign content using the existing /backend factory endpoints.
+    Implements REQ-CAM-148-162: Backend Service Integration
+    """
+    campaign = CampaignDB.get_campaign(db, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    
+    # Add campaign context to parameters for thematic consistency
+    enhanced_parameters = request.parameters.copy()
+    enhanced_parameters.update({
+        "campaign_title": campaign.title,
+        "campaign_themes": campaign.themes or [],
+        "campaign_context": request.campaign_context or campaign.description,
+    })
+    
+    try:
+        # Call backend factory endpoint
+        backend_result = await call_backend_factory_endpoint(
+            request.creation_type,
+            enhanced_parameters
+        )
+        
+        if backend_result.get("fallback"):
+            # Use LLM fallback if backend unavailable
+            from src.services.llm_service import create_llm_service
+            llm_service = create_llm_service()
+            
+            fallback_prompt = f"""
+Generate a D&D {request.creation_type} for this campaign:
+
+Campaign: {campaign.title}
+Context: {request.campaign_context or campaign.description}
+Parameters: {enhanced_parameters}
+
+Create detailed {request.creation_type} content that fits the campaign theme and context.
+"""
+            
+            fallback_content = await llm_service.generate_content(
+                fallback_prompt,
+                max_tokens=600,
+                temperature=0.8
+            )
+            
+            backend_result = {
+                "type": request.creation_type,
+                "content": fallback_content.strip(),
+                "source": "llm_fallback",
+                "campaign_integrated": True
+            }
+        
+        return {
+            "message": f"Generated {request.creation_type} via backend integration",
+            "campaign_id": campaign_id,
+            "creation_type": request.creation_type,
+            "generated_content": backend_result,
+            "parameters_used": enhanced_parameters
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Content generation failed: {str(e)}")
+
+@app.post("/api/v2/campaigns/{campaign_id}/batch-generate-content", tags=["backend-integration"])
+async def batch_generate_campaign_content(
+    campaign_id: str,
+    request: ContentGenerationBatchRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Batch generate multiple types of content for a campaign using /backend integration.
+    Implements REQ-CAM-064-078: Auto-Generation of Campaign Content via /backend Integration
+    """
+    campaign = CampaignDB.get_campaign(db, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    
+    chapter = None
+    if request.chapter_id:
+        chapter = CampaignDB.get_chapter(db, request.chapter_id)
+        if not chapter or chapter.campaign_id != campaign_id:
+            raise HTTPException(status_code=404, detail="Chapter not found")
+    
+    generated_content = {}
+    
+    # Define content type mappings to backend creation types
+    content_type_mapping = {
+        "npcs": "npc",
+        "monsters": "monster", 
+        "weapons": "weapon",
+        "armor": "armor",
+        "spells": "spell",
+        "items": "other_item"
+    }
+    
+    # Default quantities if not specified
+    default_quantities = {
+        "npcs": 3,
+        "monsters": 2,
+        "weapons": 2,
+        "armor": 1,
+        "spells": 2,
+        "items": 3
+    }
+    
+    try:
+        for content_type in request.content_types:
+            if content_type not in content_type_mapping:
+                continue
+                
+            backend_creation_type = content_type_mapping[content_type]
+            quantity = request.quantity.get(content_type, default_quantities.get(content_type, 1))
+            
+            generated_items = []
+            
+            for i in range(quantity):
+                # Prepare context-specific parameters
+                context_parameters = {
+                    "campaign_title": campaign.title,
+                    "campaign_themes": campaign.themes or [],
+                    "index": i + 1,
+                    "total_quantity": quantity
+                }
+                
+                if chapter:
+                    context_parameters.update({
+                        "chapter_title": chapter.title,
+                        "chapter_summary": chapter.summary,
+                        "chapter_context": chapter.content
+                    })
+                
+                # Add content-specific parameters
+                if content_type == "npcs":
+                    context_parameters.update({
+                        "role_variety": True,
+                        "personality_depth": "detailed",
+                        "motivation_complexity": "high"
+                    })
+                elif content_type == "monsters":
+                    context_parameters.update({
+                        "encounter_type": "varied",
+                        "challenge_appropriate": True,
+                        "thematic_consistency": True
+                    })
+                elif content_type in ["weapons", "armor", "items"]:
+                    context_parameters.update({
+                        "power_level": "campaign_appropriate",
+                        "thematic_design": True,
+                        "unique_properties": True
+                    })
+                elif content_type == "spells":
+                    context_parameters.update({
+                        "spell_level_variety": True,
+                        "thematic_flavoring": True,
+                        "campaign_integration": True
+                    })
+                
+                # Generate via backend
+                backend_result = await call_backend_factory_endpoint(
+                    backend_creation_type,
+                    context_parameters
+                )
+                
+                # Handle fallback if needed
+                if backend_result.get("fallback"):
+                    from src.services.llm_service import create_llm_service
+                    llm_service = create_llm_service()
+                    
+                    fallback_prompt = f"""
+Generate a D&D {backend_creation_type} for this campaign:
+
+Campaign: {campaign.title}
+Chapter: {chapter.title if chapter else 'General campaign use'}
+Context: {context_parameters}
+
+Create a detailed, unique {backend_creation_type} that fits the campaign setting and themes.
+Include stats, description, and any special properties.
+"""
+                    
+                    fallback_content = await llm_service.generate_content(
+                        fallback_prompt,
+                        max_tokens=400,
+                        temperature=0.85
+                    )
+                    
+                    backend_result = {
+                        "name": f"Generated {backend_creation_type.title()} {i+1}",
+                        "content": fallback_content.strip(),
+                        "source": "llm_fallback"
+                    }
+                
+                generated_items.append(backend_result)
+            
+            generated_content[content_type] = generated_items
+        
+        return {
+            "message": "Batch content generation completed",
+            "campaign_id": campaign_id,
+            "chapter_id": request.chapter_id,
+            "content_types_generated": request.content_types,
+            "generated_content": generated_content,
+            "total_items_generated": sum(len(items) for items in generated_content.values())
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Batch content generation failed: {str(e)}")
+
+@app.post("/api/v2/campaigns/{campaign_id}/chapters/{chapter_id}/populate-via-backend", tags=["backend-integration"])
+async def populate_chapter_via_backend(
+    campaign_id: str,
+    chapter_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Fully populate a chapter with NPCs, monsters, items, and spells using /backend integration.
+    Implements comprehensive chapter population per campaign_creation.md requirements.
+    """
+    campaign = CampaignDB.get_campaign(db, campaign_id)
+    chapter = CampaignDB.get_chapter(db, chapter_id)
+    
+    if not campaign or not chapter or chapter.campaign_id != campaign_id:
+        raise HTTPException(status_code=404, detail="Campaign or chapter not found")
+    
+    # Generate comprehensive chapter content using batch generation
+    batch_request = ContentGenerationBatchRequest(
+        campaign_id=campaign_id,
+        chapter_id=chapter_id,
+        content_types=["npcs", "monsters", "weapons", "armor", "spells", "items"],
+        quantity={
+            "npcs": 4,      # Major NPCs for the chapter
+            "monsters": 3,   # Encounters for the chapter  
+            "weapons": 2,    # Treasure weapons
+            "armor": 1,      # Treasure armor
+            "spells": 3,     # Chapter-specific spells
+            "items": 4       # Miscellaneous magical/useful items
+        }
+    )
+    
+    batch_result = await batch_generate_campaign_content(campaign_id, batch_request, db)
+    
+    # Update chapter with generated content summary
+    content_summary = f"""
+Chapter Content Generated via Backend Integration:
+
+NPCs: {len(batch_result['generated_content'].get('npcs', []))} characters
+Monsters/Encounters: {len(batch_result['generated_content'].get('monsters', []))} encounters  
+Weapons: {len(batch_result['generated_content'].get('weapons', []))} items
+Armor: {len(batch_result['generated_content'].get('armor', []))} items
+Spells: {len(batch_result['generated_content'].get('spells', []))} spells
+Items: {len(batch_result['generated_content'].get('items', []))} items
+
+Total Generated Items: {batch_result['total_items_generated']}
+
+{chapter.content or 'Original chapter content'}
+"""
+    
+    updates = {"content": content_summary}
+    CampaignDB.update_chapter(db, chapter_id, updates)
+    
+    return {
+        "message": "Chapter fully populated via backend integration",
+        "campaign_id": campaign_id,
+        "chapter_id": chapter_id,
+        "population_results": batch_result,
+        "chapter_updated": True
+    }
+
+# =========================
+# BACKEND-INTEGRATED CAMPAIGN CONTENT MODELS
+# =========================
+
+class CampaignCharacterLinkRequest(BaseModel):
+    """Request to link a character to a campaign via backend service."""
+    # Option 1: Create new character via backend
+    create_new: Optional[bool] = Field(False, description="Create new character via backend service")
+    creation_prompt: Optional[str] = Field(None, min_length=20, max_length=500, description="Prompt for character creation")
+    character_type: Optional[str] = Field("character", description="character, npc, monster")
+    
+    # Option 2: Link existing character by ID
+    existing_character_id: Optional[str] = Field(None, description="ID of existing character from backend")
+    
+    # Campaign-specific metadata
+    role_in_campaign: Optional[str] = Field(None, max_length=100, description="Role in this specific campaign")
+    campaign_notes: Optional[str] = Field(None, max_length=1000, description="Campaign-specific notes")
+    apply_campaign_themes: Optional[bool] = Field(True, description="Apply campaign themes to character creation (optional)")
+
+class CampaignCharacterUpdateRequest(BaseModel):
+    """Request to update campaign-specific character information."""
+    role_in_campaign: Optional[str] = Field(None, max_length=100)
+    campaign_notes: Optional[str] = Field(None, max_length=1000)
+    # Note: Core character updates should go through backend service directly
+
+class CampaignCharacterResponse(BaseModel):
+    """Response containing character information from backend plus campaign data."""
+    # Campaign-specific data
+    campaign_id: str
+    character_id: str  # ID from backend service
+    role_in_campaign: Optional[str]
+    campaign_notes: Optional[str]
+    added_to_campaign_at: str
+    
+    # Character data from backend service
+    backend_character_data: Dict[str, Any]  # Full character data from backend
+
+class CampaignItemLinkRequest(BaseModel):
+    """Request to add an item to a campaign via backend service."""
+    # Option 1: Create new item via backend
+    create_new: Optional[bool] = Field(False, description="Create new item via backend service")
+    creation_prompt: Optional[str] = Field(None, min_length=20, max_length=500, description="Prompt for item creation")
+    item_type: Optional[str] = Field("other_item", description="weapon, armor, spell, other_item")
+    
+    # Option 2: Link existing item by ID
+    existing_item_id: Optional[str] = Field(None, description="ID of existing item from backend")
+    
+    # Campaign-specific metadata
+    location_found: Optional[str] = Field(None, max_length=200, description="Where item was found/acquired")
+    owner_character_id: Optional[str] = Field(None, description="Character who owns this item")
+    campaign_notes: Optional[str] = Field(None, max_length=1000, description="Campaign-specific notes")
+    apply_campaign_themes: Optional[bool] = Field(True, description="Apply campaign themes to item creation (optional)")
+
+class CampaignItemResponse(BaseModel):
+    """Response containing item information from backend plus campaign data."""
+    # Campaign-specific data
+    campaign_id: str
+    item_id: str  # ID from backend service
+    location_found: Optional[str]
+    owner_character_id: Optional[str]
+    campaign_notes: Optional[str]
+    added_to_campaign_at: str
+    
+    # Item data from backend service
+    backend_item_data: Dict[str, Any]  # Full item data from backend
+
+class CampaignItemUpdateRequest(BaseModel):
+    """Request to update campaign-specific item information."""
+    location_found: Optional[str] = Field(None, max_length=200)
+    owner_character_id: Optional[str] = Field(None)
+    campaign_notes: Optional[str] = Field(None, max_length=1000)
+    # Note: Core item updates should go through backend service directly
+
+# Dependency injection for backend service
+async def get_backend_service() -> BackendIntegrationService:
+    """Get backend integration service instance."""
+    return create_backend_integration_service()
+
+# =========================
+# BACKEND-INTEGRATED CHARACTER MANAGEMENT ENDPOINTS
+# =========================
+
+@app.post("/api/v2/campaigns/{campaign_id}/characters", response_model=CampaignCharacterResponse, tags=["campaign-characters"])
+async def add_character_to_campaign(
+    campaign_id: str, 
+    request: CampaignCharacterLinkRequest, 
+    db: Session = Depends(get_db),
+    backend_service: BackendIntegrationService = Depends(get_backend_service)
+):
+    """Add or link a character to a campaign via backend service."""
     campaign = CampaignDB.get_campaign(db, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
     
     try:
-        # Import the new models
-        from src.models.database_models import CampaignCharacterDB, CampaignCharacter
+        character_id = None
+        backend_character_data = None
         
-        character_data = {
-            "campaign_id": campaign_id,
-            "name": request.name,
-            "player_name": request.player_name,
-            "character_class": request.character_class,
-            "level": request.level,
-            "race": request.race,
-            "background": request.background,
-            "alignment": request.alignment,
-            "abilities": request.abilities,
-            "hit_points": request.hit_points,
-            "armor_class": request.armor_class,
-            "backstory": request.backstory,
-            "notes": request.notes,
-            "is_active": request.is_active
-        }
+        if request.create_new and request.creation_prompt:
+            # Create new character via backend service
+            creation_request = BackendContentRequest(
+                creation_type=request.character_type or "character",
+                prompt=request.creation_prompt,
+                user_preferences={},
+                extra_fields={},
+                save_to_database=True
+            )
+            
+            # Apply campaign themes if requested
+            if request.apply_campaign_themes and campaign.themes:
+                creation_request.user_preferences["campaign_themes"] = campaign.themes
+                creation_request.user_preferences["campaign_context"] = campaign.description
+                
+                # Enhance prompt with campaign context
+                enhanced_prompt = f"""
+Campaign Context: {campaign.title} - {campaign.description}
+Campaign Themes: {', '.join(campaign.themes)}
+
+Character Creation Request: {request.creation_prompt}
+
+Create a character that fits the campaign themes while respecting any specific character requirements in the request.
+"""
+                creation_request.prompt = enhanced_prompt
+            
+            # Call backend service
+            backend_result = await backend_service.create_content(creation_request)
+            if not backend_result.get("success"):
+                raise HTTPException(status_code=500, detail="Backend character creation failed")
+            
+            character_id = backend_result.get("object_id")
+            backend_character_data = backend_result.get("result", {})
+            
+        elif request.existing_character_id:
+            # Link existing character
+            character_id = request.existing_character_id
+            backend_character_data = await backend_service.get_character(character_id)
+            if not backend_character_data:
+                raise HTTPException(status_code=404, detail="Character not found in backend service")
         
-        db_character = CampaignCharacterDB.create_character(db, character_data)
+        else:
+            raise HTTPException(status_code=400, detail="Must specify either create_new=true with creation_prompt or existing_character_id")
         
-        return ContentResponse(
-            id=db_character.id,
-            campaign_id=campaign_id,
-            content_type="character",
-            name=db_character.name,
-            created_at=db_character.created_at.isoformat(),
-            updated_at=db_character.updated_at.isoformat(),
-            is_active=db_character.is_active
+        # Check if character is already linked to this campaign
+        existing_link = CampaignBackendLinkDB.get_character_link(db, campaign_id, character_id)
+        if existing_link:
+            raise HTTPException(status_code=409, detail="Character already linked to this campaign")
+        
+        # Create campaign-character link
+        character_link = CampaignBackendLinkDB.link_character(
+            db, campaign_id, character_id, 
+            request.role_in_campaign, request.campaign_notes
         )
         
+        return CampaignCharacterResponse(
+            campaign_id=campaign_id,
+            character_id=character_id,
+            role_in_campaign=character_link.role_in_campaign,
+            campaign_notes=character_link.campaign_notes,
+            added_to_campaign_at=character_link.added_to_campaign_at.isoformat(),
+            backend_character_data=backend_character_data
+        )
+        
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to add character: {str(e)}")
 
-@app.get("/api/v2/campaigns/{campaign_id}/characters", response_model=List[ContentResponse], tags=["campaign-content"])
-async def list_campaign_characters(campaign_id: str, include_inactive: bool = Query(False), db: Session = Depends(get_db)):
-    """List all characters in a campaign."""
+@app.get("/api/v2/campaigns/{campaign_id}/characters", response_model=List[CampaignCharacterResponse], tags=["campaign-characters"])
+async def list_campaign_characters(
+    campaign_id: str,
+    db: Session = Depends(get_db),
+    backend_service: BackendIntegrationService = Depends(get_backend_service)
+):
+    """List all characters linked to a campaign."""
     campaign = CampaignDB.get_campaign(db, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
     
     try:
-        from src.models.database_models import CampaignCharacterDB
+        character_links = CampaignBackendLinkDB.list_campaign_characters(db, campaign_id)
         
-        characters = CampaignCharacterDB.list_characters(db, campaign_id, include_inactive)
+        characters = []
+        for link in character_links:
+            # Get character data from backend service
+            backend_character_data = await backend_service.get_character(link.character_id)
+            if backend_character_data:  # Only include characters that still exist in backend
+                characters.append(CampaignCharacterResponse(
+                    campaign_id=campaign_id,
+                    character_id=link.character_id,
+                    role_in_campaign=link.role_in_campaign,
+                    campaign_notes=link.campaign_notes,
+                    added_to_campaign_at=link.added_to_campaign_at.isoformat(),
+                    backend_character_data=backend_character_data
+                ))
         
-        return [
-            ContentResponse(
-                id=char.id,
-                campaign_id=campaign_id,
-                content_type="character",
-                name=char.name,
-                created_at=char.created_at.isoformat(),
-                updated_at=char.updated_at.isoformat(),
-                is_active=char.is_active
-            )
-            for char in characters
-        ]
+        return characters
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list characters: {str(e)}")
 
-@app.get("/api/v2/campaigns/{campaign_id}/characters/{character_id}", tags=["campaign-content"])
-async def get_campaign_character(campaign_id: str, character_id: str, db: Session = Depends(get_db)):
-    """Get detailed information about a specific character in a campaign."""
+@app.get("/api/v2/campaigns/{campaign_id}/characters/{character_id}", response_model=CampaignCharacterResponse, tags=["campaign-characters"])
+async def get_campaign_character(
+    campaign_id: str, 
+    character_id: str, 
+    db: Session = Depends(get_db),
+    backend_service: BackendIntegrationService = Depends(get_backend_service)
+):
+    """Get a specific character from a campaign."""
+    campaign = CampaignDB.get_campaign(db, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    
     try:
-        from src.models.database_models import CampaignCharacterDB
+        character_link = CampaignBackendLinkDB.get_character_link(db, campaign_id, character_id)
+        if not character_link:
+            raise HTTPException(status_code=404, detail="Character not linked to this campaign")
         
-        character = CampaignCharacterDB.get_character(db, character_id)
-        if not character or character.campaign_id != campaign_id:
-            raise HTTPException(status_code=404, detail="Character not found")
+        # Get character data from backend service
+        backend_character_data = await backend_service.get_character(character_id)
+        if not backend_character_data:
+            raise HTTPException(status_code=404, detail="Character not found in backend service")
         
-        return character.to_dict()
+        return CampaignCharacterResponse(
+            campaign_id=campaign_id,
+            character_id=character_id,
+            role_in_campaign=character_link.role_in_campaign,
+            campaign_notes=character_link.campaign_notes,
+            added_to_campaign_at=character_link.added_to_campaign_at.isoformat(),
+            backend_character_data=backend_character_data
+        )
         
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get character: {str(e)}")
 
-@app.put("/api/v2/campaigns/{campaign_id}/characters/{character_id}", response_model=ContentResponse, tags=["campaign-content"])
+@app.put("/api/v2/campaigns/{campaign_id}/characters/{character_id}", response_model=CampaignCharacterResponse, tags=["campaign-characters"])
 async def update_campaign_character(
     campaign_id: str, 
     character_id: str, 
-    request: CampaignCharacterRequest, 
-    db: Session = Depends(get_db)
+    request: CampaignCharacterUpdateRequest, 
+    db: Session = Depends(get_db),
+    backend_service: BackendIntegrationService = Depends(get_backend_service)
 ):
-    """Update a character in a campaign."""
+    """Update campaign-specific character information."""
+    campaign = CampaignDB.get_campaign(db, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    
     try:
-        from src.models.database_models import CampaignCharacterDB
+        character_link = CampaignBackendLinkDB.get_character_link(db, campaign_id, character_id)
+        if not character_link:
+            raise HTTPException(status_code=404, detail="Character not linked to this campaign")
         
-        character = CampaignCharacterDB.get_character(db, character_id)
-        if not character or character.campaign_id != campaign_id:
-            raise HTTPException(status_code=404, detail="Character not found")
+        # Update campaign-specific data
+        if request.role_in_campaign is not None:
+            character_link.role_in_campaign = request.role_in_campaign
+        if request.campaign_notes is not None:
+            character_link.campaign_notes = request.campaign_notes
         
-        updates = request.dict(exclude_unset=True)
-        updated_character = CampaignCharacterDB.update_character(db, character_id, updates)
+        db.commit()
+        db.refresh(character_link)
         
-        return ContentResponse(
-            id=updated_character.id,
+        # Get updated character data from backend service
+        backend_character_data = await backend_service.get_character(character_id)
+        if not backend_character_data:
+            raise HTTPException(status_code=404, detail="Character not found in backend service")
+        
+        return CampaignCharacterResponse(
             campaign_id=campaign_id,
-            content_type="character",
-            name=updated_character.name,
-            created_at=updated_character.created_at.isoformat(),
-            updated_at=updated_character.updated_at.isoformat(),
-            is_active=updated_character.is_active
+            character_id=character_id,
+            role_in_campaign=character_link.role_in_campaign,
+            campaign_notes=character_link.campaign_notes,
+            added_to_campaign_at=character_link.added_to_campaign_at.isoformat(),
+            backend_character_data=backend_character_data
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update character: {str(e)}")
 
-@app.delete("/api/v2/campaigns/{campaign_id}/characters/{character_id}", tags=["campaign-content"])
-async def remove_character_from_campaign(campaign_id: str, character_id: str, db: Session = Depends(get_db)):
-    """Remove (deactivate) a character from a campaign."""
+@app.delete("/api/v2/campaigns/{campaign_id}/characters/{character_id}", tags=["campaign-characters"])
+async def remove_character_from_campaign(
+    campaign_id: str, 
+    character_id: str, 
+    db: Session = Depends(get_db),
+    backend_service: BackendIntegrationService = Depends(get_backend_service)
+):
+    """Remove a character link from a campaign (does not delete the character from backend)."""
+    campaign = CampaignDB.get_campaign(db, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    
     try:
-        from src.models.database_models import CampaignCharacterDB
+        character_link = CampaignBackendLinkDB.get_character_link(db, campaign_id, character_id)
+        if not character_link:
+            raise HTTPException(status_code=404, detail="Character not linked to this campaign")
         
-        character = CampaignCharacterDB.get_character(db, character_id)
-        if not character or character.campaign_id != campaign_id:
-            raise HTTPException(status_code=404, detail="Character not found")
+        # Get character name for response
+        backend_character_data = await backend_service.get_character(character_id)
+        character_name = backend_character_data.get("name", "Unknown") if backend_character_data else "Unknown"
         
-        success = CampaignCharacterDB.deactivate_character(db, character_id)
-        if not success:
-            raise HTTPException(status_code=500, detail="Failed to remove character")
+        # Remove link (character remains in backend service)
+        CampaignBackendLinkDB.unlink_character(db, campaign_id, character_id)
         
-        return {"message": "Character removed from campaign", "character_id": character_id}
+        return {
+            "message": "Character unlinked from campaign",
+            "character_id": character_id,
+            "character_name": character_name,
+            "note": "Character still exists in backend service"
+        }
         
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to remove character: {str(e)}")
 
 # =========================
-# NPC MANAGEMENT ENDPOINTS
+# BACKEND-INTEGRATED ITEM MANAGEMENT ENDPOINTS
 # =========================
 
-@app.post("/api/v2/campaigns/{campaign_id}/npcs", response_model=ContentResponse, tags=["campaign-content"])
-async def add_npc_to_campaign(
-    campaign_id: str, 
-    request: CampaignNPCRequest, 
-    db: Session = Depends(get_db)
-):
-    """Add an NPC to a campaign."""
-    campaign = CampaignDB.get_campaign(db, campaign_id)
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-    
-    try:
-        from src.models.database_models import CampaignNPCDB
-        
-        npc_data = request.dict()
-        npc_data["campaign_id"] = campaign_id
-        
-        db_npc = CampaignNPCDB.create_npc(db, npc_data)
-        
-        return ContentResponse(
-            id=db_npc.id,
-            campaign_id=campaign_id,
-            content_type="npc",
-            name=db_npc.name,
-            created_at=db_npc.created_at.isoformat(),
-            updated_at=db_npc.updated_at.isoformat(),
-            is_active=db_npc.is_active
-        )
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to add NPC: {str(e)}")
-
-@app.get("/api/v2/campaigns/{campaign_id}/npcs", response_model=List[ContentResponse], tags=["campaign-content"])
-async def list_campaign_npcs(
-    campaign_id: str, 
-    npc_type: Optional[str] = Query(None), 
-    role: Optional[str] = Query(None),
-    include_inactive: bool = Query(False),
-    db: Session = Depends(get_db)
-):
-    """List NPCs in a campaign with optional filtering."""
-    campaign = CampaignDB.get_campaign(db, campaign_id)
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-    
-    try:
-        from src.models.database_models import CampaignNPCDB
-        
-        npcs = CampaignNPCDB.list_npcs(db, campaign_id, npc_type, role, include_inactive)
-        
-        return [
-            ContentResponse(
-                id=npc.id,
-                campaign_id=campaign_id,
-                content_type="npc",
-                name=npc.name,
-                created_at=npc.created_at.isoformat(),
-                updated_at=npc.updated_at.isoformat(),
-                is_active=npc.is_active
-            )
-            for npc in npcs
-        ]
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list NPCs: {str(e)}")
-
-@app.get("/api/v2/campaigns/{campaign_id}/npcs/{npc_id}", tags=["campaign-content"])
-async def get_campaign_npc(campaign_id: str, npc_id: str, db: Session = Depends(get_db)):
-    """Get detailed information about a specific NPC."""
-    try:
-        from src.models.database_models import CampaignNPCDB
-        
-        npc = CampaignNPCDB.get_npc(db, npc_id)
-        if not npc or npc.campaign_id != campaign_id:
-            raise HTTPException(status_code=404, detail="NPC not found")
-        
-        return npc.to_dict()
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get NPC: {str(e)}")
-
-@app.put("/api/v2/campaigns/{campaign_id}/npcs/{npc_id}", response_model=ContentResponse, tags=["campaign-content"])
-async def update_campaign_npc(
-    campaign_id: str, 
-    npc_id: str, 
-    request: CampaignNPCRequest, 
-    db: Session = Depends(get_db)
-):
-    """Update an NPC in a campaign."""
-    try:
-        from src.models.database_models import CampaignNPCDB
-        
-        npc = CampaignNPCDB.get_npc(db, npc_id)
-        if not npc or npc.campaign_id != campaign_id:
-            raise HTTPException(status_code=404, detail="NPC not found")
-        
-        updates = request.dict(exclude_unset=True)
-        updated_npc = CampaignNPCDB.update_npc(db, npc_id, updates)
-        
-        return ContentResponse(
-            id=updated_npc.id,
-            campaign_id=campaign_id,
-            content_type="npc",
-            name=updated_npc.name,
-            created_at=updated_npc.created_at.isoformat(),
-            updated_at=updated_npc.updated_at.isoformat(),
-            is_active=updated_npc.is_active
-        )
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to update NPC: {str(e)}")
-
-@app.delete("/api/v2/campaigns/{campaign_id}/npcs/{npc_id}", tags=["campaign-content"])
-async def remove_npc_from_campaign(campaign_id: str, npc_id: str, db: Session = Depends(get_db)):
-    """Remove (deactivate) an NPC from a campaign."""
-    try:
-        from src.models.database_models import CampaignNPCDB
-        
-        npc = CampaignNPCDB.get_npc(db, npc_id)
-        if not npc or npc.campaign_id != campaign_id:
-            raise HTTPException(status_code=404, detail="NPC not found")
-        
-        success = CampaignNPCDB.deactivate_npc(db, npc_id)
-        if not success:
-            raise HTTPException(status_code=500, detail="Failed to remove NPC")
-        
-        return {"message": "NPC removed from campaign", "npc_id": npc_id}
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to remove NPC: {str(e)}")
-
-# =========================
-# MONSTER MANAGEMENT ENDPOINTS
-# =========================
-
-@app.post("/api/v2/campaigns/{campaign_id}/monsters", response_model=ContentResponse, tags=["campaign-content"])
-async def add_monster_to_campaign(
-    campaign_id: str, 
-    request: CampaignMonsterRequest, 
-    db: Session = Depends(get_db)
-):
-    """Add a monster to a campaign."""
-    campaign = CampaignDB.get_campaign(db, campaign_id)
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-    
-    try:
-        from src.models.database_models import CampaignMonsterDB
-        
-        monster_data = request.dict()
-        monster_data["campaign_id"] = campaign_id
-        
-        db_monster = CampaignMonsterDB.create_monster(db, monster_data)
-        
-        return ContentResponse(
-            id=db_monster.id,
-            campaign_id=campaign_id,
-            content_type="monster",
-            name=db_monster.name,
-            created_at=db_monster.created_at.isoformat(),
-            updated_at=db_monster.updated_at.isoformat(),
-            is_active=db_monster.is_active
-        )
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to add monster: {str(e)}")
-
-@app.get("/api/v2/campaigns/{campaign_id}/monsters", response_model=List[ContentResponse], tags=["campaign-content"])
-async def list_campaign_monsters(
-    campaign_id: str, 
-    monster_type: Optional[str] = Query(None),
-    cr_min: Optional[float] = Query(None),
-    cr_max: Optional[float] = Query(None),
-    include_inactive: bool = Query(False),
-    db: Session = Depends(get_db)
-):
-    """List monsters in a campaign with optional filtering."""
-    campaign = CampaignDB.get_campaign(db, campaign_id)
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-    
-    try:
-        from src.models.database_models import CampaignMonsterDB
-        
-        monsters = CampaignMonsterDB.list_monsters(db, campaign_id, monster_type, cr_min, cr_max, include_inactive)
-        
-        return [
-            ContentResponse(
-                id=monster.id,
-                campaign_id=campaign_id,
-                content_type="monster",
-                name=monster.name,
-                created_at=monster.created_at.isoformat(),
-                updated_at=monster.updated_at.isoformat(),
-                is_active=monster.is_active
-            )
-            for monster in monsters
-        ]
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list monsters: {str(e)}")
-
-@app.get("/api/v2/campaigns/{campaign_id}/monsters/{monster_id}", tags=["campaign-content"])
-async def get_campaign_monster(campaign_id: str, monster_id: str, db: Session = Depends(get_db)):
-    """Get detailed information about a specific monster."""
-    try:
-        from src.models.database_models import CampaignMonsterDB
-        
-        monster = CampaignMonsterDB.get_monster(db, monster_id)
-        if not monster or monster.campaign_id != campaign_id:
-            raise HTTPException(status_code=404, detail="Monster not found")
-        
-        return monster.to_dict()
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get monster: {str(e)}")
-
-@app.put("/api/v2/campaigns/{campaign_id}/monsters/{monster_id}", response_model=ContentResponse, tags=["campaign-content"])
-async def update_campaign_monster(
-    campaign_id: str, 
-    monster_id: str, 
-    request: CampaignMonsterRequest, 
-    db: Session = Depends(get_db)
-):
-    """Update a monster in a campaign."""
-    try:
-        from src.models.database_models import CampaignMonsterDB
-        
-        monster = CampaignMonsterDB.get_monster(db, monster_id)
-        if not monster or monster.campaign_id != campaign_id:
-            raise HTTPException(status_code=404, detail="Monster not found")
-        
-        updates = request.dict(exclude_unset=True)
-        updated_monster = CampaignMonsterDB.update_monster(db, monster_id, updates)
-        
-        return ContentResponse(
-            id=updated_monster.id,
-            campaign_id=campaign_id,
-            content_type="monster",
-            name=updated_monster.name,
-            created_at=updated_monster.created_at.isoformat(),
-            updated_at=updated_monster.updated_at.isoformat(),
-            is_active=updated_monster.is_active
-        )
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to update monster: {str(e)}")
-
-@app.delete("/api/v2/campaigns/{campaign_id}/monsters/{monster_id}", tags=["campaign-content"])
-async def remove_monster_from_campaign(campaign_id: str, monster_id: str, db: Session = Depends(get_db)):
-    """Remove (deactivate) a monster from a campaign."""
-    try:
-        from src.models.database_models import CampaignMonsterDB
-        
-        monster = CampaignMonsterDB.get_monster(db, monster_id)
-        if not monster or monster.campaign_id != campaign_id:
-            raise HTTPException(status_code=404, detail="Monster not found")
-        
-        success = CampaignMonsterDB.deactivate_monster(db, monster_id)
-        if not success:
-            raise HTTPException(status_code=500, detail="Failed to remove monster")
-        
-        return {"message": "Monster removed from campaign", "monster_id": monster_id}
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to remove monster: {str(e)}")
-
-# =========================
-# ITEM MANAGEMENT ENDPOINTS
-# =========================
-
-@app.post("/api/v2/campaigns/{campaign_id}/items", response_model=ContentResponse, tags=["campaign-content"])
+@app.post("/api/v2/campaigns/{campaign_id}/items", response_model=CampaignItemResponse, tags=["campaign-items"])
 async def add_item_to_campaign(
     campaign_id: str, 
-    request: CampaignItemRequest, 
-    db: Session = Depends(get_db)
+    request: CampaignItemLinkRequest, 
+    db: Session = Depends(get_db),
+    backend_service: BackendIntegrationService = Depends(get_backend_service)
 ):
-    """Add an item to a campaign."""
+    """Add or link an item to a campaign via backend service with graceful fallback."""
     campaign = CampaignDB.get_campaign(db, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
     
     try:
-        from src.models.database_models import CampaignItemDB
+        item_id = None
+        backend_item_data = None
+        created_via_backend = False
         
-        item_data = request.dict()
-        item_data["campaign_id"] = campaign_id
+        # Check if backend service is available
+        backend_available = await backend_service.health_check()
         
-        db_item = CampaignItemDB.create_item(db, item_data)
+        if request.create_new and request.creation_prompt:
+            if backend_available:
+                try:
+                    # Create new item via backend service
+                    creation_context = None
+                    if request.apply_campaign_themes and campaign.themes:
+                        creation_context = f"{campaign.title} - {campaign.description}"
+                        creation_context += f"\nThemes: {', '.join(campaign.themes)}"
+                    
+                    backend_result = await backend_service.create_item(
+                        request.creation_prompt,
+                        request.item_type or "other_item",
+                        creation_context
+                    )
+                    
+                    if backend_result.get("success"):
+                        # Backend created successfully, but we still need to track locally
+                        # since backend doesn't have persistent item storage
+                        backend_item_data = backend_result.get("result", {})
+                        created_via_backend = True
+                        
+                        # Generate a local ID for tracking
+                        item_id = str(uuid.uuid4())
+                    else:
+                        logger.warning(f"Backend item creation failed, falling back to local: {backend_result}")
+                        backend_available = False
+                        
+                except Exception as e:
+                    logger.warning(f"Backend item creation failed, falling back to local: {e}")
+                    backend_available = False
+            
+            if not backend_available:
+                # Fallback: Create item locally using LLM service
+                try:
+                    from src.services.llm_service import create_llm_service
+                    llm_service = create_llm_service()
+                    
+                    # Build enhanced prompt with campaign context
+                    enhanced_prompt = request.creation_prompt
+                    if request.apply_campaign_themes and campaign.themes:
+                        enhanced_prompt = f"""
+Campaign: {campaign.title}
+Description: {campaign.description}
+Themes: {', '.join(campaign.themes)}
+
+Item Request: {request.creation_prompt}
+
+Create an item that fits the campaign setting and themes.
+"""
+                    
+                    # Generate item using LLM
+                    item_content = await llm_service.generate_content(
+                        enhanced_prompt,
+                        max_tokens=400,
+                        temperature=0.8
+                    )
+                    
+                    # Structure the generated content
+                    backend_item_data = {
+                        "name": f"Generated {request.item_type or 'Item'}",
+                        "description": item_content.strip(),
+                        "item_type": request.item_type or "other_item",
+                        "source": "campaign_service_llm",
+                        "campaign_integrated": True
+                    }
+                    
+                    # Generate a local ID
+                    item_id = str(uuid.uuid4())
+                    
+                except Exception as e:
+                    raise HTTPException(status_code=500, detail=f"Failed to create item via fallback: {str(e)}")
+                        
+        elif request.existing_item_id:
+            # Link existing item - this would only work if backend service tracks items by ID
+            item_id = request.existing_item_id
+            if backend_available:
+                backend_item_data = await backend_service.get_item_by_id(item_id)
+                if not backend_item_data:
+                    logger.warning(f"Item {item_id} not found in backend, creating placeholder")
+                    backend_item_data = {
+                        "id": item_id,
+                        "name": "External Item",
+                        "description": "Item linked from external source",
+                        "source": "external_reference"
+                    }
+            else:
+                # Create a placeholder when backend is unavailable
+                backend_item_data = {
+                    "id": item_id,
+                    "name": "External Item", 
+                    "description": "Item reference (backend unavailable)",
+                    "source": "external_reference"
+                }
+        else:
+            raise HTTPException(status_code=400, detail="Must specify either create_new=true with creation_prompt or existing_item_id")
         
-        return ContentResponse(
-            id=db_item.id,
-            campaign_id=campaign_id,
-            content_type="item",
-            name=db_item.name,
-            created_at=db_item.created_at.isoformat(),
-            updated_at=db_item.updated_at.isoformat(),
-            is_active=db_item.is_active
+        # Check if item is already linked to this campaign
+        existing_link = CampaignBackendLinkDB.get_item_link(db, campaign_id, item_id)
+        if existing_link:
+            raise HTTPException(status_code=409, detail="Item already linked to this campaign")
+        
+        # Create campaign-item link
+        item_link = CampaignBackendLinkDB.link_item(
+            db, campaign_id, item_id,
+            request.location_found, request.owner_character_id, request.campaign_notes
         )
         
+        return CampaignItemResponse(
+            campaign_id=campaign_id,
+            item_id=item_id,
+            location_found=item_link.location_found,
+            owner_character_id=item_link.owner_character_id,
+            campaign_notes=item_link.campaign_notes,
+            added_to_campaign_at=item_link.added_to_campaign_at.isoformat(),
+            backend_item_data=backend_item_data
+        )
+        
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to add item: {str(e)}")
 
-@app.get("/api/v2/campaigns/{campaign_id}/items", response_model=List[ContentResponse], tags=["campaign-content"])
+@app.get("/api/v2/campaigns/{campaign_id}/items", response_model=List[CampaignItemResponse], tags=["campaign-items"])
 async def list_campaign_items(
-    campaign_id: str, 
-    item_type: Optional[str] = Query(None),
-    rarity: Optional[str] = Query(None),
-    include_inactive: bool = Query(False),
-    db: Session = Depends(get_db)
+    campaign_id: str,
+    item_type: Optional[str] = Query(None, description="Filter by item type"),
+    owner_character_id: Optional[str] = Query(None, description="Filter by owner character"),
+    db: Session = Depends(get_db),
+    backend_service: BackendIntegrationService = Depends(get_backend_service)
 ):
-    """List items in a campaign with optional filtering."""
+    """List all items linked to a campaign."""
     campaign = CampaignDB.get_campaign(db, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
     
     try:
-        from src.models.database_models import CampaignItemDB
+        item_links = CampaignBackendLinkDB.list_campaign_items(db, campaign_id)
         
-        items = CampaignItemDB.list_items(db, campaign_id, item_type, rarity, include_inactive)
+        # Check backend availability for enhanced data
+        backend_available = await backend_service.health_check()
         
-        return [
-            ContentResponse(
-                id=item.id,
+        items = []
+        for link in item_links:
+            # Filter by type if specified (would need to check backend data)
+            if item_type and backend_available:
+                # Skip if filtering and we can't check the item type
+                pass
+            
+            # Filter by owner if specified
+            if owner_character_id and link.owner_character_id != owner_character_id:
+                continue
+            
+            # Try to get enhanced item data from backend if available
+            backend_item_data = {"id": link.item_id, "name": "Unknown Item", "source": "local_reference"}
+            if backend_available:
+                try:
+                    enhanced_data = await backend_service.get_item_by_id(link.item_id)
+                    if enhanced_data:
+                        backend_item_data = enhanced_data
+                except Exception as e:
+                    logger.warning(f"Failed to get item data from backend for {link.item_id}: {e}")
+            
+            # Apply item type filter if we have the data
+            if item_type and backend_item_data.get("item_type") != item_type:
+                continue
+            
+            items.append(CampaignItemResponse(
                 campaign_id=campaign_id,
-                content_type="item",
-                name=item.name,
-                created_at=item.created_at.isoformat(),
-                updated_at=item.updated_at.isoformat(),
-                is_active=item.is_active
-            )
-            for item in items
-        ]
+                item_id=link.item_id,
+                location_found=link.location_found,
+                owner_character_id=link.owner_character_id,
+                campaign_notes=link.campaign_notes,
+                added_to_campaign_at=link.added_to_campaign_at.isoformat(),
+                backend_item_data=backend_item_data
+            ))
+        
+        return items
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list items: {str(e)}")
 
-@app.get("/api/v2/campaigns/{campaign_id}/items/{item_id}", tags=["campaign-content"])
-async def get_campaign_item(campaign_id: str, item_id: str, db: Session = Depends(get_db)):
-    """Get detailed information about a specific item."""
+@app.get("/api/v2/campaigns/{campaign_id}/items/{item_id}", response_model=CampaignItemResponse, tags=["campaign-items"])
+async def get_campaign_item(
+    campaign_id: str, 
+    item_id: str, 
+    db: Session = Depends(get_db),
+    backend_service: BackendIntegrationService = Depends(get_backend_service)
+):
+    """Get a specific item from a campaign."""
+    campaign = CampaignDB.get_campaign(db, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    
     try:
-        from src.models.database_models import CampaignItemDB
+        item_link = CampaignBackendLinkDB.get_item_link(db, campaign_id, item_id)
+        if not item_link:
+            raise HTTPException(status_code=404, detail="Item not linked to this campaign")
         
-        item = CampaignItemDB.get_item(db, item_id)
-        if not item or item.campaign_id != campaign_id:
-            raise HTTPException(status_code=404, detail="Item not found")
+        # Try to get item data from backend service
+        backend_item_data = {"id": item_id, "name": "Unknown Item", "source": "local_reference"}
+        backend_available = await backend_service.health_check()
         
-        return item.to_dict()
+        if backend_available:
+            try:
+                enhanced_data = await backend_service.get_item_by_id(item_id)
+                if enhanced_data:
+                    backend_item_data = enhanced_data
+            except Exception as e:
+                logger.warning(f"Failed to get item data from backend for {item_id}: {e}")
         
+        return CampaignItemResponse(
+            campaign_id=campaign_id,
+            item_id=item_id,
+            location_found=item_link.location_found,
+            owner_character_id=item_link.owner_character_id,
+            campaign_notes=item_link.campaign_notes,
+            added_to_campaign_at=item_link.added_to_campaign_at.isoformat(),
+            backend_item_data=backend_item_data
+        )
+        
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get item: {str(e)}")
 
-@app.put("/api/v2/campaigns/{campaign_id}/items/{item_id}", response_model=ContentResponse, tags=["campaign-content"])
+@app.put("/api/v2/campaigns/{campaign_id}/items/{item_id}", response_model=CampaignItemResponse, tags=["campaign-items"])
 async def update_campaign_item(
     campaign_id: str, 
     item_id: str, 
-    request: CampaignItemRequest, 
-    db: Session = Depends(get_db)
+    request: CampaignItemUpdateRequest, 
+    db: Session = Depends(get_db),
+    backend_service: BackendIntegrationService = Depends(get_backend_service)
 ):
-    """Update an item in a campaign."""
+    """Update campaign-specific item information."""
+    campaign = CampaignDB.get_campaign(db, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    
     try:
-        from src.models.database_models import CampaignItemDB
+        item_link = CampaignBackendLinkDB.get_item_link(db, campaign_id, item_id)
+        if not item_link:
+            raise HTTPException(status_code=404, detail="Item not linked to this campaign")
         
-        item = CampaignItemDB.get_item(db, item_id)
-        if not item or item.campaign_id != campaign_id:
-            raise HTTPException(status_code=404, detail="Item not found")
+        # Update campaign-specific data (not the core item data)
+        if request.location_found is not None:
+            item_link.location_found = request.location_found
+        if request.owner_character_id is not None:
+            item_link.owner_character_id = request.owner_character_id
+        if request.campaign_notes is not None:
+            item_link.campaign_notes = request.campaign_notes
         
-        updates = request.dict(exclude_unset=True)
-        updated_item = CampaignItemDB.update_item(db, item_id, updates)
+        db.commit()
+        db.refresh(item_link)
         
-        return ContentResponse(
-            id=updated_item.id,
+        # Try to get updated item data from backend service
+        backend_item_data = {"id": item_id, "name": "Unknown Item", "source": "local_reference"}
+        backend_available = await backend_service.health_check()
+        
+        if backend_available:
+            try:
+                enhanced_data = await backend_service.get_item_by_id(item_id)
+                if enhanced_data:
+                    backend_item_data = enhanced_data
+            except Exception as e:
+                logger.warning(f"Failed to get item data from backend for {item_id}: {e}")
+        
+        return CampaignItemResponse(
             campaign_id=campaign_id,
-            content_type="item",
-            name=updated_item.name,
-            created_at=updated_item.created_at.isoformat(),
-            updated_at=updated_item.updated_at.isoformat(),
-            is_active=updated_item.is_active
+            item_id=item_id,
+            location_found=item_link.location_found,
+            owner_character_id=item_link.owner_character_id,
+            campaign_notes=item_link.campaign_notes,
+            added_to_campaign_at=item_link.added_to_campaign_at.isoformat(),
+            backend_item_data=backend_item_data
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update item: {str(e)}")
 
-@app.delete("/api/v2/campaigns/{campaign_id}/items/{item_id}", tags=["campaign-content"])
-async def remove_item_from_campaign(campaign_id: str, item_id: str, db: Session = Depends(get_db)):
-    """Remove (deactivate) an item from a campaign."""
+@app.delete("/api/v2/campaigns/{campaign_id}/items/{item_id}", tags=["campaign-items"])
+async def remove_item_from_campaign(
+    campaign_id: str, 
+    item_id: str, 
+    db: Session = Depends(get_db),
+    backend_service: BackendIntegrationService = Depends(get_backend_service)
+):
+    """Remove an item link from a campaign (does not delete the item from backend)."""
+    campaign = CampaignDB.get_campaign(db, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    
     try:
-        from src.models.database_models import CampaignItemDB
+        item_link = CampaignBackendLinkDB.get_item_link(db, campaign_id, item_id)
+        if not item_link:
+            raise HTTPException(status_code=404, detail="Item not linked to this campaign")
         
-        item = CampaignItemDB.get_item(db, item_id)
-        if not item or item.campaign_id != campaign_id:
-            raise HTTPException(status_code=404, detail="Item not found")
+        # Get item name for response if possible
+        item_name = "Unknown Item"
+        backend_available = await backend_service.health_check()
         
-        success = CampaignItemDB.deactivate_item(db, item_id)
-        if not success:
-            raise HTTPException(status_code=500, detail="Failed to remove item")
+        if backend_available:
+            try:
+                backend_item_data = await backend_service.get_item_by_id(item_id)
+                if backend_item_data:
+                    item_name = backend_item_data.get("name", item_name)
+            except Exception as e:
+                logger.warning(f"Failed to get item name from backend for {item_id}: {e}")
         
-        return {"message": "Item removed from campaign", "item_id": item_id}
+        # Remove link (item may remain in backend service if it was created there)
+        CampaignBackendLinkDB.unlink_item(db, campaign_id, item_id)
         
+        return {
+            "message": "Item unlinked from campaign",
+            "item_id": item_id,
+            "item_name": item_name,
+            "note": "Item may still exist in backend service if created there"
+        }
+        
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to remove item: {str(e)}")
 
-# =========================
-# CHAPTER MAP MANAGEMENT ENDPOINTS
-# =========================
-
-@app.post("/api/v2/campaigns/{campaign_id}/chapters/{chapter_id}/maps", response_model=ChapterMapResponse, tags=["campaign-content"])
-async def add_map_to_chapter(
-    campaign_id: str, 
-    chapter_id: str, 
-    request: ChapterMapRequest, 
-    db: Session = Depends(get_db)
-):
-    """Add an encounter map to a chapter."""
-    campaign = CampaignDB.get_campaign(db, campaign_id)
-    chapter = CampaignDB.get_chapter(db, chapter_id)
-    
-    if not campaign or not chapter or chapter.campaign_id != campaign_id:
-        raise HTTPException(status_code=404, detail="Campaign or chapter not found")
-    
-    try:
-        from src.models.database_models import ChapterMapDB
-        
-        map_data = request.dict()
-        map_data["campaign_id"] = campaign_id
-        map_data["chapter_id"] = chapter_id
-        
-        db_map = ChapterMapDB.create_map(db, map_data)
-        
-        return ChapterMapResponse(
-            id=db_map.id,
-            campaign_id=campaign_id,
-            chapter_id=chapter_id,
-            map_name=db_map.map_name,
-            map_type=db_map.map_type,
-            description=db_map.description,
-            map_url=db_map.map_url,
-            created_at=db_map.created_at.isoformat(),
-            updated_at=db_map.updated_at.isoformat(),
-            is_active=db_map.is_active
-        )
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to add map: {str(e)}")
-
-@app.get("/api/v2/campaigns/{campaign_id}/chapters/{chapter_id}/maps", response_model=List[ChapterMapResponse], tags=["campaign-content"])
-async def list_chapter_maps(
-    campaign_id: str, 
-    chapter_id: str, 
-    map_type: Optional[str] = Query(None),
-    include_inactive: bool = Query(False),
-    db: Session = Depends(get_db)
-):
-    """List maps for a chapter."""
-    campaign = CampaignDB.get_campaign(db, campaign_id)
-    chapter = CampaignDB.get_chapter(db, chapter_id)
-    
-    if not campaign or not chapter or chapter.campaign_id != campaign_id:
-        raise HTTPException(status_code=404, detail="Campaign or chapter not found")
-    
-    try:
-        from src.models.database_models import ChapterMapDB
-        
-        maps = ChapterMapDB.list_maps(db, chapter_id, map_type, include_inactive)
-        
-        return [
-            ChapterMapResponse(
-                id=map_obj.id,
-                campaign_id=campaign_id,
-                chapter_id=chapter_id,
-                map_name=map_obj.map_name,
-                map_type=map_obj.map_type,
-                description=map_obj.description,
-                map_url=map_obj.map_url,
-                created_at=map_obj.created_at.isoformat(),
-                updated_at=map_obj.updated_at.isoformat(),
-                is_active=map_obj.is_active
-            )
-            for map_obj in maps
-        ]
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list maps: {str(e)}")
-
-@app.get("/api/v2/campaigns/{campaign_id}/chapters/{chapter_id}/maps/{map_id}", tags=["campaign-content"])
-async def get_chapter_map(campaign_id: str, chapter_id: str, map_id: str, db: Session = Depends(get_db)):
-    """Get detailed information about a specific chapter map."""
-    try:
-        from src.models.database_models import ChapterMapDB
-        
-        map_obj = ChapterMapDB.get_map(db, map_id)
-        if not map_obj or map_obj.campaign_id != campaign_id or map_obj.chapter_id != chapter_id:
-            raise HTTPException(status_code=404, detail="Map not found")
-        
-        return map_obj.to_dict()
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get map: {str(e)}")
-
-@app.put("/api/v2/campaigns/{campaign_id}/chapters/{chapter_id}/maps/{map_id}", response_model=ChapterMapResponse, tags=["campaign-content"])
-async def update_chapter_map(
-    campaign_id: str, 
-    chapter_id: str, 
-    map_id: str, 
-    request: ChapterMapRequest, 
-    db: Session = Depends(get_db)
-):
-    """Update a chapter map."""
-    try:
-        from src.models.database_models import ChapterMapDB
-        
-        map_obj = ChapterMapDB.get_map(db, map_id)
-        if not map_obj or map_obj.campaign_id != campaign_id or map_obj.chapter_id != chapter_id:
-            raise HTTPException(status_code=404, detail="Map not found")
-        
-        updates = request.dict(exclude_unset=True)
-        updated_map = ChapterMapDB.update_map(db, map_id, updates)
-        
-        return ChapterMapResponse(
-            id=updated_map.id,
-            campaign_id=campaign_id,
-            chapter_id=chapter_id,
-            map_name=updated_map.map_name,
-            map_type=updated_map.map_type,
-            description=updated_map.description,
-            map_url=updated_map.map_url,
-            created_at=updated_map.created_at.isoformat(),
-            updated_at=updated_map.updated_at.isoformat(),
-            is_active=updated_map.is_active
-        )
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to update map: {str(e)}")
-
-@app.delete("/api/v2/campaigns/{campaign_id}/chapters/{chapter_id}/maps/{map_id}", tags=["campaign-content"])
-async def remove_map_from_chapter(campaign_id: str, chapter_id: str, map_id: str, db: Session = Depends(get_db)):
-    """Remove (deactivate) a map from a chapter."""
-    try:
-        from src.models.database_models import ChapterMapDB
-        
-        map_obj = ChapterMapDB.get_map(db, map_id)
-        if not map_obj or map_obj.campaign_id != campaign_id or map_obj.chapter_id != chapter_id:
-            raise HTTPException(status_code=404, detail="Map not found")
-        
-        success = ChapterMapDB.deactivate_map(db, map_id)
-        if not success:
-            raise HTTPException(status_code=500, detail="Failed to remove map")
-        
-        return {"message": "Map removed from chapter", "map_id": map_id}
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to remove map: {str(e)}")
-
-# =========================
-# BATCH CONTENT MANAGEMENT
-# =========================
-
-@app.get("/api/v2/campaigns/{campaign_id}/content-summary", tags=["campaign-content"])
-async def get_campaign_content_summary(campaign_id: str, db: Session = Depends(get_db)):
-    """Get a summary of all content in a campaign."""
-    campaign = CampaignDB.get_campaign(db, campaign_id)
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-    
-    try:
-        from src.models.database_models import (
-            CampaignCharacterDB, CampaignNPCDB, CampaignMonsterDB, 
-            CampaignItemDB, ChapterMapDB
-        )
-        
-        summary = {
-            "campaign_id": campaign_id,
-            "campaign_title": campaign.title,
-            "content_counts": {
-                "characters": len(CampaignCharacterDB.list_characters(db, campaign_id)),
-                "npcs": len(CampaignNPCDB.list_npcs(db, campaign_id)),
-                "monsters": len(CampaignMonsterDB.list_monsters(db, campaign_id)),
-                "items": len(CampaignItemDB.list_items(db, campaign_id)),
-                "chapters": len(CampaignDB.list_chapters(db, campaign_id)),
-                "maps": len(ChapterMapDB.list_all_campaign_maps(db, campaign_id))
-            },
-            "content_by_type": {
-                "active_characters": len(CampaignCharacterDB.list_characters(db, campaign_id, include_inactive=False)),
-                "active_npcs": len(CampaignNPCDB.list_npcs(db, campaign_id, include_inactive=False)),
-                "active_monsters": len(CampaignMonsterDB.list_monsters(db, campaign_id, include_inactive=False)),
-                "active_items": len(CampaignItemDB.list_items(db, campaign_id, include_inactive=False)),
-                "active_maps": len(ChapterMapDB.list_all_campaign_maps(db, campaign_id, include_inactive=False))
-            }
-        }
-        
-        return summary
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get content summary: {str(e)}")
-
-@app.post("/api/v2/campaigns/{campaign_id}/content/bulk-deactivate", tags=["campaign-content"])
-async def bulk_deactivate_content(
+@app.post("/api/v2/campaigns/{campaign_id}/items/{item_id}/transfer", response_model=CampaignItemResponse, tags=["campaign-items"])
+async def transfer_item_to_character(
     campaign_id: str,
-    content_ids: List[str] = Query(..., description="List of content IDs to deactivate"),
-    content_type: str = Query(..., description="Type of content (character, npc, monster, item, map)"),
-    db: Session = Depends(get_db)
+    item_id: str,
+    new_owner_id: Optional[str] = Query(None, description="Character ID to transfer to (null to unassign)"),
+    db: Session = Depends(get_db),
+    backend_service: BackendIntegrationService = Depends(get_backend_service)
 ):
-    """Bulk deactivate multiple pieces of content."""
+    """Transfer an item to a different character or unassign it."""
     campaign = CampaignDB.get_campaign(db, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
     
     try:
-        deactivated_count = 0
-        failed_ids = []
+        item_link = CampaignBackendLinkDB.get_item_link(db, campaign_id, item_id)
+        if not item_link:
+            raise HTTPException(status_code=404, detail="Item not linked to this campaign")
         
-        for content_id in content_ids:
+        # Validate new owner if specified
+        if new_owner_id:
+            new_owner_link = CampaignBackendLinkDB.get_character_link(db, campaign_id, new_owner_id)
+            if not new_owner_link:
+                raise HTTPException(status_code=400, detail="New owner character not found in this campaign")
+        
+        # Update item ownership
+        item_link.owner_character_id = new_owner_id
+        db.commit()
+        db.refresh(item_link)
+        
+        # Try to get item data from backend service
+        backend_item_data = {"id": item_id, "name": "Unknown Item", "source": "local_reference"}
+        backend_available = await backend_service.health_check()
+        
+        if backend_available:
             try:
-                if content_type == "character":
-                    from src.models.database_models import CampaignCharacterDB
-                    success = CampaignCharacterDB.deactivate_character(db, content_id)
-                elif content_type == "npc":
-                    from src.models.database_models import CampaignNPCDB
-                    success = CampaignNPCDB.deactivate_npc(db, content_id)
-                elif content_type == "monster":
-                    from src.models.database_models import CampaignMonsterDB
-                    success = CampaignMonsterDB.deactivate_monster(db, content_id)
-                elif content_type == "item":
-                    from src.models.database_models import CampaignItemDB
-                    success = CampaignItemDB.deactivate_item(db, content_id)
-                elif content_type == "map":
-                    from src.models.database_models import ChapterMapDB
-                    success = ChapterMapDB.deactivate_map(db, content_id)
-                else:
-                    failed_ids.append(content_id)
-                    continue
-                
-                if success:
-                    deactivated_count += 1
-                else:
-                    failed_ids.append(content_id)
-                    
-            except Exception:
-                failed_ids.append(content_id)
+                enhanced_data = await backend_service.get_item_by_id(item_id)
+                if enhanced_data:
+                    backend_item_data = enhanced_data
+            except Exception as e:
+                logger.warning(f"Failed to get item data from backend for {item_id}: {e}")
         
-        return {
-            "message": f"Bulk deactivation completed",
-            "campaign_id": campaign_id,
-            "content_type": content_type,
-            "requested_count": len(content_ids),
-            "deactivated_count": deactivated_count,
-            "failed_count": len(failed_ids),
-            "failed_ids": failed_ids
-        }
+        return CampaignItemResponse(
+            campaign_id=campaign_id,
+            item_id=item_id,
+            location_found=item_link.location_found,
+            owner_character_id=item_link.owner_character_id,
+            campaign_notes=item_link.campaign_notes,
+            added_to_campaign_at=item_link.added_to_campaign_at.isoformat(),
+            backend_item_data=backend_item_data
+        )
         
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Bulk deactivation failed: {str(e)}")
-
-# Import required libraries at the top
-import logging
-import time
-import json
-import httpx
+        raise HTTPException(status_code=500, detail=f"Failed to transfer item: {str(e)}")

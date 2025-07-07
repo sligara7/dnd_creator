@@ -1,6 +1,351 @@
 # =========================================================================
-# RETHEME CHARACTERS ENDPOINT (BULK, BRANCHING)
+# DIRECT CHARACTER BACKSTORY EDIT ENDPOINT
 # =========================================================================
+@app.post("/api/v2/characters/{character_id}/backstory/direct-edit", response_model=CharacterResponse, tags=["characters", "direct-edit"])
+async def direct_edit_character_backstory(
+    character_id: str = Path(..., description="ID of the character to edit backstory."),
+    edit: DirectEditRequest = Body(..., description="New backstory value (use 'backstory' key in updates)."),
+    db = Depends(get_db)
+):
+    """
+    Directly edit a character's backstory field (DM/user override). Sets user_modified flag.
+    """
+    character = CharacterDB.get_character(db, character_id)
+    if not character:
+        raise HTTPException(status_code=404, detail="Character not found")
+    updates = edit.updates or {}
+    if "backstory" not in updates:
+        raise HTTPException(status_code=400, detail="'backstory' field must be provided in updates.")
+    from datetime import datetime
+    try:
+        character.backstory = updates["backstory"]
+        character.user_modified = True
+        # Add audit trail entry
+        if not hasattr(character, "audit_trail") or character.audit_trail is None:
+            character.audit_trail = []
+        audit_entry = {
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "fields_changed": ["backstory"],
+            "notes": edit.notes or None,
+            "username": "dev"
+        }
+        character.audit_trail.append(audit_entry)
+        db.commit()
+        db.refresh(character)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update backstory: {e}")
+    return CharacterResponse(
+        id=character.id,
+        name=character.name,
+        species=character.species,
+        background=character.background,
+        level=character.level,
+        character_classes=character.character_classes,
+        backstory=character.backstory,
+        created_at=character.created_at.isoformat(),
+        user_modified=getattr(character, 'user_modified', True)
+    )
+# =========================================================================
+# DIRECT JOURNAL ENTRY EDIT ENDPOINT
+# =========================================================================
+@app.post("/api/v2/characters/{character_id}/journal/{entry_id}/direct-edit", tags=["journal", "direct-edit"])
+async def direct_edit_journal_entry(
+    character_id: str = Path(..., description="ID of the character."),
+    entry_id: str = Path(..., description="ID of the journal entry to edit directly."),
+    edit: DirectEditRequest = Body(..., description="Fields and values to update."),
+    db = Depends(get_db)
+):
+    """
+    Directly edit a journal entry's fields (DM/user override). Sets user_modified flag.
+    """
+    # Ensure character exists
+    character = CharacterDB.get_character(db, character_id)
+    if not character:
+        raise HTTPException(status_code=404, detail="Character not found")
+    # Ensure journal entry exists
+    entry = CharacterDB.get_journal_entry(db, character_id, entry_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Journal entry not found")
+    updates = edit.updates or {}
+    errors = []
+    # Only allow updating fields that exist in the entry
+    for field, value in updates.items():
+        if field in entry:
+            try:
+                entry[field] = value
+            except Exception as e:
+                errors.append(f"Failed to update '{field}': {e}")
+        else:
+            errors.append(f"Field '{field}' does not exist on journal entry.")
+    if errors:
+        raise HTTPException(status_code=400, detail={"errors": errors})
+    from datetime import datetime
+    # Set user_modified flag and audit trail
+    entry["user_modified"] = True
+    audit_entry = {
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "fields_changed": list(updates.keys()),
+        "notes": edit.notes or None,
+        "username": "dev"
+    }
+    if "audit_trail" not in entry:
+        entry["audit_trail"] = []
+    entry["audit_trail"].append(audit_entry)
+    # Save the updated entry
+    updated_entry = CharacterDB.update_journal_entry(db, character_id, entry_id, entry)
+    if not updated_entry:
+        raise HTTPException(status_code=500, detail="Failed to save updated journal entry")
+    return JournalEntryResponse(**updated_entry)
+# =========================================================================
+# DIRECT ITEM EDIT ENDPOINT
+# =========================================================================
+from src.models.database_models import UnifiedItem
+
+@app.post("/api/v2/items/{item_id}/direct-edit", tags=["items", "direct-edit"])
+async def direct_edit_item(
+    item_id: str = Path(..., description="ID of the item to edit directly."),
+    edit: DirectEditRequest = Body(..., description="Fields and values to update."),
+    db: Session = Depends(get_db)
+):
+    """
+    Directly edit an item's fields (DM/user override). Sets user_modified flag in content_data.
+    """
+    item = db.query(UnifiedItem).filter(UnifiedItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    updates = edit.updates or {}
+    errors = []
+    # Only allow updating fields that exist in content_data
+    for field, value in updates.items():
+        if field in item.content_data:
+            try:
+                item.content_data[field] = value
+            except Exception as e:
+                errors.append(f"Failed to update '{field}': {e}")
+        else:
+            errors.append(f"Field '{field}' does not exist on item.")
+    if errors:
+        raise HTTPException(status_code=400, detail={"errors": errors})
+    # Set user_modified flag and audit trail
+    from datetime import datetime
+    item.content_data["user_modified"] = True
+    # Add audit trail entry with username
+    audit_entry = {
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "fields_changed": list(updates.keys()),
+        "notes": edit.notes or None,
+        "username": "dev"
+    }
+    if "audit_trail" not in item.content_data:
+        item.content_data["audit_trail"] = []
+    item.content_data["audit_trail"].append(audit_entry)
+    db.commit()
+    db.refresh(item)
+    # Return updated content_data as response
+    return {
+        "id": str(item.id),
+        "name": item.name,
+        "item_type": item.item_type,
+        "content_data": item.content_data,
+        "short_description": item.short_description,
+        "rarity": item.rarity,
+        "requires_attunement": item.requires_attunement,
+        "created_by": item.created_by,
+        "created_at": item.created_at.isoformat() if item.created_at else None,
+        "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+        "is_active": item.is_active,
+        "is_public": item.is_public,
+        "user_modified": item.content_data.get("user_modified", False)
+    }
+# =========================================================================
+# DIRECT MONSTER EDIT ENDPOINT
+# =========================================================================
+@app.post("/api/v2/monsters/{monster_id}/direct-edit", tags=["monsters", "direct-edit"])
+async def direct_edit_monster(
+    monster_id: str = Path(..., description="ID of the monster to edit directly."),
+    edit: DirectEditRequest = Body(..., description="Fields and values to update."),
+    db: Session = Depends(get_db)
+):
+    """
+    Directly edit a monster's fields (DM/user override). Sets user_modified flag in content_data.
+    """
+    monster = db.query(CustomContent).filter(CustomContent.id == monster_id, CustomContent.content_type == "creature").first()
+    if not monster:
+        raise HTTPException(status_code=404, detail="Monster not found")
+    updates = edit.updates or {}
+    errors = []
+    # Only allow updating fields that exist in content_data
+    for field, value in updates.items():
+        if field in monster.content_data:
+            try:
+                monster.content_data[field] = value
+            except Exception as e:
+                errors.append(f"Failed to update '{field}': {e}")
+        else:
+            errors.append(f"Field '{field}' does not exist on monster.")
+    if errors:
+        raise HTTPException(status_code=400, detail={"errors": errors})
+    # Set user_modified flag and audit trail
+    from datetime import datetime
+    monster.content_data["user_modified"] = True
+    audit_entry = {
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "fields_changed": list(updates.keys()),
+        "notes": edit.notes or None,
+        "username": "dev"
+    }
+    if "audit_trail" not in monster.content_data:
+        monster.content_data["audit_trail"] = []
+    monster.content_data["audit_trail"].append(audit_entry)
+    db.commit()
+    db.refresh(monster)
+    # Return updated content_data as response
+    return {
+        "id": monster.id,
+        "name": monster.name,
+        "content_type": monster.content_type,
+        "content_data": monster.content_data,
+        "description": monster.description,
+        "created_by": monster.created_by,
+        "created_at": monster.created_at.isoformat() if monster.created_at else None,
+        "updated_at": monster.updated_at.isoformat() if monster.updated_at else None,
+        "is_active": monster.is_active,
+        "is_public": monster.is_public,
+        "user_modified": monster.content_data.get("user_modified", False)
+    }
+# ============================================================================
+# DIRECT CHARACTER EDIT ENDPOINT (SKELETON)
+# ============================================================================
+from fastapi import Path
+
+@app.post("/api/v2/characters/{character_id}/direct-edit", response_model=CharacterResponse, tags=["characters", "direct-edit"])
+async def direct_edit_character(
+    character_id: str = Path(..., description="ID of the character to edit directly."),
+    edit: DirectEditRequest = Body(..., description="Fields and values to update."),
+    db = Depends(get_db)
+):
+    """
+    Directly edit a character's fields (DM/user override). Sets user_modified flag.
+    Step 3.2: Load and validate the character from the database.
+    """
+    # Load character from database
+    character = CharacterDB.get_character(db, character_id)
+    if not character:
+        raise HTTPException(status_code=404, detail="Character not found")
+    # Task 3.3: Apply updates from edit.updates to the character object, with type validation and error handling
+    updates = edit.updates or {}
+    errors = []
+    # Only allow updating fields that exist on the character object
+    for field, value in updates.items():
+        if hasattr(character, field):
+            try:
+                # Optionally: add type validation here if needed
+                setattr(character, field, value)
+            except Exception as e:
+                errors.append(f"Failed to update '{field}': {e}")
+        else:
+            errors.append(f"Field '{field}' does not exist on character.")
+    if errors:
+        raise HTTPException(status_code=400, detail={"errors": errors})
+    # Task 3.4: Set user_modified flag to True and add audit trail
+    from datetime import datetime
+    if hasattr(character, 'user_modified'):
+        character.user_modified = True
+    else:
+        try:
+            setattr(character, 'user_modified', True)
+        except Exception:
+            pass
+    # Add audit trail entry
+    if not hasattr(character, "audit_trail") or character.audit_trail is None:
+        character.audit_trail = []
+    audit_entry = {
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "fields_changed": list(updates.keys()),
+        "notes": edit.notes or None,
+        "username": "dev"
+    }
+    character.audit_trail.append(audit_entry)
+    # Task 3.5: Save the updated character back to the database
+    update_fields = {field: getattr(character, field) for field in updates.keys() if hasattr(character, field)}
+    update_fields['user_modified'] = True
+    update_fields['audit_trail'] = character.audit_trail
+    updated_character = CharacterDB.update_character(db, character_id, update_fields)
+    if not updated_character:
+        raise HTTPException(status_code=500, detail="Failed to save updated character")
+    # Task 3.6: Return the updated character as a CharacterResponse
+    return CharacterResponse(
+        id=updated_character.id,
+        name=updated_character.name,
+        species=updated_character.species,
+        background=updated_character.background,
+        level=updated_character.level,
+        character_classes=updated_character.character_classes,
+        backstory=updated_character.backstory,
+        created_at=updated_character.created_at.isoformat(),
+        user_modified=getattr(updated_character, 'user_modified', True)
+    )
+from sqlalchemy.orm import Session
+from src.models.database_models import CustomContent
+from fastapi import HTTPException
+
+# =========================================================================
+# DIRECT NPC EDIT ENDPOINT
+# =========================================================================
+@app.post("/api/v2/npcs/{npc_id}/direct-edit", tags=["npcs", "direct-edit"])
+async def direct_edit_npc(
+    npc_id: str = Path(..., description="ID of the NPC to edit directly."),
+    edit: DirectEditRequest = Body(..., description="Fields and values to update."),
+    db: Session = Depends(get_db)
+):
+    """
+    Directly edit an NPC's fields (DM/user override). Sets user_modified flag in content_data.
+    """
+    npc = db.query(CustomContent).filter(CustomContent.id == npc_id, CustomContent.content_type == "npc").first()
+    if not npc:
+        raise HTTPException(status_code=404, detail="NPC not found")
+    updates = edit.updates or {}
+    errors = []
+    # Only allow updating fields that exist in content_data
+    for field, value in updates.items():
+        if field in npc.content_data:
+            try:
+                npc.content_data[field] = value
+            except Exception as e:
+                errors.append(f"Failed to update '{field}': {e}")
+        else:
+            errors.append(f"Field '{field}' does not exist on NPC.")
+    if errors:
+        raise HTTPException(status_code=400, detail={"errors": errors})
+    # Set user_modified flag and audit trail
+    from datetime import datetime
+    npc.content_data["user_modified"] = True
+    audit_entry = {
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "fields_changed": list(updates.keys()),
+        "notes": edit.notes or None,
+        "username": "dev"
+    }
+    if "audit_trail" not in npc.content_data:
+        npc.content_data["audit_trail"] = []
+    npc.content_data["audit_trail"].append(audit_entry)
+    db.commit()
+    db.refresh(npc)
+    # Return updated content_data as response
+    return {
+        "id": npc.id,
+        "name": npc.name,
+        "content_type": npc.content_type,
+        "content_data": npc.content_data,
+        "description": npc.description,
+        "created_by": npc.created_by,
+        "created_at": npc.created_at.isoformat() if npc.created_at else None,
+        "updated_at": npc.updated_at.isoformat() if npc.updated_at else None,
+        "is_active": npc.is_active,
+        "is_public": npc.is_public,
+        "user_modified": npc.content_data.get("user_modified", False)
+    }
+
 from pydantic import BaseModel
 from fastapi import Body
 from typing import List, Dict, Any, Optional

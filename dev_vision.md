@@ -488,5 +488,36 @@ podman run -d \
 
 # added theme inputs to creations process
 
-# TODO
-Create endpoint to directly edit character, backstory, journal, NPCs, monsters, and items - this may need a walkthrough process so that text is entered where appropriate, integers, booleans, etc are entered properly.  Somehow need to flag or mark that it has been "user modified" so that the DM knows.
+# ✅ DIRECT EDIT ENDPOINTS (Phase 2, Task 4-10)
+All major D&D content types now support direct manual override via REST API endpoints:
+
+- `/api/v2/characters/{character_id}/direct-edit` — Directly edit any character field. Sets `user_modified` flag and appends to audit trail (who/when/what/notes/username).
+- `/api/v2/characters/{character_id}/backstory/direct-edit` — Directly edit just the backstory field. Sets `user_modified` and audit trail.
+- `/api/v2/characters/{character_id}/journal/{entry_id}/direct-edit` — Directly edit any journal entry field. Sets `user_modified` and audit trail.
+- `/api/v2/npcs/{npc_id}/direct-edit` — Directly edit any NPC field. Sets `user_modified` and audit trail.
+- `/api/v2/monsters/{monster_id}/direct-edit` — Directly edit any monster field. Sets `user_modified` and audit trail.
+- `/api/v2/items/{item_id}/direct-edit` — Directly edit any item field. Sets `user_modified` and audit trail.
+
+**Type Handling:**
+- Only allows editing fields that exist on the object (with type validation and error handling).
+- All endpoints accept a flexible `DirectEditRequest` (fields to update, plus optional notes for audit trail).
+
+**Audit Trail:**
+- Every direct edit appends an entry to an audit trail (list of dicts) with:
+  - `timestamp` (UTC ISO8601)
+  - `fields_changed` (list of updated fields)
+  - `notes` (optional, from request)
+  - `username` (currently always "dev"; will use real username when auth is integrated)
+
+**User Modified Flag:**
+- All direct edits set a `user_modified` flag (bool) on the object or in its data.
+- All relevant response models include `user_modified` (OpenAPI docs updated).
+
+**OpenAPI Documentation:**
+- All endpoints and models are documented in FastAPI/OpenAPI schema.
+- `user_modified` and audit trail fields are visible in responses where appropriate.
+
+**See also:**
+- `backend/app.py` for endpoint logic and models
+- `DirectEditRequest` model for flexible edit payloads
+- `audit_trail` logic for all direct-edit endpoints

@@ -1,40 +1,20 @@
-# =========================================================================
-# HELPER: CREATE THEME BRANCH FOR CHARACTER
-# =========================================================================
-@staticmethod
-def create_theme_branch_for_character(db: Session, character_id: str, theme: str, branch_name: str = None, description: str = None, parent_branch: str = "main"):
-    """
-    Create a new branch for a character with a theme label.
-    Looks up the character's repository, then creates a branch with the given theme.
-    Returns the new CharacterBranch object.
-    """
-    # Get the character and its repository
-    character = CharacterDB.get_character(db, character_id)
-    if not character:
-        raise ValueError(f"Character not found: {character_id}")
-    repository_id = getattr(character, 'repository_id', None)
-    if not repository_id:
-        raise ValueError(f"Character {character_id} does not have a repository_id")
-
-    # Compose branch name and description
-    branch_name = branch_name or f"theme-{theme.replace(' ', '_').lower()}"
-    description = description or f"Rethemed for campaign theme: {theme}"
-
-    # Create the branch using the existing method
-    branch = CharacterDB.create_branch(
-        db,
-        repository_id=repository_id,
-        branch_name=branch_name,
-        description=description,
-        parent_branch=parent_branch
-    )
-    return branch
 """
-Database models for the D&D Character Creator with Git-like versioning system.
+Database models and operations for D&D Character Creator.
 """
+from sqlalchemy import Column, String, Integer, DateTime, Boolean, Text, JSON, ForeignKey, func, create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session, relationship
 from datetime import datetime
 from typing import Dict, Any, Optional, List
+import uuid
+import json
 import hashlib
+
+Base = declarative_base()
+
+# =========================================================================
+# DATABASE MODELS
+# =========================================================================
 import uuid
 import logging
 from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean, JSON, ForeignKey, create_engine
@@ -1893,6 +1873,7 @@ class CharacterRepositoryManager:
             branch_point_hash = parent.head_commit_hash
         
         # Create new branch
+
         branch = CharacterBranch(
             id=str(uuid.uuid4()),  # Generate UUID for new branch
             repository_id=repository_id,
@@ -2298,191 +2279,35 @@ class CharacterVersioningAPI:
             commit_type="level_up",
             milestone_name=f"Level {current_level}"
         )
+    
+    @staticmethod
+    def create_theme_branch_for_character(db: Session, character_id: str, theme: str, branch_name: str = None, description: str = None, parent_branch: str = "main"):
+        """
+        Create a new branch for a character with a theme label.
+        Looks up the character's repository, then creates a branch with the given theme.
+        Returns the new CharacterBranch object.
+        """
+        # Get the character and its repository
+        character = CharacterDB.get_character(db, character_id)
+        if not character:
+            raise ValueError(f"Character not found: {character_id}")
+        repository_id = getattr(character, 'repository_id', None)
+        if not repository_id:
+            raise ValueError(f"Character {character_id} does not have a repository_id")
 
+        # Compose branch name and description
+        branch_name = branch_name or f"theme-{theme.replace(' ', '_').lower()}"
+        description = description or f"Rethemed for campaign theme: {theme}"
 
-# ============================================================================
-# USAGE EXAMPLES AND DOCUMENTATION
-# ============================================================================
+        # Create the branch using the existing method
+        branch = CharacterDB.create_branch(
+            db,
+            repository_id=repository_id,
+            branch_name=branch_name,
+            description=description,
+            parent_branch=parent_branch
+        )
+        return branch
 
-"""
-CHARACTER VERSIONING SYSTEM USAGE EXAMPLES:
-
-1. CREATE A NEW CHARACTER WITH VERSIONING:
-   ```python
-   # Create character data
-   character_data = {
-       "name": "Gandalf the Grey",
-       "species": "Wizard (Maiar)",
-       "level": 1,
-       "character_classes": {"Wizard": 1},
-       "abilities": {"strength": 10, "intelligence": 18, ...}
-   }
-   
-   # Create repository with initial commit
-   repo = CharacterRepositoryManager.create_repository(
-       db=db,
-       name="Gandalf the Grey",
-       initial_character_data=character_data,
-       player_name="Tolkien",
-       description="The wise wizard of Middle-earth"
-   )
-   ```
-
-2. LEVEL UP CHARACTER:
-   ```python
-   # Update character data for level 2
-   level_2_data = character_data.copy()
-   level_2_data["level"] = 2
-   level_2_data["character_classes"] = {"Wizard": 2}
-   
-   # Commit the level up
-   commit = CharacterRepositoryManager.commit_character_change(
-       db=db,
-       repository_id=repo.id,
-       branch_name="main",
-       character_data=level_2_data,
-       commit_message="Level 2: Gained Arcane Recovery",
-       commit_type="level_up",
-       milestone_name="First Level Up"
-   )
-   ```
-
-3. CREATE ALTERNATE CHARACTER PATH:
-   ```python
-   # Create branch for multiclass path at level 3
-   multiclass_branch = CharacterRepositoryManager.create_branch(
-       db=db,
-       repository_id=repo.id,
-       new_branch_name="multiclass-fighter",
-       source_commit_hash=level_2_commit.commit_hash,
-       description="Exploring multiclass with Fighter"
-   )
-   
-   # Commit multiclass level 3
-   multiclass_data = level_2_data.copy()
-   multiclass_data["level"] = 3
-   multiclass_data["character_classes"] = {"Wizard": 2, "Fighter": 1}
-   
-   multiclass_commit = CharacterRepositoryManager.commit_character_change(
-       db=db,
-       repository_id=repo.id,
-       branch_name="multiclass-fighter",
-       character_data=multiclass_data,
-       commit_message="Level 3: Multiclassed into Fighter",
-       commit_type="level_up"
-   )
-   ```
-
-4. GET CHARACTER TIMELINE FOR FRONTEND:
-   ```python
-   timeline = CharacterVersioningAPI.get_character_timeline_for_frontend(
-       db=db,
-       repository_id=repo.id
-   )
-   # Returns formatted data for graph visualization
-   ```
-
-5. RETRIEVE CHARACTER AT SPECIFIC POINT:
-   ```python
-   # Get character data at level 2
-   level_2_character = CharacterRepositoryManager.get_character_at_commit(
-       db=db,
-       commit_hash=level_2_commit.commit_hash
-   )
-   ```
-
-FRONTEND INTEGRATION:
-- Use CharacterVersioningAPI.get_character_timeline_for_frontend() for graph data
-- Display branches as different colored lines
-- Show commits as nodes with level/milestone information
-- Allow users to click commits to view character state at that point
-- Provide branch creation UI for "What if?" scenarios
-- Show diff between commits to highlight changes
-
-DATABASE SCHEMA:
-- character_repositories: Main character containers
-- character_branches: Different development paths
-- character_commits: Individual character states/versions
-- character_tags: Mark important milestones
-- characters: Legacy table (kept for compatibility)
-
-The system enables:
-- Complete character development history
-- "What if?" exploration with branches
-- Visual timeline of character progression
-- Rollback to previous character states
-- Comparison between different development paths
-- Story/campaign context tracking
-- Collaborative character development
-"""
-
-
-# ============================================================================
-# MODULE SUMMARY
-# ============================================================================
-"""
-ENHANCED DATABASE MODELS WITH GIT-LIKE CHARACTER VERSIONING
-
-This module provides a comprehensive database layer for D&D character management
-with a revolutionary Git-like versioning system that allows players to explore
-alternate character development paths.
-
-KEY FEATURES:
-
-1. CHARACTER REPOSITORIES (Git-like System):
-   - CharacterRepository: Container for all versions of a character concept
-   - CharacterBranch: Different development paths (main, multiclass, alternate stories)
-   - CharacterCommit: Individual character states with full data snapshots
-   - CharacterTag: Mark important milestones (deaths, resurrections, epic levels)
-
-2. VERSION CONTROL OPERATIONS:
-   - Create repositories with initial character commits
-   - Branch from any commit to explore alternate paths
-   - Commit character changes with detailed change tracking
-   - Tag important milestones and story events
-   - Retrieve character state at any point in history
-
-3. VISUALIZATION SUPPORT:
-   - Complete repository tree data for frontend graphs
-   - Parent-child commit relationships for timeline display
-   - Branch visualization with merge/split points
-   - Diff calculation between character states
-
-4. INTEGRATION SYSTEMS:
-   - CharacterRepositoryManager: High-level Git-like operations
-   - CharacterVersioningAPI: Frontend-friendly API methods
-   - Integration with existing CharacterCore/CharacterState classes
-   - Backwards compatibility with legacy Character model
-
-5. USE CASES:
-   - Track complete character development history
-   - Explore "What if I multiclassed?" scenarios
-   - Compare different character builds
-   - Rollback to previous character states
-   - Visualize character evolution over campaigns
-   - Create alternate storyline branches
-   - Collaborative character development
-
-6. DATABASE OPERATIONS:
-   - CharacterDB: CRUD operations for legacy characters
-   - CharacterSessionDB: Character creation session management
-   - Proper database session management with context managers
-   - Integration with SQLAlchemy ORM
-
-The system transforms character management from a simple database record into
-a rich, explorable history that enhances storytelling and player engagement.
-Players can see their character's journey visually, explore alternate paths,
-and make informed decisions about character development.
-
-FRONTEND VISUALIZATION:
-The system is designed to support rich frontend visualizations showing:
-- Character development timelines as interactive graphs
-- Branch points where different paths diverged
-- Commit nodes with level, XP, and milestone information
-- Visual diffs between character states
-- Tag markers for important story moments
-
-This creates a "comic book multiverse" experience where players can explore
-all the different paths their character might have taken.
-"""
+    # ...existing code...
 

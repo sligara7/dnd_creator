@@ -1,3 +1,250 @@
+# Test direct/manual edit endpoints for all major content types
+test_direct_edit_endpoints() {
+    log_info "Testing direct/manual edit endpoints for all major content types..."
+
+    # Character direct edit
+    if [ -n "${CREATED_CHARACTERS[0]}" ]; then
+        local char_id="${CREATED_CHARACTERS[0]}"
+        log_info "Testing /characters/{id}/direct-edit for character $char_id..."
+        local edit_data_char=$(cat <<EOF
+{
+    "updates": {"name": "Edited Character Name", "background": "Manual Override Background"},
+    "notes": "Manual test edit for character."
+}
+EOF
+)
+        response=$(curl -s -X POST "${API_URL}/characters/${char_id}/direct-edit" \
+            -H "Content-Type: application/json" \
+            -d "$edit_data_char" \
+            -w "%{http_code}" -o /tmp/char_direct_edit.json)
+        if [ "${response: -3}" = "200" ]; then
+            log_success "Character direct-edit endpoint succeeded."
+            cat /tmp/char_direct_edit.json | jq '.'
+        else
+            log_error "Character direct-edit endpoint failed (HTTP ${response: -3})"
+            cat /tmp/char_direct_edit.json
+        fi
+    fi
+
+    # Backstory direct edit
+    if [ -n "${CREATED_CHARACTERS[0]}" ]; then
+        local char_id="${CREATED_CHARACTERS[0]}"
+        log_info "Testing /characters/{id}/backstory/direct-edit for character $char_id..."
+        local edit_data_backstory=$(cat <<EOF
+{
+    "updates": {"backstory": "This is a manually edited backstory."},
+    "notes": "Manual backstory edit."
+}
+EOF
+)
+        response=$(curl -s -X POST "${API_URL}/characters/${char_id}/backstory/direct-edit" \
+            -H "Content-Type: application/json" \
+            -d "$edit_data_backstory" \
+            -w "%{http_code}" -o /tmp/backstory_direct_edit.json)
+        if [ "${response: -3}" = "200" ]; then
+            log_success "Backstory direct-edit endpoint succeeded."
+            cat /tmp/backstory_direct_edit.json | jq '.'
+        else
+            log_error "Backstory direct-edit endpoint failed (HTTP ${response: -3})"
+            cat /tmp/backstory_direct_edit.json
+        fi
+    fi
+
+    # Journal entry direct edit
+    # Try to get a journal entry for the first character
+    if [ -n "${CREATED_CHARACTERS[0]}" ]; then
+        local char_id="${CREATED_CHARACTERS[0]}"
+        response=$(curl -s "${API_URL}/characters/${char_id}/journal" -w "%{http_code}" -o /tmp/journal_entries_for_edit.json)
+        if [ "${response: -3}" = "200" ]; then
+            local entry_id=$(cat /tmp/journal_entries_for_edit.json | jq -r '.[0].id // empty')
+            if [ -n "$entry_id" ]; then
+                log_info "Testing /characters/{id}/journal/{entry_id}/direct-edit for entry $entry_id..."
+                local edit_data_journal=$(cat <<EOF
+{
+    "updates": {"title": "Edited Journal Title", "content": "Manual override journal content."},
+    "notes": "Manual journal entry edit."
+}
+EOF
+)
+                response=$(curl -s -X POST "${API_URL}/characters/${char_id}/journal/${entry_id}/direct-edit" \
+                    -H "Content-Type: application/json" \
+                    -d "$edit_data_journal" \
+                    -w "%{http_code}" -o /tmp/journal_direct_edit.json)
+                if [ "${response: -3}" = "200" ]; then
+                    log_success "Journal entry direct-edit endpoint succeeded."
+                    cat /tmp/journal_direct_edit.json | jq '.'
+                else
+                    log_error "Journal entry direct-edit endpoint failed (HTTP ${response: -3})"
+                    cat /tmp/journal_direct_edit.json
+                fi
+            else
+                log_warning "No journal entry found for character $char_id to test direct-edit."
+            fi
+        fi
+    fi
+
+    # NPC direct edit
+    if [ -n "${CREATED_NPCS[0]}" ]; then
+        local npc_id="${CREATED_NPCS[0]}"
+        log_info "Testing /npcs/{npc_id}/direct-edit for NPC $npc_id..."
+        local edit_data_npc=$(cat <<EOF
+{
+    "updates": {"name": "Edited NPC Name", "description": "Manual override NPC description."},
+    "notes": "Manual NPC edit."
+}
+EOF
+)
+        response=$(curl -s -X POST "${API_URL}/npcs/${npc_id}/direct-edit" \
+            -H "Content-Type: application/json" \
+            -d "$edit_data_npc" \
+            -w "%{http_code}" -o /tmp/npc_direct_edit.json)
+        if [ "${response: -3}" = "200" ]; then
+            log_success "NPC direct-edit endpoint succeeded."
+            cat /tmp/npc_direct_edit.json | jq '.'
+        else
+            log_error "NPC direct-edit endpoint failed (HTTP ${response: -3})"
+            cat /tmp/npc_direct_edit.json
+        fi
+    fi
+
+    # Monster direct edit
+    if [ -n "${CREATED_MONSTERS[0]}" ]; then
+        local monster_id="${CREATED_MONSTERS[0]}"
+        log_info "Testing /monsters/{monster_id}/direct-edit for monster $monster_id..."
+        local edit_data_monster=$(cat <<EOF
+{
+    "updates": {"name": "Edited Monster Name", "description": "Manual override monster description."},
+    "notes": "Manual monster edit."
+}
+EOF
+)
+        response=$(curl -s -X POST "${API_URL}/monsters/${monster_id}/direct-edit" \
+            -H "Content-Type: application/json" \
+            -d "$edit_data_monster" \
+            -w "%{http_code}" -o /tmp/monster_direct_edit.json)
+        if [ "${response: -3}" = "200" ]; then
+            log_success "Monster direct-edit endpoint succeeded."
+            cat /tmp/monster_direct_edit.json | jq '.'
+        else
+            log_error "Monster direct-edit endpoint failed (HTTP ${response: -3})"
+            cat /tmp/monster_direct_edit.json
+        fi
+    fi
+
+    # Item direct edit (try weapon, armor, spell)
+    for item in "${CREATED_ITEMS[@]}"; do
+        local type_id_pair=(${item//:/ })
+        local item_type="${type_id_pair[0]}"
+        local item_id="${type_id_pair[1]}"
+        if [ -n "$item_id" ]; then
+            log_info "Testing /items/{item_id}/direct-edit for $item_type $item_id..."
+            local edit_data_item=$(cat <<EOF
+{
+    "updates": {"name": "Edited $item_type Name", "short_description": "Manual override $item_type description."},
+    "notes": "Manual $item_type edit."
+}
+EOF
+)
+            response=$(curl -s -X POST "${API_URL}/items/${item_id}/direct-edit" \
+                -H "Content-Type: application/json" \
+                -d "$edit_data_item" \
+                -w "%{http_code}" -o /tmp/item_direct_edit.json)
+            if [ "${response: -3}" = "200" ]; then
+                log_success "$item_type direct-edit endpoint succeeded."
+                cat /tmp/item_direct_edit.json | jq '.'
+            else
+                log_error "$item_type direct-edit endpoint failed (HTTP ${response: -3})"
+                cat /tmp/item_direct_edit.json
+            fi
+        fi
+    done
+}
+# Test iterative character update based on journal entries
+test_iterative_character_update_from_journal() {
+    log_info "Testing iterative character update based on journal entries..."
+
+    local character_id="$1"
+    local theme="$2"
+    local max_iterations="${3:-3}"
+
+    # Step 1: Retrieve all journal entries for the character
+    log_info "Retrieving journal entries for character $character_id..."
+    response=$(curl -s "${API_URL}/characters/${character_id}/journal" -w "%{http_code}" -o /tmp/journal_entries.json)
+    if [ "${response: -3}" != "200" ]; then
+        log_error "Failed to retrieve journal entries (HTTP ${response: -3})"
+        return 1
+    fi
+    local journal_text=$(cat /tmp/journal_entries.json | jq -r '.[] | "Session "+(.session_number|tostring)+": "+.content' 2>/dev/null | tr '\n' ' ')
+    if [ -z "$journal_text" ]; then
+        log_warning "No journal entries found for character $character_id. Proceeding with empty journal."
+    fi
+
+    # Step 2: Prepare initial prompt for LLM using journal
+    local initial_prompt="Analyze the following journal entries to see how the character was actually played. Update the character sheet to reflect their real play style, choices, and story development. Journal: $journal_text"
+
+    local current_prompt="$initial_prompt"
+    local iteration=1
+    local updated_character_id="$character_id"
+
+    while [ $iteration -le $max_iterations ]; do
+        log_info "--- Journal-based Update Iteration $iteration ---"
+
+        # Use factory/evolve endpoint to update character based on journal
+        local request_data=$(cat <<EOF
+{
+    "creation_type": "character",
+    "character_id": "$updated_character_id",
+    "evolution_prompt": "$current_prompt",
+    "theme": "$theme",
+    "user_preferences": {
+        "evolution_type": "journal_update",
+        "iteration": $iteration
+    },
+    "preserve_backstory": true,
+    "save_to_database": true
+}
+EOF
+)
+
+        response=$(curl -s -X POST "${API_URL}/factory/evolve" \
+            -H "Content-Type: application/json" \
+            -d "$request_data" \
+            -w "%{http_code}" -o /tmp/journal_update_response.json)
+
+        if [ "${response: -3}" = "200" ]; then
+            updated_character_id=$(cat /tmp/journal_update_response.json | jq -r '.object_id')
+            if [ "$updated_character_id" != "null" ] && [ -n "$updated_character_id" ]; then
+                log_success "Character updated from journal (ID: $updated_character_id)"
+                display_character_summary "$updated_character_id" "Journal Update Iteration $iteration"
+            else
+                log_error "Journal update failed - no character ID returned"
+                return 1
+            fi
+        else
+            log_error "Character update from journal failed (HTTP ${response: -3})"
+            cat /tmp/journal_update_response.json
+            return 1
+        fi
+
+        # Simulate user feedback for further refinement
+        local feedback=$(simulate_user_feedback "$updated_character_id" $iteration)
+        log_info "User feedback: $feedback"
+
+        if [[ "$feedback" == *"satisfied"* ]]; then
+            log_success "User satisfied with character after $iteration journal-based iterations"
+            break
+        fi
+
+        # Prepare next iteration with feedback
+        current_prompt="$feedback"
+        ((iteration++))
+    done
+
+    if [ -n "$updated_character_id" ]; then
+        log_success "Final character after journal-based update: $updated_character_id"
+        echo "$updated_character_id"
+    fi
+}
 #!/bin/bash
 
 # D&D Character Creator - Comprehensive Workflow Test

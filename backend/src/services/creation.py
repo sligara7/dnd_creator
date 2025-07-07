@@ -494,6 +494,101 @@ class BaseCreator(ABC):
 # ============================================================================
 
 class CharacterCreator(BaseCreator):
+    def _calculate_spell_slots(self, character_data: Dict[str, Any]) -> Dict[str, List[int]]:
+        """
+        Calculate spell slots based on character class and level according to D&D 5e rules.
+        Returns a dictionary with spell slot counts for each spell level.
+        """
+        classes = character_data.get("classes", {})
+        level = character_data.get("level", 1)
+        # Simple rules: full casters (Wizard, Cleric, Druid, Bard, Sorcerer) get standard slots, half-casters (Paladin, Ranger) get half, others none
+        # This is a simplified version; for full accuracy, use D&D 5e tables
+        spell_slots = {str(i): 0 for i in range(1, 10)}
+        full_casters = ["wizard", "cleric", "druid", "bard", "sorcerer"]
+        half_casters = ["paladin", "ranger"]
+        for class_name, class_level in classes.items():
+            cname = class_name.lower()
+            if any(fc in cname for fc in full_casters):
+                # Full caster progression (approximate)
+                for i in range(1, min(10, (class_level // 2) + 2)):
+                    spell_slots[str(i)] += max(1, class_level // (i + 1))
+            elif any(hc in cname for hc in half_casters):
+                # Half caster progression (approximate)
+                for i in range(1, min(6, (class_level // 4) + 2)):
+                    spell_slots[str(i)] += max(0, class_level // (2 * (i + 1)))
+        # Remove zero slots
+        return {k: v for k, v in spell_slots.items() if v > 0}
+
+    def _enhance_character_armor(self, character_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Enhance character with appropriate D&D 5e armor based on class and level.
+        STRONGLY prioritizes existing D&D 5e armor over custom armor creation.
+        """
+        try:
+            classes = character_data.get("classes", {})
+            # Use the first class for armor proficiency
+            class_name = next(iter(classes.keys()), "Fighter")
+            armor = get_appropriate_armor_for_character(class_name)
+            character_data["armor"] = armor
+            return {"armor": armor}
+        except Exception as e:
+            logger.warning(f"Armor enhancement failed: {e}")
+            return {"armor": "None"}
+
+    def _enhance_character_equipment(self, character_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Enhance character with appropriate D&D 5e equipment and tools based on class and background.
+        """
+        try:
+            classes = character_data.get("classes", {})
+            background = character_data.get("background", "Folk Hero")
+            class_name = next(iter(classes.keys()), "Fighter")
+            equipment_pack = get_appropriate_equipment_pack_for_character(class_name, background)
+            tools = get_appropriate_tools_for_character(class_name, background)
+            character_data["equipment"] = equipment_pack
+            character_data["tools"] = tools
+            return {"equipment": equipment_pack, "tools": tools}
+        except Exception as e:
+            logger.warning(f"Equipment enhancement failed: {e}")
+            return {"equipment": {}, "tools": []}
+
+    def _create_final_character(self, base_data: Dict[str, Any], character_core: Any) -> Dict[str, Any]:
+        """
+        Finalize and assemble the complete character sheet from all generated/enhanced data.
+        """
+        final_character = dict(base_data)
+        # Add any final validation or normalization here
+        final_character["core"] = character_core.to_dict() if hasattr(character_core, "to_dict") else character_core
+        # Validate feats, skills, and other fields
+        self._validate_final_feats(final_character)
+        self._finalize_character_fields(final_character)
+        return final_character
+
+    def _validate_final_feats(self, character_data: Dict[str, Any]) -> None:
+        """
+        Validate and clean up feats for the final character sheet.
+        """
+        feats = character_data.get("general_feats", [])
+        valid_feats = []
+        for feat in feats:
+            if isinstance(feat, dict) and feat.get("name") and is_existing_dnd_feat(feat["name"]):
+                valid_feats.append(feat)
+        character_data["general_feats"] = valid_feats
+
+    def _finalize_character_fields(self, character_data: Dict[str, Any]) -> None:
+        """
+        Final normalization and field cleanup for the character sheet.
+        """
+        # Example: ensure all ability scores are ints
+        if "ability_scores" in character_data:
+            for k, v in character_data["ability_scores"].items():
+                try:
+                    character_data["ability_scores"][k] = int(v)
+                except Exception:
+                    character_data["ability_scores"][k] = 10
+        # Example: ensure equipment is a dict
+        if "equipment" in character_data and not isinstance(character_data["equipment"], dict):
+            character_data["equipment"] = {str(character_data["equipment"]): 1}
     """
     Complete character creation orchestrator.
     This contains ALL features and serves as the foundation for NPCs and creatures.
@@ -552,7 +647,7 @@ class CharacterCreator(BaseCreator):
             logger.info("Using traditional creation method")
             
             # Step 1: Generate base character data
-            theme = user_preferences.get("theme") if user_preferences else None
+            theme = user_preferences.get("theme") if user_preferences else "traditional D&D"
             base_data = await self._generate_character_data(prompt, level, theme)
             
             if verbose_generation and hasattr(self, 'verbose_logs'):
@@ -593,7 +688,7 @@ class CharacterCreator(BaseCreator):
                 })
             
             # Step 4: Generate custom content if needed
-            custom_data = await self._generate_custom_content(base_data, prompt)
+            custom_data = await self._generate_custom_content(base_data, prompt, theme)
             base_data.update(custom_data)
             
             if verbose_generation and hasattr(self, 'verbose_logs'):
@@ -606,7 +701,7 @@ class CharacterCreator(BaseCreator):
                 })
             
             # Step 5: Enhance character spells
-            enhanced_spell_data = self._enhance_character_spells(base_data, theme)
+            enhanced_spell_data = await self._enhance_character_spells(base_data, theme)
             base_data.update(enhanced_spell_data)
             
             if verbose_generation and hasattr(self, 'verbose_logs'):
@@ -770,61 +865,30 @@ class CharacterCreator(BaseCreator):
         if theme:
             theme_context = f"\nCAMPAIGN THEME: {theme}\n"
             
-            # Provide theme-aware equipment suggestions (while preserving player choice)
-            if theme.lower() in ['western', 'frontier', 'gunslinger']:
+            # Provide dynamic theme guidance based on the theme
+            if theme.lower() == "traditional d&d":
                 theme_equipment_guidance = """
 THEME-AWARE EQUIPMENT SUGGESTIONS (OPTIONAL):
-- Western Theme: Consider firearms (musket, pistol), leather armor, horses, lassos
-- Clothing: Dusters, boots, wide-brimmed hats, bandanas
-- Gear: Bedrolls, rations, water skins, ammunition pouches"""
+- Traditional D&D: Standard medieval fantasy equipment, swords, shields, plate armor
+- Classic weapons: Longswords, battleaxes, longbows, crossbows
+- Traditional gear: Adventuring packs, rope, torches, holy symbols, spell components"""
                 theme_spell_guidance = """
 THEME-AWARE SPELL SUGGESTIONS (OPTIONAL):
-- Western Theme: Utility spells (Mending for gear), nature spells (Animal Friendship for horses), communication spells"""
-            elif theme.lower() in ['steampunk', 'mechanical', 'clockwork']:
-                theme_equipment_guidance = """
-THEME-AWARE EQUIPMENT SUGGESTIONS (OPTIONAL):
-- Steampunk Theme: Mechanical devices, brass fittings, clockwork items, goggles
-- Weapons: Enhanced crossbows, mechanical contraptions
-- Gear: Tools, tinker supplies, mechanical components"""
-                theme_spell_guidance = """
-THEME-AWARE SPELL SUGGESTIONS (OPTIONAL):
-- Steampunk Theme: Artificer spells, mechanical enhancement spells, repair magic"""
-            elif theme.lower() in ['dark', 'gothic', 'horror']:
-                theme_equipment_guidance = """
-THEME-AWARE EQUIPMENT SUGGESTIONS (OPTIONAL):
-- Dark/Gothic Theme: Dark clothing, cloaks, silver items, holy symbols
-- Weapons: Silver weapons, blessed items, protective gear
-- Gear: Holy water, garlic, wooden stakes, mirrors"""
-                theme_spell_guidance = """
-THEME-AWARE SPELL SUGGESTIONS (OPTIONAL):
-- Dark/Gothic Theme: Protection spells, divination magic, undead-focused spells, light sources"""
-            elif theme.lower() in ['high_fantasy', 'magical', 'arcane']:
-                theme_equipment_guidance = """
-THEME-AWARE EQUIPMENT SUGGESTIONS (OPTIONAL):
-- High Fantasy Theme: Ornate weapons, magical focuses, enchanted items
-- Clothing: Robes, cloaks, jewelry with magical significance
-- Gear: Spell components, magical tools, crystal orbs"""
-                theme_spell_guidance = """
-THEME-AWARE SPELL SUGGESTIONS (OPTIONAL):
-- High Fantasy Theme: Wide variety of magical schools, utility and combat spells"""
-            elif theme.lower() in ['nature', 'wilderness', 'druidic']:
-                theme_equipment_guidance = """
-THEME-AWARE EQUIPMENT SUGGESTIONS (OPTIONAL):
-- Nature Theme: Natural materials (leather, wood, bone), camouflaged gear
-- Weapons: Bows, spears, simple weapons from natural materials
-- Gear: Herbalism kits, survival gear, animal companions"""
-                theme_spell_guidance = """
-THEME-AWARE SPELL SUGGESTIONS (OPTIONAL):
-- Nature Theme: Druid spells, nature magic, animal communication, weather control"""
+- Traditional D&D: Classic fantasy spells from all schools of magic
+- Combat spells: Fireball, Magic Missile, Cure Wounds, Shield
+- Utility spells: Detect Magic, Light, Mending, Identify"""
             else:
-                # Generic theme guidance
+                # Dynamic theme guidance for any other theme
                 theme_equipment_guidance = f"""
 THEME-AWARE EQUIPMENT SUGGESTIONS (OPTIONAL):
 - {theme.title()} Theme: Consider equipment that fits the {theme} aesthetic and setting
-- Adapt standard D&D equipment to match the campaign's tone and style"""
+- Adapt standard D&D equipment to match the campaign's tone, technology level, and style
+- Think about what materials, weapons, and gear would be common in a {theme} setting"""
                 theme_spell_guidance = f"""
 THEME-AWARE SPELL SUGGESTIONS (OPTIONAL):
-- {theme.title()} Theme: Choose spells that complement the {theme} setting and atmosphere"""
+- {theme.title()} Theme: Choose spells that complement the {theme} setting and atmosphere
+- Consider what types of magic would fit the theme's tone and available power sources
+- Adapt spell flavoring to match the {theme} aesthetic while keeping D&D mechanics"""
         
         return f"""Create D&D 5e 2024 character. Return ONLY JSON:{theme_context}
 
@@ -1157,7 +1221,7 @@ Match the character concept exactly. Return complete JSON only."""
             logger.warning(f"Backstory generation failed: {e}")
             return {"backstory": f"A {character_data.get('species', 'human')} {list(character_data.get('classes', {}).keys())[0] if character_data.get('classes') else 'adventurer'} seeking adventure."}
     
-    async def _generate_custom_content(self, character_data: Dict[str, Any], original_prompt: str) -> Dict[str, Any]:
+    async def _generate_custom_content(self, character_data: Dict[str, Any], original_prompt: str, theme: Optional[str] = None) -> Dict[str, Any]:
         """Generate custom content if needed."""
         try:
             custom_content = {}
@@ -1165,8 +1229,10 @@ Match the character concept exactly. Return complete JSON only."""
             # Generate custom content if character is high level or unique
             level = character_data.get("level", 1)
             if level >= 5 or any(keyword in original_prompt.lower() for keyword in ["unique", "custom", "special"]):
+                # Convert single theme to list for generator compatibility
+                themes = [theme] if theme else None
                 custom_result = await self.custom_content_generator.generate_custom_content_for_character(
-                    character_data, original_prompt
+                    character_data, original_prompt, themes
                 )
                 if custom_result:
                     custom_content.update(custom_result)
@@ -1177,7 +1243,7 @@ Match the character concept exactly. Return complete JSON only."""
             logger.warning(f"Custom content generation failed: {e}")
             return {}
     
-    def _enhance_character_spells(self, character_data: Dict[str, Any], theme: Optional[str] = None) -> Dict[str, Any]:
+    async def _enhance_character_spells(self, character_data: Dict[str, Any], theme: Optional[str] = None) -> Dict[str, Any]:
         """
         Enhance character with appropriate D&D 5e spells based on their class and level.
         STRONGLY prioritizes existing D&D 5e spells over custom spell creation.
@@ -1200,7 +1266,7 @@ Match the character concept exactly. Return complete JSON only."""
             
             # Apply theme-aware spell filtering if theme is provided
             if theme:
-                suggested_spells = self._filter_spells_by_theme(suggested_spells, theme, character_data)
+                suggested_spells = await self._filter_spells_by_theme(suggested_spells, theme, character_data)
             
             # If character already has spells, validate and enhance them
             existing_spells = character_data.get("spells_known", [])
@@ -1254,7 +1320,6 @@ Match the character concept exactly. Return complete JSON only."""
                     logger.info(f"Added suggested D&D 5e spell: {suggested_spell['name']}")
                     if len(enhanced_spells) >= spell_count:  # Use calculated spell count
                         break
-                        break
             
             character_data["spells_known"] = enhanced_spells
             
@@ -1271,7 +1336,7 @@ Match the character concept exactly. Return complete JSON only."""
             logger.info(f"Enhanced character with {len(enhanced_spells)} spells ({dnd_spells} D&D 5e spells, {custom_spells} custom spells)")
             
             # PRIORITY 5: For custom classes, populate custom spell fields
-            self._populate_custom_spell_fields(character_data)
+            await self._populate_custom_spell_fields(character_data)
             
             return character_data
             
@@ -1350,7 +1415,7 @@ Match the character concept exactly. Return complete JSON only."""
                 max_spells = max(max_spells, custom_spells)
                 logger.info(f"Custom spellcaster class '{class_name}' level {class_level}: {custom_spells} spells (wizard-like progression)")
             
-            # Druid/Cleric (prepared spells, but we'll give them a good number to know)
+            # Druid/Cleric (prepared spells, but we'll give them a good number to "know"
             elif any(keyword in class_lower for keyword in ["druid", "cleric", "priest", "nature"]):
                 # These classes prepare spells, but for our purposes give them many to "know"
                 prepared_equivalent = class_level + 10  # Generous spell knowledge
@@ -1364,42 +1429,26 @@ Match the character concept exactly. Return complete JSON only."""
         
         return max_spells
     
-    def _populate_custom_spell_fields(self, character_data: Dict[str, Any]) -> None:
+    async def _populate_custom_spell_fields(self, character_data: Dict[str, Any]) -> None:
         """
-        Populate custom spell fields for custom classes with thematic spells.
+        Populate custom spell fields for custom classes with LLM-generated thematic spells.
+        Uses LLM to determine spell themes dynamically based on class names.
         """
         try:
             classes = character_data.get("classes", {})
             level = character_data.get("level", 1)
             
-            # Check for custom classes with specific themes
+            # Check for custom classes that might need thematic spells
             for class_name, class_level in classes.items():
                 class_lower = class_name.lower()
                 
-                # Determine custom spell field based on class theme
-                custom_field = None
-                spell_theme = None
+                # Use LLM to determine if this class should have custom spells and what theme
+                theme_info = await self._determine_class_spell_theme(class_name, character_data)
                 
-                if any(keyword in class_lower for keyword in ["void", "nether", "shadow", "darkness", "abyss"]):
-                    custom_field = "custom_void_spells"
-                    spell_theme = "void/shadow"
-                elif any(keyword in class_lower for keyword in ["fire", "flame", "inferno", "phoenix"]):
-                    custom_field = "custom_fire_spells"
-                    spell_theme = "fire"
-                elif any(keyword in class_lower for keyword in ["ice", "frost", "winter", "cryo"]):
-                    custom_field = "custom_ice_spells"
-                    spell_theme = "ice/frost"
-                elif any(keyword in class_lower for keyword in ["nature", "plant", "growth", "druid"]):
-                    custom_field = "custom_nature_spells"
-                    spell_theme = "nature"
-                elif any(keyword in class_lower for keyword in ["time", "chrono", "temporal"]):
-                    custom_field = "custom_time_spells"
-                    spell_theme = "time"
-                elif any(keyword in class_lower for keyword in ["blood", "crimson", "sacrifice"]):
-                    custom_field = "custom_blood_spells"
-                    spell_theme = "blood"
-                
-                if custom_field and spell_theme:
+                if theme_info and theme_info.get("needs_custom_spells"):
+                    custom_field = theme_info.get("spell_field", "custom_spells")
+                    spell_theme = theme_info.get("theme", class_name)
+                    
                     # Ensure the custom field exists
                     if custom_field not in character_data:
                         character_data[custom_field] = []
@@ -1409,112 +1458,168 @@ Match the character concept exactly. Return complete JSON only."""
                     
                     # Create thematic custom spells if the field is empty
                     if not character_data[custom_field]:
-                        custom_spells = self._create_thematic_spells(spell_theme, spell_count, class_level)
+                        custom_spells = await self._create_thematic_spells(spell_theme, spell_count, class_level)
                         character_data[custom_field] = custom_spells
                         logger.info(f"Created {len(custom_spells)} custom {spell_theme} spells for {class_name}")
                     
         except Exception as e:
             logger.warning(f"Custom spell field population failed: {e}")
-    
-    def _create_thematic_spells(self, theme: str, count: int, max_level: int) -> List[Dict[str, Any]]:
-        """
-        Create thematic custom spells for a specific theme.
-        """
-        spell_templates = {
-            "void/shadow": [
-                {"name": "Void Bolt", "level": 1, "school": "evocation", 
-                 "description": "Launch a bolt of pure void energy that deals necrotic damage."},
-                {"name": "Shadow Step", "level": 2, "school": "conjuration", 
-                 "description": "Teleport through shadows to an unoccupied space within range."},
-                {"name": "Darkness Shroud", "level": 2, "school": "illusion", 
-                 "description": "Wrap yourself in supernatural darkness, gaining stealth advantages."},
-                {"name": "Void Prison", "level": 3, "school": "conjuration", 
-                 "description": "Trap an enemy in a prison of swirling void energy."},
-                {"name": "Shadow Mastery", "level": 4, "school": "necromancy", 
-                 "description": "Command shadows to attack multiple enemies with necrotic energy."},
-            ],
-            "fire": [
-                {"name": "Flame Lance", "level": 1, "school": "evocation", 
-                 "description": "Project a lance of concentrated fire that pierces through enemies."},
-                {"name": "Burning Aura", "level": 2, "school": "evocation", 
-                 "description": "Surround yourself with flames that damage nearby enemies."},
-                {"name": "Phoenix Flight", "level": 3, "school": "transmutation", 
-                 "description": "Transform into fire and fly, leaving a trail of flames."},
-                {"name": "Inferno Storm", "level": 4, "school": "evocation", 
-                 "description": "Create a massive storm of fire in a large area."},
-                {"name": "Phoenix Rebirth", "level": 5, "school": "necromancy", 
-                 "description": "Upon death, resurrect in a burst of flames."},
-            ],
-            "ice/frost": [
-                {"name": "Ice Shard", "level": 1, "school": "evocation", 
-                 "description": "Launch sharp shards of ice at your enemies."},
-                {"name": "Frost Armor", "level": 2, "school": "abjuration", 
-                 "description": "Cover yourself in protective ice that damages attackers."},
-                {"name": "Frozen Ground", "level": 3, "school": "transmutation", 
-                 "description": "Turn the ground to ice, slowing and damaging enemies."},
-                {"name": "Blizzard", "level": 4, "school": "evocation", 
-                 "description": "Create a localized blizzard that obscures and damages."},
-                {"name": "Absolute Zero", "level": 5, "school": "evocation", 
-                 "description": "Freeze enemies solid with supernatural cold."},
-            ],
-            "nature": [
-                {"name": "Thorn Whip", "level": 1, "school": "transmutation", 
-                 "description": "Create a whip of thorny vines to strike and pull enemies."},
-                {"name": "Bark Skin", "level": 2, "school": "transmutation", 
-                 "description": "Your skin becomes bark-like, increasing natural armor."},
-                {"name": "Entangle", "level": 3, "school": "conjuration", 
-                 "description": "Cause plants to grow and restrain enemies in an area."},
-                {"name": "Tree Form", "level": 4, "school": "transmutation", 
-                 "description": "Transform into a mighty tree with increased health and damage."},
-                {"name": "Nature's Wrath", "level": 5, "school": "evocation", 
-                 "description": "Call upon nature itself to devastate your enemies."},
-            ],
-            "time": [
-                {"name": "Time Skip", "level": 1, "school": "transmutation", 
-                 "description": "Skip forward a few seconds, avoiding attacks."},
-                {"name": "Slow", "level": 2, "school": "transmutation", 
-                 "description": "Slow down time for enemies, reducing their speed."},
-                {"name": "Temporal Shield", "level": 3, "school": "abjuration", 
-                 "description": "Create a barrier that exists slightly outside of time."},
-                {"name": "Time Stop", "level": 4, "school": "transmutation", 
-                 "description": "Stop time briefly, allowing you to act while others cannot."},
-                {"name": "Temporal Mastery", "level": 5, "school": "transmutation", 
-                 "description": "Gain complete control over the flow of time in combat."},
-            ],
-            "blood": [
-                {"name": "Blood Dart", "level": 1, "school": "necromancy", 
-                 "description": "Use your own blood as a projectile weapon."},
-                {"name": "Crimson Bond", "level": 2, "school": "necromancy", 
-                 "description": "Create a blood connection that shares damage."},
-                {"name": "Blood Sacrifice", "level": 3, "school": "necromancy", 
-                 "description": "Sacrifice health to dramatically increase spell power."},
-                {"name": "Hemorrhage", "level": 4, "school": "necromancy", 
-                 "description": "Cause enemies to bleed uncontrollably."},
-                {"name": "Blood Mastery", "level": 5, "school": "necromancy", 
-                 "description": "Control the blood of enemies, commanding their actions."},
-            ]
-        }
-        
-        if theme not in spell_templates:
-            return []
-        
-        # Get spells appropriate for the level
-        available_spells = [spell for spell in spell_templates[theme] 
-                          if spell["level"] <= min(max_level // 2 + 1, 5)]
-        
-        # Take the requested number of spells
-        selected_spells = available_spells[:count]
-        
-        # Add source information
-        for spell in selected_spells:
-            spell["source"] = "Custom"
-            spell["casting_time"] = "1 action"
-            spell["range"] = "60 feet"
-            spell["components"] = "V, S"
-            spell["duration"] = "Instantaneous"
-        
-        return selected_spells
 
+    async def _determine_class_spell_theme(self, class_name: str, character_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Use LLM to determine if a class needs custom spells and what theme they should have.
+        """
+        try:
+            prompt = f"""Analyze this D&D class name and determine if it needs custom thematic spells. Return ONLY JSON:
+
+CLASS NAME: {class_name}
+CHARACTER LEVEL: {character_data.get("level", 1)}
+
+Determine if this class name suggests it should have custom thematic spells beyond standard D&D spells.
+
+{{"needs_custom_spells": true/false, "theme": "theme_name", "spell_field": "custom_field_name", "reasoning": "brief explanation"}}
+
+ANALYSIS CRITERIA:
+- Standard D&D classes (Fighter, Wizard, Rogue, etc.) should return needs_custom_spells: false
+- Custom or uniquely themed classes should return needs_custom_spells: true
+- Theme should capture the essence of the class (e.g., "shadow magic", "elemental fire", "void manipulation")
+- Spell field should be descriptive (e.g., "custom_shadow_spells", "custom_fire_spells", "custom_void_spells")
+
+EXAMPLES:
+- "Fighter" -> {{"needs_custom_spells": false}}
+- "Shadow Mancer" -> {{"needs_custom_spells": true, "theme": "shadow magic", "spell_field": "custom_shadow_spells"}}
+- "Void Walker" -> {{"needs_custom_spells": true, "theme": "void manipulation", "spell_field": "custom_void_spells"}}
+- "Phoenix Sorcerer" -> {{"needs_custom_spells": true, "theme": "phoenix fire magic", "spell_field": "custom_phoenix_spells"}}
+
+Return complete JSON only."""
+
+            response_data = await self._generate_with_llm(prompt, "class_spell_theme")
+            
+            if isinstance(response_data, dict) and "needs_custom_spells" in response_data:
+                logger.info(f"Class theme analysis for '{class_name}': {response_data.get('reasoning', 'No reasoning provided')}")
+                return response_data
+            else:
+                logger.warning(f"Invalid class theme analysis response: {response_data}")
+                return {"needs_custom_spells": False}
+                
+        except Exception as e:
+            logger.warning(f"Failed to analyze class spell theme for '{class_name}': {e}")
+            return {"needs_custom_spells": False}
+    
+    async def _create_thematic_spells(self, theme: str, count: int, max_level: int) -> List[Dict[str, Any]]:
+        """
+        Create thematic custom spells for a specific theme using LLM generation.
+        This allows for unlimited theme flexibility instead of hardcoded templates.
+        """
+        try:
+            # Calculate appropriate spell levels based on max_level
+            max_spell_level = min(max_level // 2 + 1, 5)
+            
+            prompt = f"""Create {count} thematic custom D&D 5e spells for a '{theme}' theme. Return ONLY JSON:
+
+THEME: {theme}
+SPELL COUNT: {count}
+MAX SPELL LEVEL: {max_spell_level}
+CHARACTER LEVEL: {max_level}
+
+Create spells that capture the essence of the '{theme}' theme. Each spell should feel unique and thematic.
+
+{{"spells": [
+  {{"name": "Spell Name", "level": 1, "school": "evocation", "description": "Detailed spell description", "casting_time": "1 action", "range": "60 feet", "components": "V, S", "duration": "Instantaneous"}},
+  {{"name": "Spell Name 2", "level": 2, "school": "transmutation", "description": "Detailed spell description", "casting_time": "1 action", "range": "Self", "components": "V, S, M", "duration": "Concentration, up to 1 minute"}}
+]}}
+
+SPELL DESIGN GUIDELINES:
+- Spell levels should range from 1 to {max_spell_level}
+- Each spell should clearly relate to the '{theme}' theme
+- Use appropriate D&D 5e schools of magic: abjuration, conjuration, divination, enchantment, evocation, illusion, necromancy, transmutation
+- Include balanced mechanics appropriate for the spell level
+- Vary casting times, ranges, components, and durations for diversity
+- Make descriptions evocative and thematic
+
+THEME CONSIDERATIONS:
+- Consider what magical effects would make sense for '{theme}'
+- Think about the aesthetic, materials, energy types, and concepts associated with '{theme}'
+- Ensure spells feel cohesive with the theme while being mechanically sound
+
+Return complete JSON with exactly {count} spells."""
+
+            response_data = await self._generate_with_llm(prompt, f"thematic_spells_{theme}")
+            
+            if isinstance(response_data, dict) and "spells" in response_data:
+                spells = response_data["spells"]
+                
+                # Validate and enhance the generated spells
+                validated_spells = []
+                for spell in spells[:count]:  # Ensure we don't exceed requested count
+                    if isinstance(spell, dict) and "name" in spell:
+                        # Add default values for missing fields
+                        spell.setdefault("source", "Custom")
+                        spell.setdefault("casting_time", "1 action")
+                        spell.setdefault("range", "60 feet")
+                        spell.setdefault("components", "V, S")
+                        spell.setdefault("duration", "Instantaneous")
+                        spell.setdefault("level", 1)
+                        spell.setdefault("school", "evocation")
+                        spell.setdefault("description", f"A {theme}-themed spell.")
+                        
+                        # Ensure spell level is within bounds
+                        spell["level"] = min(spell.get("level", 1), max_spell_level)
+                        
+                        validated_spells.append(spell)
+                
+                logger.info(f"Generated {len(validated_spells)} thematic spells for '{theme}' theme")
+                return validated_spells
+            else:
+                logger.warning(f"Invalid response structure for thematic spells: {response_data}")
+                return []
+                
+        except Exception as e:
+            logger.warning(f"Failed to generate thematic spells for '{theme}': {e}")
+            return []
+
+    async def _filter_spells_by_theme(self, spells: List[Dict[str, Any]], theme: str, character_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Filter and prioritize spells based on campaign theme using LLM-generated theme logic.
+        Theme is suggestive - enhances spell selection but doesn't override character concept.
+        """
+        if not theme or not spells:
+            return spells
+        
+        try:
+            # Generate theme-appropriate filtering logic using LLM
+            theme_logic = await self._generate_theme_spell_logic(theme, character_data)
+            
+            if not theme_logic:
+                logger.info(f"Could not generate theme logic for '{theme}', using all spells")
+                return spells
+            
+            themed_spells = []
+            other_spells = []
+            
+            # Apply LLM-generated theme logic to filter spells
+            for spell in spells:
+                is_themed = self._evaluate_spell_for_theme(spell, theme_logic)
+                
+                if is_themed:
+                    themed_spells.append(spell)
+                else:
+                    other_spells.append(spell)
+            
+            # Combine with themed spells first (prioritized) followed by others
+            filtered_spells = themed_spells + other_spells
+            
+            if themed_spells:
+                logger.info(f"Theme '{theme}' filtering: {len(themed_spells)} themed spells prioritized, {len(other_spells)} standard spells available")
+            else:
+                logger.info(f"Theme '{theme}' filtering: No specific themed spells found, using all {len(spells)} spells")
+            
+            return filtered_spells
+            
+        except Exception as e:
+            logger.warning(f"Theme-based spell filtering failed: {e}")
+            return spells
+    
     def _enhance_character_weapons(self, character_data: Dict[str, Any], theme: Optional[str] = None) -> Dict[str, Any]:
         """
         Enhance character with appropriate D&D 5e weapons based on their class and level.
@@ -1526,10 +1631,20 @@ Match the character concept exactly. Return complete JSON only."""
             level = character_data.get("level", 1)
             
             # Get appropriate weapons for this character (prioritizes existing D&D weapons)
-            suggested_weapons = get_appropriate_weapons_for_character(character_data, 5)
+            suggested_weapons = get_appropriate_weapons_for_character(character_data)
+            
+            # Apply theme-aware weapon filtering if theme is provided
+            if theme:
+                suggested_weapons = self._filter_weapons_by_theme(suggested_weapons, theme, character_data)
             
             # If character already has weapons, validate and enhance them
             existing_weapons = character_data.get("weapons", [])
+            
+            # For characters with no initial weapons, populate based on D&D 5e rules
+            if not existing_weapons:
+                weapon_count = min(3, 1 + level // 3)  # 1-3 weapons based on level
+                existing_weapons = suggested_weapons[:weapon_count]
+                logger.info(f"Auto-populated {len(existing_weapons)} weapons for level {level} character")
             
             # Validate and enhance existing weapons
             enhanced_weapons = []
@@ -1541,29 +1656,21 @@ Match the character concept exactly. Return complete JSON only."""
                     
                     # PRIORITY 1: Check if it's an official D&D 5e weapon
                     if is_existing_dnd_weapon(weapon_name):
-                        # Get official weapon data and merge
-                        official_data = get_weapon_data(weapon_name)
-                        if official_data:
-                            # Merge with existing data, prioritizing official stats
-                            enhanced_weapon = {**weapon, **official_data}
-                            enhanced_weapon["source"] = "D&D 5e Official"
-                            enhanced_weapons.append(enhanced_weapon)
-                            existing_weapon_names.add(weapon_name)
-                            logger.info(f"Enhanced official D&D weapon: {weapon_name}")
-                        else:
-                            enhanced_weapons.append(weapon)
-                            existing_weapon_names.add(weapon_name)
+                        enhanced_weapons.append(weapon)
+                        existing_weapon_names.add(weapon_name)
+                        logger.info(f"Validated existing D&D 5e weapon: {weapon_name}")
                     else:
                         # PRIORITY 2: Try to find a similar D&D weapon
                         similar_weapons = find_similar_weapons(weapon_name, 1)
                         if similar_weapons:
                             # Replace with official weapon
-                            official_data = get_weapon_data(similar_weapons[0])
-                            if official_data:
-                                enhanced_weapons.append(official_data)
+                            weapon_data = get_weapon_data(similar_weapons[0])
+                            if weapon_data:
+                                enhanced_weapons.append(weapon_data)
                                 existing_weapon_names.add(similar_weapons[0])
                                 logger.info(f"Replaced '{weapon_name}' with official D&D weapon: {similar_weapons[0]}")
                             else:
+                                # Keep original if weapon data unavailable
                                 weapon["source"] = "Custom"
                                 enhanced_weapons.append(weapon)
                                 existing_weapon_names.add(weapon_name)
@@ -1574,19 +1681,22 @@ Match the character concept exactly. Return complete JSON only."""
                             existing_weapon_names.add(weapon_name)
                             logger.info(f"Kept custom weapon: {weapon_name}")
             
-            # PRIORITY 4: Fill with appropriate official D&D weapons if needed
-            if len(enhanced_weapons) < 2:  # Ensure character has at least 2 weapons
-                for suggested_weapon in suggested_weapons:
-                    if suggested_weapon["name"] not in existing_weapon_names:
-                        enhanced_weapons.append(suggested_weapon)
-                        logger.info(f"Added suggested D&D 5e weapon: {suggested_weapon['name']}")
-                        if len(enhanced_weapons) >= 3:  # Reasonable weapon limit
-                            break
+            # PRIORITY 4: Fill remaining slots with official D&D weapons
+            weapon_limit = min(4, 2 + level // 2)  # Scale weapons with level
+            for suggested_weapon in suggested_weapons:
+                if len(enhanced_weapons) >= weapon_limit:
+                    break
+                if isinstance(suggested_weapon, dict) and suggested_weapon.get("name") not in existing_weapon_names:
+                    enhanced_weapons.append(suggested_weapon)
+                    logger.info(f"Added suggested D&D 5e weapon: {suggested_weapon['name']}")
             
             character_data["weapons"] = enhanced_weapons
             
+            # Normalize data types after weapon enhancement
+            character_data = self._normalize_character_data_types(character_data)
+            
             # Log weapon source breakdown
-            dnd_weapons = len([w for w in enhanced_weapons if w.get('source') in ['D&D 5e Core', 'D&D 5e Official']])
+            dnd_weapons = len([w for w in enhanced_weapons if w.get('source') in ['D&D 5e Core', 'D&D 5e Official', None]])
             custom_weapons = len([w for w in enhanced_weapons if w.get('source') == 'Custom'])
             
             logger.info(f"Enhanced character with {len(enhanced_weapons)} weapons ({dnd_weapons} D&D 5e weapons, {custom_weapons} custom weapons)")
@@ -1596,165 +1706,266 @@ Match the character concept exactly. Return complete JSON only."""
         except Exception as e:
             logger.warning(f"Weapon enhancement failed: {e}")
             return character_data
+
+    async def _filter_weapons_by_theme(self, weapons: List[Dict[str, Any]], theme: str, character_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Filter and prioritize weapons based on campaign theme using LLM-generated theme logic.
+        Theme is suggestive - enhances weapon selection but doesn't override character concept.
+        """
+        if not theme or not weapons:
+            return weapons
+        
+        try:
+            # Generate theme-appropriate filtering logic using LLM
+            theme_logic = await self._generate_theme_weapon_logic(theme, character_data)
+            
+            if not theme_logic:
+                logger.info(f"Could not generate weapon theme logic for '{theme}', using all weapons")
+                return weapons
+            
+            themed_weapons = []
+            other_weapons = []
+            
+            # Apply LLM-generated theme logic to filter weapons
+            for weapon in weapons:
+                is_themed = self._evaluate_weapon_for_theme(weapon, theme_logic)
+                
+                if is_themed:
+                    themed_weapons.append(weapon)
+                else:
+                    other_weapons.append(weapon)
+            
+            # Combine with themed weapons first (prioritized) followed by others
+            filtered_weapons = themed_weapons + other_weapons
+            
+            if themed_weapons:
+                logger.info(f"Theme '{theme}' filtering: {len(themed_weapons)} themed weapons prioritized, {len(other_weapons)} standard weapons available")
+            else:
+                logger.info(f"Theme '{theme}' filtering: No specific themed weapons found, using all {len(weapons)} weapons")
+            
+            return filtered_weapons
+            
+        except Exception as e:
+            logger.warning(f"Theme-based weapon filtering failed: {e}")
+            return weapons
     
     def _enhance_character_feats(self, character_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Enhance character with appropriate D&D 5e feats based on their class, level, and background.
+        Enhance character with appropriate D&D 5e feats based on their level.
         STRONGLY prioritizes existing D&D 5e feats over custom feat creation.
         """
         try:
             level = character_data.get("level", 1)
             classes = character_data.get("classes", {})
-            primary_class = list(classes.keys())[0] if classes else "Fighter"
             
-            # Get appropriate feats for this character (prioritizes existing D&D feats)
-            suggested_feats = get_appropriate_feats_for_character(character_data, 10)
+            # Get appropriate feats for this character level
+            available_feats = get_available_feats_for_level(level)
+            suggested_feats = get_appropriate_feats_for_character(character_data)
             
-            # Validate and enhance existing feats
-            enhanced_feats = {
-                "origin_feat": "",
-                "general_feats": [],
-                "fighting_style_feats": [],
-                "epic_boon": ""
-            }
-            
-            # Process existing feats if any
-            existing_origin_feat = character_data.get("origin_feat", "")
-            existing_general_feats = character_data.get("general_feats", [])
-            existing_fighting_style_feats = character_data.get("fighting_style_feats", [])
-            existing_epic_boon = character_data.get("epic_boon", "")
-            
-            # PRIORITY 1: Validate existing origin feat
-            if existing_origin_feat:
-                if is_existing_dnd_feat(existing_origin_feat):
-                    feat_data = get_feat_data(existing_origin_feat)
-                    if feat_data and feat_data.get("category") == "Origin":
-                        enhanced_feats["origin_feat"] = existing_origin_feat
-                        logger.info(f"Validated existing D&D 5e origin feat: {existing_origin_feat}")
+            # Validate and enhance origin feat
+            origin_feat = character_data.get("origin_feat", "")
+            if not origin_feat and level >= 1:
+                # Default origin feat
+                character_data["origin_feat"] = "Alert" if not suggested_feats else suggested_feats[0].get("name", "Alert")
+                logger.info(f"Added default origin feat: {character_data['origin_feat']}")
+            elif origin_feat:
+                # Validate existing origin feat
+                if is_existing_dnd_feat(origin_feat):
+                    logger.info(f"Validated existing D&D 5e origin feat: {origin_feat}")
+                else:
+                    # Try to find similar feat
+                    similar_feats = find_similar_feats(origin_feat, 1)
+                    if similar_feats:
+                        character_data["origin_feat"] = similar_feats[0]
+                        logger.info(f"Replaced origin feat '{origin_feat}' with D&D feat: {similar_feats[0]}")
                     else:
-                        logger.warning(f"Invalid origin feat: {existing_origin_feat}, will replace")
-                else:
-                    logger.info(f"Custom origin feat detected: {existing_origin_feat}")
-                    enhanced_feats["origin_feat"] = existing_origin_feat
+                        logger.info(f"Kept custom origin feat: {origin_feat}")
             
-            # PRIORITY 2: Assign origin feat if missing
-            if not enhanced_feats["origin_feat"]:
-                origin_suggestions = [f for f in suggested_feats if f["category"] == "Origin"]
-                if origin_suggestions:
-                    enhanced_feats["origin_feat"] = origin_suggestions[0]["name"]
-                    logger.info(f"Added suggested D&D 5e origin feat: {enhanced_feats['origin_feat']}")
-                else:
-                    enhanced_feats["origin_feat"] = "Alert"  # Default fallback
-                    logger.info(f"Added default origin feat: Alert")
+            # Validate and enhance general feats
+            general_feats = character_data.get("general_feats", [])
+            general_feat_levels = [4, 8, 12, 16, 19]
+            expected_feats = [l for l in general_feat_levels if l <= level]
             
-            # PRIORITY 3: Validate and enhance general feats
-            asi_levels = [l for l in [4, 8, 12, 16, 19] if l <= level]
-            general_suggestions = [f for f in suggested_feats if f["category"] == "General"]
-            
-            for existing_feat in existing_general_feats:
-                if isinstance(existing_feat, dict) and "name" in existing_feat:
-                    feat_name = existing_feat["name"]
-                    if is_existing_dnd_feat(feat_name):
-                        feat_data = get_feat_data(feat_name)
-                        if feat_data and feat_data.get("category") == "General":
-                            enhanced_feats["general_feats"].append(existing_feat)
-                            logger.info(f"Validated existing D&D 5e general feat: {feat_name}")
-                        else:
-                            logger.warning(f"Invalid general feat: {feat_name}")
-                    else:
-                        logger.info(f"Custom general feat detected: {feat_name}")
-                        enhanced_feats["general_feats"].append(existing_feat)
-                elif isinstance(existing_feat, str):
-                    if is_existing_dnd_feat(existing_feat):
-                        feat_data = get_feat_data(existing_feat)
-                        if feat_data and feat_data.get("category") == "General":
-                            enhanced_feats["general_feats"].append({
-                                "name": existing_feat,
-                                "level": 4,  # Default to first ASI level
-                                "grants_asi": feat_data.get("asi_bonus", False)
-                            })
-                            logger.info(f"Validated existing D&D 5e general feat: {existing_feat}")
-            
-            # Fill missing general feats
-            while len(enhanced_feats["general_feats"]) < len(asi_levels) and general_suggestions:
-                for suggestion in general_suggestions:
-                    if suggestion["name"] not in [f.get("name", f) if isinstance(f, dict) else f for f in enhanced_feats["general_feats"]]:
-                        enhanced_feats["general_feats"].append({
-                            "name": suggestion["name"],
-                            "level": asi_levels[len(enhanced_feats["general_feats"])],
-                            "grants_asi": suggestion.get("asi_bonus", False)
-                        })
-                        logger.info(f"Added suggested D&D 5e general feat: {suggestion['name']}")
-                        break
-                else:
-                    break
-            
-            # PRIORITY 4: Validate fighting style feats
-            if primary_class in ["Fighter", "Paladin", "Ranger"]:
-                fighting_suggestions = [f for f in suggested_feats if f["category"] == "Fighting Style"]
-                
-                if existing_fighting_style_feats:
-                    for existing_feat in existing_fighting_style_feats:
-                        feat_name = existing_feat if isinstance(existing_feat, str) else existing_feat.get("name", "")
+            enhanced_general_feats = []
+            for i, feat_level in enumerate(expected_feats):
+                if i < len(general_feats):
+                    # Validate existing feat
+                    feat = general_feats[i]
+                    if isinstance(feat, dict):
+                        feat_name = feat.get("name", "")
                         if is_existing_dnd_feat(feat_name):
-                            feat_data = get_feat_data(feat_name)
-                            if feat_data and feat_data.get("category") == "Fighting Style":
-                                enhanced_feats["fighting_style_feats"].append(feat_name)
-                                logger.info(f"Validated existing D&D 5e fighting style feat: {feat_name}")
-                
-                # Add fighting style if missing
-                if not enhanced_feats["fighting_style_feats"] and fighting_suggestions:
-                    enhanced_feats["fighting_style_feats"].append(fighting_suggestions[0]["name"])
-                    logger.info(f"Added suggested D&D 5e fighting style feat: {fighting_suggestions[0]['name']}")
-            
-            # PRIORITY 5: Validate epic boon
-            if level >= 20:
-                if existing_epic_boon:
-                    if is_existing_dnd_feat(existing_epic_boon):
-                        feat_data = get_feat_data(existing_epic_boon)
-                        if feat_data and feat_data.get("category") == "Epic Boon":
-                            enhanced_feats["epic_boon"] = existing_epic_boon
-                            logger.info(f"Validated existing D&D 5e epic boon: {existing_epic_boon}")
+                            enhanced_general_feats.append(feat)
+                            logger.info(f"Validated existing D&D 5e feat: {feat_name}")
                         else:
-                            logger.warning(f"Invalid epic boon: {existing_epic_boon}")
+                            # Try to find similar feat
+                            similar_feats = find_similar_feats(feat_name, 1)
+                            if similar_feats:
+                                feat_data = get_feat_data(similar_feats[0])
+                                if feat_data:
+                                    enhanced_general_feats.append({
+                                        "name": similar_feats[0],
+                                        "level": feat_level,
+                                        "grants_asi": feat_data.get("grants_asi", False)
+                                    })
+                                    logger.info(f"Replaced feat '{feat_name}' with D&D feat: {similar_feats[0]}")
+                                else:
+                                    enhanced_general_feats.append(feat)
+                            else:
+                                # Keep custom feat
+                                feat["source"] = "Custom"
+                                enhanced_general_feats.append(feat)
+                                logger.info(f"Kept custom feat: {feat_name}")
                     else:
-                        logger.info(f"Custom epic boon detected: {existing_epic_boon}")
-                        enhanced_feats["epic_boon"] = existing_epic_boon
-                
-                # Add epic boon if missing
-                if not enhanced_feats["epic_boon"]:
-                    epic_suggestions = [f for f in suggested_feats if f["category"] == "Epic Boon"]
-                    if epic_suggestions:
-                        enhanced_feats["epic_boon"] = epic_suggestions[0]["name"]
-                        logger.info(f"Added suggested D&D 5e epic boon: {enhanced_feats['epic_boon']}")
+                        # Add default feat if format is wrong
+                        enhanced_general_feats.append({
+                            "name": "Ability Score Improvement",
+                            "level": feat_level,
+                            "grants_asi": True
+                        })
+                else:
+                    # Add missing feat
+                    if suggested_feats and len(suggested_feats) > i:
+                        feat_data = suggested_feats[i]
+                        enhanced_general_feats.append({
+                            "name": feat_data.get("name", "Ability Score Improvement"),
+                            "level": feat_level,
+                            "grants_asi": feat_data.get("grants_asi", True)
+                        })
+                    else:
+                        enhanced_general_feats.append({
+                            "name": "Ability Score Improvement",
+                            "level": feat_level,
+                            "grants_asi": True
+                        })
+                    logger.info(f"Added feat for level {feat_level}")
             
-            # Update character data with enhanced feats
-            character_data.update(enhanced_feats)
+            character_data["general_feats"] = enhanced_general_feats
             
-            # Log feat source breakdown
-            dnd_feats = sum([
-                1 if is_existing_dnd_feat(enhanced_feats["origin_feat"]) else 0,
-                len([f for f in enhanced_feats["general_feats"] if is_existing_dnd_feat(f.get("name", f) if isinstance(f, dict) else f)]),
-                len([f for f in enhanced_feats["fighting_style_feats"] if is_existing_dnd_feat(f)]),
-                1 if enhanced_feats["epic_boon"] and is_existing_dnd_feat(enhanced_feats["epic_boon"]) else 0
-            ])
+            # Handle epic boon for level 19+
+            if level >= 19 and not character_data.get("epic_boon"):
+                character_data["epic_boon"] = "Epic Boon of Combat Prowess"
+                logger.info("Added epic boon for level 19+ character")
             
-            total_feats = sum([
-                1 if enhanced_feats["origin_feat"] else 0,
-                len(enhanced_feats["general_feats"]),
-                len(enhanced_feats["fighting_style_feats"]),
-                1 if enhanced_feats["epic_boon"] else 0
-            ])
+            # Ensure fighting style feats is initialized
+            if "fighting_style_feats" not in character_data:
+                character_data["fighting_style_feats"] = []
             
-            custom_feats = total_feats - dnd_feats
-            
-            logger.info(f"Enhanced character with {total_feats} feats ({dnd_feats} D&D 5e feats, {custom_feats} custom feats)")
-            
+            logger.info(f"Enhanced character with {len(enhanced_general_feats)} general feats")
             return character_data
             
         except Exception as e:
             logger.warning(f"Feat enhancement failed: {e}")
             return character_data
+    
+    def _calculate_spell_slots(self, character_data: Dict[str, Any]) -> Dict[str, List[int]]:
+        """
+        Calculate spell slots based on character class and level according to D&D 5e rules.
+        Returns a dictionary with spell slot counts for each spell level.
+        """
+        try:
+            classes = character_data.get("classes", {})
+            total_level = character_data.get("level", 1)
+            
+            # Initialize spell slots structure
+            spell_slots = {
+                "1st": 0, "2nd": 0, "3rd": 0, "4th": 0, "5th": 0,
+                "6th": 0, "7th": 0, "8th": 0, "9th": 0
+            }
+            
+            # Calculate spell slots for each class
+            full_caster_levels = 0
+            half_caster_levels = 0
+            third_caster_levels = 0
+            
+            for class_name, class_level in classes.items():
+                class_lower = class_name.lower()
+                
+                # Full casters (Wizard, Sorcerer, Cleric, Druid, Bard, Warlock)
+                if any(keyword in class_lower for keyword in [
+                    "wizard", "sorcerer", "cleric", "druid", "bard", "warlock",
+                    "mage", "priest", "witch", "mystic"
+                ]):
+                    full_caster_levels += class_level
+                
+                # Half casters (Paladin, Ranger, Artificer)
+                elif any(keyword in class_lower for keyword in [
+                    "paladin", "ranger", "artificer", "knight", "hunter"
+                ]):
+                    if class_level >= 2:  # Half-casters start spellcasting at level 2
+                        half_caster_levels += class_level
+                
+                # Third casters (Eldritch Knight, Arcane Trickster)
+                elif any(keyword in class_lower for keyword in [
+                    "eldritch", "arcane trickster", "spellsword"
+                ]):
+                    if class_level >= 3:  # Third-casters start spellcasting at level 3
+                        third_caster_levels += class_level
+                
+                # Custom magical classes (treat as full casters)
+                elif any(keyword in class_lower for keyword in [
+                    "mancer", "elementalist", "void", "shadow", "blood"
+                ]):
+                    full_caster_levels += class_level
+            
+            # Calculate effective caster level
+            effective_caster_level = (
+                full_caster_levels + 
+                (half_caster_levels // 2) + 
+                (third_caster_levels // 3)
+            )
+            
+            if effective_caster_level == 0:
+                return spell_slots
+            
+            # D&D 5e spell slot progression table
+            spell_slot_table = {
+                1:  [2, 0, 0, 0, 0, 0, 0, 0, 0],
+                2:  [3, 0, 0, 0, 0, 0, 0, 0, 0],
+                3:  [4, 2, 0, 0, 0, 0, 0, 0, 0],
+                4:  [4, 3, 0, 0, 0, 0, 0, 0, 0],
+                5:  [4, 3, 2, 0, 0, 0, 0, 0, 0],
+                6:  [4, 3, 3, 0, 0, 0, 0, 0, 0],
+                7:  [4, 3, 3, 1, 0, 0, 0, 0, 0],
+                8:  [4, 3, 3, 2, 0, 0, 0, 0, 0],
+                9:  [4, 3, 3, 3, 1, 0, 0, 0, 0],
+                10: [4, 3, 3, 3, 2, 0, 0, 0, 0],
+                11: [4, 3, 3, 3, 2, 1, 0, 0, 0],
+                12: [4, 3, 3, 3, 2, 1, 0, 0, 0],
+                13: [4, 3, 3, 3, 2, 1, 1, 0, 0],
+                14: [4, 3, 3, 3, 2, 1, 1, 0, 0],
+                15: [4, 3, 3, 3, 2, 1, 1, 1, 0],
+                16: [4, 3, 3, 3, 2, 1, 1, 1, 0],
+                17: [4, 3, 3, 3, 2, 1, 1, 1, 1],
+                18: [4, 3, 3, 3, 3, 1, 1, 1, 1],
+                19: [4, 3, 3, 3, 3, 2, 1, 1, 1],
+                20: [4, 3, 3, 3, 3, 2, 2, 1, 1]
+            }
+            
+            # Get spell slots for effective caster level
+            caster_level = min(effective_caster_level, 20)
+            if caster_level in spell_slot_table:
+                slots = spell_slot_table[caster_level]
+                spell_slots = {
+                    "1st": slots[0],
+                    "2nd": slots[1],
+                    "3rd": slots[2],
+                    "4th": slots[3],
+                    "5th": slots[4],
+                    "6th": slots[5],
+                    "7th": slots[6],
+                    "8th": slots[7],
+                    "9th": slots[8]
+                }
+            
+            logger.info(f"Calculated spell slots for effective caster level {caster_level}: {spell_slots}")
+            return spell_slots
+            
+        except Exception as e:
+            logger.warning(f"Spell slot calculation failed: {e}")
+            return {
+                "1st": 0, "2nd": 0, "3rd": 0, "4th": 0, "5th": 0,
+                "6th": 0, "7th": 0, "8th": 0, "9th": 0
+            }
     
     def _enhance_character_armor(self, character_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -1764,34 +1975,34 @@ Match the character concept exactly. Return complete JSON only."""
         try:
             classes = character_data.get("classes", {})
             level = character_data.get("level", 1)
-            primary_class = list(classes.keys())[0] if classes else "Fighter"
             
-            # Validate existing armor or assign default based on class
+            # Get appropriate armor for this character (prioritizes existing D&D armor)
+            suggested_armor = get_appropriate_armor_for_character(character_data)
+            
+            # If character already has armor, validate it
             existing_armor = character_data.get("armor", "")
             
-            # Handle case where armor might be a list (from custom content)
-            if isinstance(existing_armor, list):
-                existing_armor = existing_armor[0] if existing_armor else ""
-                character_data["armor"] = existing_armor
-            
-            if existing_armor:
-                # Keep existing armor
-                logger.info(f"Character has existing armor: {existing_armor}")
-            else:
-                # Assign default armor based on class proficiency
-                if primary_class in ["Fighter", "Paladin"]:
-                    character_data["armor"] = "Chain Mail"
-                elif primary_class in ["Cleric", "Ranger", "Barbarian", "Druid"]:
-                    character_data["armor"] = "Leather Armor"
-                elif primary_class in ["Rogue", "Bard", "Monk"]:
-                    character_data["armor"] = "Leather Armor"
+            # For characters with no initial armor, populate based on D&D 5e rules
+            if not existing_armor and suggested_armor:
+                character_data["armor"] = suggested_armor["name"]
+                logger.info(f"Auto-populated armor: {suggested_armor['name']} for level {level} character")
+            elif existing_armor:
+                # Validate existing armor
+                if is_existing_dnd_armor(existing_armor):
+                    logger.info(f"Validated existing D&D 5e armor: {existing_armor}")
                 else:
-                    character_data["armor"] = "Padded Armor"
-                
-                logger.info(f"Added default armor for {primary_class}: {character_data['armor']}")
-            
-            # Log armor assignment
-            logger.info(f"Character equipped with armor: {character_data['armor']}")
+                    # Try to find similar armor
+                    similar_armor = find_similar_armor(existing_armor, 1)
+                    if similar_armor:
+                        character_data["armor"] = similar_armor[0]
+                        logger.info(f"Replaced '{existing_armor}' with official D&D armor: {similar_armor[0]}")
+                    else:
+                        logger.info(f"Kept custom armor: {existing_armor}")
+            else:
+                # Default armor based on class
+                default_armor = self._get_default_armor_for_class(classes)
+                character_data["armor"] = default_armor
+                logger.info(f"Added default armor: {default_armor}")
             
             return character_data
             
@@ -1799,674 +2010,166 @@ Match the character concept exactly. Return complete JSON only."""
             logger.warning(f"Armor enhancement failed: {e}")
             return character_data
     
-    def _enhance_character_equipment(self, character_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def _generate_theme_spell_logic(self, theme: str, character_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Enhance character with appropriate D&D 5e equipment based on their class, background, and level.
+        Generate theme-appropriate spell filtering logic using LLM.
+        Returns filtering criteria for the given theme.
         """
-        try:
-            classes = character_data.get("classes", {})
-            level = character_data.get("level", 1)
-            primary_class = list(classes.keys())[0] if classes else "Fighter"
-            background = character_data.get("background", "Folk Hero")
-            
-            # If character already has equipment, validate and enhance it
-            existing_equipment = character_data.get("equipment", {})
-            if not isinstance(existing_equipment, dict):
-                existing_equipment = {}
-            
-            # Start with existing equipment
-            enhanced_equipment = existing_equipment.copy()
-            existing_item_names = set(existing_equipment.keys())
-            
-            # Add essential class-based equipment if missing
-            class_equipment = {
-                "Fighter": ["Shield", "Rope (50 feet)", "Rations (1 day)"],
-                "Wizard": ["Spellbook", "Component Pouch", "Ink and Quill"],
-                "Cleric": ["Holy Symbol", "Prayer Book", "Incense"],
-                "Rogue": ["Thieves' Tools", "Crowbar", "Dark Cloak"],
-                "Ranger": ["Quiver", "Hunting Trap", "Traveler's Clothes"],
-                "Barbarian": ["Bedroll", "Waterskin", "Belt Pouch"],
-                "Bard": ["Musical Instrument", "Costume", "Sealing Wax"],
-                "Druid": ["Leather Armor", "Druidic Focus", "Herbal Pouch"],
-                "Paladin": ["Holy Symbol", "Chain Mail", "Emblem"],
-                "Sorcerer": ["Component Pouch", "Simple Weapon", "Light Crossbow"],
-                "Warlock": ["Component Pouch", "Leather Armor", "Simple Weapon"],
-                "Monk": ["Monk's Robes", "Prayer Beads", "Rice Paper"]
-            }
-            
-            essential_items = class_equipment.get(primary_class, ["Backpack", "Bedroll", "Rations (1 day)"])
-            for item in essential_items:
-                if item not in existing_item_names:
-                    enhanced_equipment[item] = 1
-                    existing_item_names.add(item)
-                    logger.info(f"Added essential {primary_class} equipment: {item}")
-            
-            # Add background-based equipment if missing
-            background_equipment = {
-                "Folk Hero": ["Smith's Tools", "Artisan's Tools"],
-                "Criminal": ["Thieves' Tools", "Crowbar"],
-                "Acolyte": ["Holy Symbol", "Prayer Book", "Incense"],
-                "Noble": ["Signet Ring", "Fine Clothes", "Purse"],
-                "Sage": ["Ink and Quill", "Parchment", "Small Knife"],
-                "Soldier": ["Playing Cards", "Common Clothes", "Belt Pouch"],
-                "Entertainer": ["Musical Instrument", "Costume", "Makeup"],
-                "Guild Artisan": ["Artisan's Tools", "Letter of Introduction"],
-                "Hermit": ["Herbalism Kit", "Scroll Case", "Winter Blanket"],
-                "Outlander": ["Staff", "Hunting Trap", "Traveler's Clothes"]
-            }
-            
-            bg_items = background_equipment.get(background, ["Common Clothes", "Belt Pouch"])
-            for item in bg_items:
-                if item not in existing_item_names:
-                    enhanced_equipment[item] = 1
-                    existing_item_names.add(item)
-                    logger.info(f"Added {background} background equipment: {item}")
-            
-            # Ensure basic adventuring gear
-            basic_gear = ["Backpack", "Bedroll", "Rations (1 day)", "Waterskin", "Rope (50 feet)", "Torch", "Flint and Steel"]
-            for item in basic_gear:
-                if item not in existing_item_names:
-                    enhanced_equipment[item] = 2 if item == "Torch" else 1
-                    existing_item_names.add(item)
-                    if len(enhanced_equipment) >= 25:  # Final equipment limit
-                        break
-            
-            character_data["equipment"] = enhanced_equipment
-            
-            logger.info(f"Enhanced character with {len(enhanced_equipment)} equipment items")
-            
-            return character_data
-            
-        except Exception as e:
-            logger.warning(f"Equipment enhancement failed: {e}")
-            return character_data
-    
-    def _calculate_spell_slots(self, character_data: Dict[str, Any]) -> Dict[int, int]:
-        """Calculate spell slots for a character based on their classes and level."""
-        classes = character_data.get("classes", {})
-        total_level = character_data.get("level", 1)
-        
-        # Simplified spell slot calculation
-        # In a full implementation, this would handle multiclassing properly
-        spell_slots = {}
-        
-        for class_name, class_level in classes.items():
-            if class_name in ["Wizard", "Sorcerer", "Warlock", "Cleric", "Druid", "Bard"]:
-                # Full casters
-                for slot_level in range(1, min(10, (class_level + 1) // 2 + 1)):
-                    if slot_level <= 9:
-                        if slot_level == 1:
-                            spell_slots[slot_level] = spell_slots.get(slot_level, 0) + min(4, class_level + 1)
-                        elif slot_level == 2:
-                            spell_slots[slot_level] = spell_slots.get(slot_level, 0) + max(0, min(3, class_level - 2))
-                        else:
-                            spell_slots[slot_level] = spell_slots.get(slot_level, 0) + max(0, min(3, class_level - slot_level * 2))
-            
-            elif class_name in ["Paladin", "Ranger"]:
-                # Half casters
-                if class_level >= 2:
-                    for slot_level in range(1, min(6, (class_level - 1) // 2 + 1)):
-                        if slot_level <= 5:
-                            spell_slots[slot_level] = spell_slots.get(slot_level, 0) + max(0, min(4, class_level - slot_level))
-        
-        return spell_slots
-    
-    def _create_final_character(self, character_data: Dict[str, Any], character_core: CharacterCore) -> Dict[str, Any]:
-        """Create the final character representation."""
-        try:
-            # Create character sheet
-            name = character_data.get("name", "Generated Character")
-            species = character_data.get("species", "Human")
-            
-            character_classes = character_data.get("classes", {"Fighter": 1})
-            if character_classes:
-                primary_class = list(character_classes.keys())[0]
-                level = list(character_classes.values())[0]
-            else:
-                primary_class = "Fighter"
-                level = character_data.get("level", 1)
-            
-            # Create character representation without CharacterSheet for now
-            character_representation = {
-                "core": character_core,
-                "name": name,
-                "species": species,
-                "primary_class": primary_class,
-                "level": level,
-                "raw_data": character_data
-            }
-            
-            # Combine all character information
-            final_character = {
-                "core": character_core,
-                "character": character_representation,
-                "raw_data": character_data,
-                "creation_metadata": {
-                    "created_at": time.time(),
-                    "version": "2024",
-                    "generator": "CharacterCreator"
-                }
-            }
-            
-            return final_character
-            
-        except Exception as e:
-            logger.error(f"Failed to create final character: {e}")
-            return character_data
-    
-    # ============================================================================
-    # ITERATIVE REFINEMENT METHODS (dev_vision.md CRITICAL REQUIREMENT)
-    # ============================================================================
-    
-    async def refine_character(self, character_data: Dict[str, Any], refinement_prompt: str, user_preferences: Optional[Dict[str, Any]] = None) -> CreationResult:
-        """
-        Iteratively refine an existing character based on user feedback.
-        This is a CRITICAL dev_vision.md requirement for user-driven character improvement.
-        """
-        logger.info(f"Starting character refinement: {refinement_prompt}")
-        start_time = time.time()
-        verbose_generation = user_preferences.get("verbose_generation", False) if user_preferences else False
-        if verbose_generation:
-            self.verbose_logs = []
-            self.verbose_logs.append({
-                'type': 'refinement_start',
-                'timestamp': time.time(),
-                'refinement_prompt': refinement_prompt,
-                'original_character': character_data
-            })
         try:
             character_concept = self._extract_character_concept(character_data)
-            refinement_full_prompt = f"""
-ORIGINAL CHARACTER: {character_concept}
-
-CHARACTER DATA: {json.dumps(character_data, indent=2)}
-
-REFINEMENT REQUEST: {refinement_prompt}
-
-Create an improved version of this character that:
-1. Applies the requested refinement changes
-2. Preserves the character's core identity and backstory
-3. Maintains D&D 5e 2024 compatibility
-4. Keeps the same name and background unless specifically requested to change
-
-Respond with complete character data in the same format as the original.
-"""
-            refined_data = await self._generate_character_data(refinement_full_prompt, character_data.get("level", 1), 
-                                                              user_preferences.get("theme") if user_preferences else None)
-            if verbose_generation and hasattr(self, 'verbose_logs'):
-                self.verbose_logs.append({
-                    'type': 'refinement_step',
-                    'timestamp': time.time(),
-                    'step': 'llm_refinement',
-                    'description': 'LLM generated refined character data',
-                    'refined_keys': list(refined_data.keys()) if refined_data else []
-                })
-            refined_data = self._enhance_character_spells(refined_data, user_preferences.get("theme") if user_preferences else None)
-            refined_data = self._enhance_character_weapons(refined_data, user_preferences.get("theme") if user_preferences else None)
-            refined_data = self._enhance_character_feats(refined_data)
-            refined_data = self._enhance_character_equipment(refined_data)
-            if verbose_generation and hasattr(self, 'verbose_logs'):
-                self.verbose_logs.append({
-                    'type': 'refinement_step',
-                    'timestamp': time.time(),
-                    'step': 'enhancements',
-                    'description': 'Enhanced spells, weapons, feats, equipment',
-                    'spells': refined_data.get('spells_known', []),
-                    'weapons': refined_data.get('weapons', []),
-                    'feats': refined_data.get('general_feats', []),
-                    'equipment': refined_data.get('equipment', {})
-                })
-            character_core = self._build_character_core(refined_data)
-            if self.llm_service:
-                backstory_prompt = f"""
-ORIGINAL CHARACTER: {character_concept}
-REFINEMENT APPLIED: {refinement_prompt}
-
-Create an enhanced backstory that:
-1. Incorporates the character refinement changes
-2. Explains how the character developed these new aspects
-3. Maintains narrative consistency
-4. Keeps the core character identity
-"""
-                refined_data = await self._generate_enhanced_backstory(refined_data, backstory_prompt)
-                if verbose_generation and hasattr(self, 'verbose_logs'):
-                    self.verbose_logs.append({
-                        'type': 'refinement_step',
-                        'timestamp': time.time(),
-                        'step': 'enhanced_backstory',
-                        'description': 'Generated enhanced backstory after refinement',
-                        'backstory': refined_data.get('backstory', '')
-                    })
-            result = CreationResult(
-                success=True,
-                data={
-                    "character_core": character_core,
-                    "raw_data": refined_data,
-                    "refinement_applied": refinement_prompt,
-                    "creation_type": "character_refinement"
+            
+            # Provide default traditional D&D logic if theme is traditional D&D
+            if theme.lower() == "traditional d&d":
+                return {
+                    "keywords": ["magic", "arcane", "divine", "elemental", "force", "healing", "protection"],
+                    "schools": ["evocation", "conjuration", "transmutation", "abjuration", "divination", "enchantment"],
+                    "avoid": [],
+                    "description": "Traditional D&D fantasy magic encompassing all schools and classic spell themes"
                 }
-            )
-            result.creation_time = time.time() - start_time
-            if verbose_generation and hasattr(self, 'verbose_logs'):
-                self.verbose_logs.append({
-                    'type': 'refinement_complete',
-                    'timestamp': time.time(),
-                    'total_time': result.creation_time
-                })
-                result.verbose_logs = self.verbose_logs
-            logger.info(f"Character refinement completed in {result.creation_time:.2f}s")
-            return result
-        except Exception as e:
-            logger.error(f"Character refinement failed: {str(e)}")
-            result = CreationResult(success=False, error=f"Character refinement failed: {str(e)}")
-            result.creation_time = time.time() - start_time
-            if verbose_generation and hasattr(self, 'verbose_logs'):
-                self.verbose_logs.append({
-                    'type': 'refinement_error',
-                    'timestamp': time.time(),
-                    'error': str(e),
-                    'total_time': result.creation_time
-                })
-                result.verbose_logs = self.verbose_logs
-            return result
+            
+            prompt = f"""Generate spell filtering logic for a '{theme}' campaign theme. Return ONLY JSON:
 
-    async def level_up_character_with_journal(self, character_data: Dict[str, Any], journal_entries: List[str], new_level: int, multiclass_option: Optional[str] = None, user_preferences: Optional[Dict[str, Any]] = None) -> CreationResult:
-        """
-        Level up a character using journal entries for context.
-        This is a HIGH dev_vision.md requirement for journal-informed character advancement.
-        """
-        logger.info(f"Starting journal-based level up to level {new_level}")
-        start_time = time.time()
-        verbose_generation = user_preferences.get("verbose_generation", False) if user_preferences else False
-        if verbose_generation:
-            self.verbose_logs = []
-            self.verbose_logs.append({
-                'type': 'levelup_start',
-                'timestamp': time.time(),
-                'journal_entries': journal_entries,
-                'original_character': character_data,
-                'new_level': new_level,
-                'multiclass_option': multiclass_option
-            })
-        try:
-            current_level = character_data.get("level", 1)
-            character_concept = self._extract_character_concept(character_data)
-            journal_context = "\n".join([f"- {entry}" for entry in journal_entries])
-            levelup_prompt = f"""
-EXISTING CHARACTER: {character_concept}
-CURRENT LEVEL: {current_level}
-TARGET LEVEL: {new_level}
-
-JOURNAL ENTRIES (PLAY EXPERIENCE):
-{journal_context}
-
-CHARACTER DATA: {json.dumps(character_data, indent=2)}
-
-Level up this character from level {current_level} to {new_level} based on their actual play experiences.
-
-Requirements:
-1. Preserve character identity, name, and core backstory
-2. Add appropriate class features for the new level
-3. Reflect the journal experiences in advancement choices
-4. Add spells, feats, ability score improvements as appropriate
-5. {"Consider adding " + multiclass_option + " levels if appropriate" if multiclass_option else "Focus on existing classes"}
-6. Maintain D&D 5e 2024 compatibility
-
-Respond with complete updated character data.
-"""
-            leveled_data = await self._generate_character_data(levelup_prompt, new_level, 
-                                                             user_preferences.get("theme") if user_preferences else None)
-            if verbose_generation and hasattr(self, 'verbose_logs'):
-                self.verbose_logs.append({
-                    'type': 'levelup_step',
-                    'timestamp': time.time(),
-                    'step': 'llm_levelup',
-                    'description': 'LLM generated leveled-up character data',
-                    'leveled_keys': list(leveled_data.keys()) if leveled_data else []
-                })
-            leveled_data["level"] = new_level
-            if multiclass_option and multiclass_option not in leveled_data.get("classes", {}):
-                current_classes = leveled_data.get("classes", {})
-                current_classes[multiclass_option] = 1
-                leveled_data["classes"] = current_classes
-            leveled_data = self._enhance_character_spells(leveled_data, user_preferences.get("theme") if user_preferences else None)
-            leveled_data = self._enhance_character_weapons(leveled_data, user_preferences.get("theme") if user_preferences else None)
-            leveled_data = self._enhance_character_feats(leveled_data)
-            leveled_data = self._enhance_character_equipment(leveled_data)
-            if verbose_generation and hasattr(self, 'verbose_logs'):
-                self.verbose_logs.append({
-                    'type': 'levelup_step',
-                    'timestamp': time.time(),
-                    'step': 'enhancements',
-                    'description': 'Enhanced spells, weapons, feats, equipment',
-                    'spells': leveled_data.get('spells_known', []),
-                    'weapons': leveled_data.get('weapons', []),
-                    'feats': leveled_data.get('general_feats', []),
-                    'equipment': leveled_data.get('equipment', {})
-                })
-            character_core = self._build_character_core(leveled_data)
-            if self.llm_service:
-                backstory_prompt = f"""
+THEME: {theme}
 CHARACTER: {character_concept}
-LEVEL UP: {current_level} → {new_level}
-PLAY EXPERIENCES: {journal_context}
 
-Create an enhanced backstory that:
-1. Incorporates the character's actual play experiences
-2. Explains their growth and new abilities
-3. Reflects lessons learned in their adventures
-4. Maintains character consistency and personality
-"""
-                leveled_data = await self._generate_enhanced_backstory(leveled_data, backstory_prompt)
-                if verbose_generation and hasattr(self, 'verbose_logs'):
-                    self.verbose_logs.append({
-                        'type': 'levelup_step',
-                        'timestamp': time.time(),
-                        'step': 'enhanced_backstory',
-                        'description': 'Generated enhanced backstory after level up',
-                        'backstory': leveled_data.get('backstory', '')
-                    })
-            result = CreationResult(
-                success=True,
-                data={
-                    "character_core": character_core,
-                    "raw_data": leveled_data,
-                    "journal_entries": journal_entries,
-                    "level_progression": f"{current_level} → {new_level}",
-                    "creation_type": "character_levelup"
-                }
-            )
-            result.creation_time = time.time() - start_time
-            if verbose_generation and hasattr(self, 'verbose_logs'):
-                self.verbose_logs.append({
-                    'type': 'levelup_complete',
-                    'timestamp': time.time(),
-                    'total_time': result.creation_time
-                })
-                result.verbose_logs = self.verbose_logs
-            logger.info(f"Journal-based level up completed in {result.creation_time:.2f}s")
-            return result
+Analyze what types of spells would fit this theme and return filtering criteria:
+
+{{"keywords": ["word1", "word2", "word3"], "schools": ["school1", "school2"], "avoid": ["avoid1", "avoid2"], "description": "Brief description of why these spells fit the theme"}}
+
+SPELL SCHOOLS: abjuration, conjuration, divination, enchantment, evocation, illusion, necromancy, transmutation
+
+Consider the theme's atmosphere, technology level, cultural elements, and typical conflicts.
+Think about what types of magic would be common, rare, or forbidden in this setting.
+Keywords should relate to elements, concepts, or effects that match the theme.
+Schools should reflect the types of magic that would be most prevalent.
+Avoid should list schools or concepts that don't fit the theme.
+
+Return complete JSON only."""
+
+            response_data = await self._generate_with_llm(prompt, "theme_spell_logic")
+            
+            # Validate the response has the expected structure
+            if isinstance(response_data, dict) and "keywords" in response_data:
+                logger.info(f"Generated spell theme logic for '{theme}': {response_data.get('description', 'No description')}")
+                return response_data
+            else:
+                logger.warning(f"Invalid theme logic response structure: {response_data}")
+                return None
+                
         except Exception as e:
-            logger.error(f"Journal-based level up failed: {str(e)}")
-            result = CreationResult(success=False, error=f"Journal-based level up failed: {str(e)}")
-            result.creation_time = time.time() - start_time
-            if verbose_generation and hasattr(self, 'verbose_logs'):
-                self.verbose_logs.append({
-                    'type': 'levelup_error',
-                    'timestamp': time.time(),
-                    'error': str(e),
-                    'total_time': result.creation_time
-                })
-                result.verbose_logs = self.verbose_logs
-            return result
-    
-    async def enhance_existing_character(self, character_data: Dict[str, Any], 
-                                       enhancement_prompt: str, 
-                                       user_preferences: Optional[Dict[str, Any]] = None) -> CreationResult:
+            logger.warning(f"Failed to generate spell theme logic for '{theme}': {e}")
+            return None
+
+    async def _generate_theme_weapon_logic(self, theme: str, character_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Enhance an existing character with story-driven improvements.
-        
-        This supports dev_vision.md requirements for character evolution based on story events.
+        Generate theme-appropriate weapon filtering logic using LLM.
+        Returns filtering criteria for the given theme.
         """
-        logger.info(f"Starting character enhancement: {enhancement_prompt}")
-        
         try:
             character_concept = self._extract_character_concept(character_data)
             
-            enhancement_full_prompt = f"""
-            EXISTING CHARACTER: {character_concept}
-            
-            CHARACTER DATA: {json.dumps(character_data, indent=2)}
-            
-            ENHANCEMENT REQUEST: {enhancement_prompt}
-            
-            Enhance this character based on the story event or development described.
-            
-            Requirements:
-            1. Preserve character identity, name, and core backstory
-            2. Add new abilities, knowledge, or traits as appropriate
-            3. Integrate the enhancement into the character's narrative
-            4. Maintain D&D 5e 2024 balance and compatibility
-            5. Explain how the enhancement manifests mechanically
-            
-            Respond with complete enhanced character data.
-            """
-            
-            # Generate enhanced character
-            enhanced_data = await self._generate_character_data(enhancement_full_prompt, character_data.get("level", 1), 
-                                                               user_preferences.get("theme") if user_preferences else None)
-            
-            # Enhance the character
-            enhanced_data = self._enhance_character_spells(enhanced_data, user_preferences.get("theme") if user_preferences else None)
-            enhanced_data = self._enhance_character_weapons(enhanced_data, user_preferences.get("theme") if user_preferences else None)
-            enhanced_data = self._enhance_character_feats(enhanced_data)
-            enhanced_data = self._enhance_character_equipment(enhanced_data)
-            
-            # Build character core
-            character_core = self._build_character_core(enhanced_data)
-            
-            # Generate enhanced backstory
-            if self.llm_service:
-                backstory_prompt = f"""
-                CHARACTER: {character_concept}
-                ENHANCEMENT: {enhancement_prompt}
-                
-                Create an enhanced backstory that:
-                1. Incorporates the character enhancement event
-                2. Explains how they gained new abilities or knowledge
-                3. Shows character growth and development
-                4. Maintains personality and core traits
-                """
-                enhanced_data = await self._generate_enhanced_backstory(enhanced_data, backstory_prompt)
-            
-            return CreationResult(
-                success=True,
-                data={
-                    "character_core": character_core,
-                    "raw_data": enhanced_data,
-                    "enhancement_applied": enhancement_prompt,
-                    "creation_type": "character_enhancement"
+            # Provide default traditional D&D logic if theme is traditional D&D
+            if theme.lower() == "traditional d&d":
+                return {
+                    "keywords": ["sword", "axe", "bow", "mace", "crossbow", "shield", "armor", "steel", "iron"],
+                    "types": ["martial", "simple", "ranged", "melee"],
+                    "avoid": ["firearm", "mechanical", "technological"],
+                    "description": "Traditional D&D medieval fantasy weapons including swords, axes, bows, and classic armor"
                 }
-            )
             
+            prompt = f"""Generate weapon filtering logic for a '{theme}' campaign theme. Return ONLY JSON:
+
+THEME: {theme}
+CHARACTER: {character_concept}
+
+Analyze what types of weapons would fit this theme and return filtering criteria:
+
+{{"keywords": ["word1", "word2", "word3"], "types": ["type1", "type2"], "avoid": ["avoid1", "avoid2"], "description": "Brief description of why these weapons fit the theme"}}
+
+WEAPON TYPES: simple, martial, ranged, melee, firearm, magical, natural, mechanical, blessed, silver, enchanted
+
+Consider the theme's technology level, available materials, cultural preferences, and typical combat scenarios.
+Think about what weapons would be common, rare, or forbidden in this setting.
+Keywords should relate to weapon materials, styles, or types that match the theme.
+Types should reflect the categories of weapons that would be most prevalent.
+Avoid should list weapon types or materials that don't fit the theme.
+
+Return complete JSON only."""
+
+            response_data = await self._generate_with_llm(prompt, "theme_weapon_logic")
+            
+            # Validate the response has the expected structure
+            if isinstance(response_data, dict) and "keywords" in response_data:
+                logger.info(f"Generated weapon theme logic for '{theme}': {response_data.get('description', 'No description')}")
+                return response_data
+            else:
+                logger.warning(f"Invalid weapon theme logic response structure: {response_data}")
+                return None
+                
         except Exception as e:
-            logger.error(f"Character enhancement failed: {str(e)}")
-            return CreationResult(success=False, error=f"Character enhancement failed: {str(e)}")
-    
-    async def apply_user_feedback(self, character_data: Dict[str, Any], 
-                                feedback: Dict[str, Any]) -> CreationResult:
+            logger.warning(f"Failed to generate weapon theme logic for '{theme}': {e}")
+            return None
+
+    def _evaluate_spell_for_theme(self, spell: Dict[str, Any], theme_logic: Dict[str, Any]) -> bool:
         """
-        Apply structured user feedback to improve a character.
-        
-        This supports dev_vision.md iterative development requirements.
+        Evaluate if a spell matches the theme using LLM-generated logic.
         """
-        logger.info("Applying user feedback to character")
-        
         try:
-            feedback_items = []
+            spell_name = spell.get("name", "").lower()
+            spell_desc = spell.get("description", "").lower()
+            spell_school = spell.get("school", "").lower()
             
-            # Process different types of feedback
-            if "ability_scores" in feedback:
-                feedback_items.append(f"Adjust ability scores: {feedback['ability_scores']}")
+            # Check keywords in spell name and description
+            keywords = theme_logic.get("keywords", [])
+            if any(keyword.lower() in spell_name or keyword.lower() in spell_desc for keyword in keywords):
+                return True
             
-            if "classes" in feedback:
-                feedback_items.append(f"Class changes: {feedback['classes']}")
+            # Check school preferences
+            preferred_schools = theme_logic.get("schools", [])
+            if spell_school in [school.lower() for school in preferred_schools]:
+                return True
             
-            if "equipment" in feedback:
-                feedback_items.append(f"Equipment changes: {feedback['equipment']}")
+            # Avoid certain schools if specified
+            avoid_schools = theme_logic.get("avoid", [])
+            if spell_school in [school.lower() for school in avoid_schools]:
+                return False
             
-            if "personality" in feedback:
-                feedback_items.append(f"Personality adjustments: {feedback['personality']}")
-            
-            if "backstory" in feedback:
-                feedback_items.append(f"Backstory changes: {feedback['backstory']}")
-            
-            if "general" in feedback:
-                feedback_items.append(f"General feedback: {feedback['general']}")
-            
-            # Combine all feedback into a refinement prompt
-            combined_feedback = "; ".join(feedback_items)
-            
-            # Use the refinement system
-            return await self.refine_character(character_data, combined_feedback, {"apply_feedback": True})
+            return False
             
         except Exception as e:
-            logger.error(f"User feedback application failed: {str(e)}")
-            return CreationResult(success=False, error=f"User feedback application failed: {str(e)}")
-    
-    # ============================================================================
-    # GENERATOR INTEGRATION METHODS
-    # ============================================================================
-    
-    async def generate_character_with_generators(self, prompt: str, level: int = 1, 
-                                               user_preferences: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+            logger.warning(f"Error evaluating spell for theme: {e}")
+            return False
+
+    def _evaluate_weapon_for_theme(self, weapon: Dict[str, Any], theme_logic: Dict[str, Any]) -> bool:
         """
-        Use the integrated CharacterGenerator for comprehensive D&D 5e 2024 character creation.
-        This method leverages the full generator pipeline for dev_vision.md compliance.
+        Evaluate if a weapon matches the theme using LLM-generated logic.
         """
-        logger.info(f"Creating character with integrated generators: level {level}")
-        
-        # Parse character concept from prompt
-        character_concept = self._parse_character_concept(prompt, level)
-        
-        # Use CharacterGenerator for complete character creation
-        # TODO: Implement CharacterGenerator class
-        # character_data = await self.character_generator.generate_character(character_concept, prompt)
-        
-        # For now, use the existing character creation logic
-        # Pass level in user_preferences format and disable generators to prevent recursion
-        level_preferences = user_preferences.copy() if user_preferences else {}
-        level_preferences["level"] = level
-        level_preferences["use_generators"] = False  # Prevent infinite recursion
-        creation_result = await self.create_character(prompt, level_preferences)
-        
-        # Extract character data from the creation result
-        if creation_result.success:
-            character_data = creation_result.data
-        else:
-            raise Exception(f"Character creation failed: {creation_result.error}")
-        
-        # Apply additional validation and enhancement from src.services.creation system
-        theme = user_preferences.get("theme") if user_preferences else None
-        character_data = self._enhance_character_spells(character_data, theme)
-        character_data = self._enhance_character_weapons(character_data, theme)
-        character_data = self._enhance_character_feats(character_data)
-        character_data = self._enhance_character_armor(character_data)
-        character_data = self._enhance_character_equipment(character_data)
-        
-        logger.info(f"Character '{character_data.get('name', 'Unknown')}' created successfully with generators")
-        return character_data
-    
-    async def generate_npc_with_generators(self, npc_role: str, user_description: str = "") -> Dict[str, Any]:
-        """Use the integrated NPCGenerator for NPC creation."""
-        logger.info(f"Creating NPC with integrated generators: {npc_role}")
-        
-        npc_data = await self.npc_generator.generate_npc(npc_role, user_description)
-        
-        # Apply NPC-specific validation and enhancement
-        npc_data = validate_and_enhance_npc(npc_data)
-        
-        logger.info(f"NPC '{npc_role}' created successfully with generators")
-        return npc_data
-    
-    async def generate_creature_with_generators(self, creature_type: str, user_description: str = "") -> Dict[str, Any]:
-        """Use the integrated CreatureGenerator for creature creation."""
-        logger.info(f"Creating creature with integrated generators: {creature_type}")
-        
-        # TODO: Implement CreatureGenerator class
-        # creature_data = await self.creature_generator.generate_creature(creature_type, user_description)
-        
-        # For now, use the existing creature creation logic
-        creature_data = await self.create_creature(f"{creature_type}: {user_description}")
-        
-        # Apply creature-specific validation and enhancement
-        creature_data = validate_and_enhance_creature(creature_data)
-        
-        logger.info(f"Creature '{creature_type}' created successfully with generators")
-        return creature_data
-    
-    async def generate_item_with_generators(self, item_type: str, name: str = "", 
-                                          description: str = "", extra_fields: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Use the integrated ItemGenerator for item creation."""
-        logger.info(f"Creating item with integrated generators: {item_type}")
-        
-        # TODO: Implement ItemGenerator class
-        # item_data = await self.item_generator.generate_item(item_type, name, description, extra_fields)
-        
-        # For now, use the existing item creation logic
-        prompt = f"{item_type}: {name} - {description}"
-        if item_type.lower() == "weapon":
-            item_data = await self.create_weapon(prompt)
-        elif item_type.lower() == "spell":
-            item_data = await self.create_spell(prompt)
-        else:
-            item_data = await self.create_item(prompt)
-        
-        # Apply item-specific validation
-        level = extra_fields.get("level", 1) if extra_fields else 1
-        item_data = validate_item_for_level(item_data, level)
-        
-        logger.info(f"Item '{name or item_type}' created successfully with generators")
-        return item_data
-    
-    def _parse_character_concept(self, prompt: str, level: int) -> Dict[str, Any]:
-        """Parse character concept from user prompt for generator input."""
-        # Extract basic information from prompt
-        prompt_lower = prompt.lower()
-        
-        # Default character concept
-        concept = {
-            "name": "Unknown Adventurer",
-            "level": level,
-            "classes": {},
-            "species": "Human",
-            "background": "Folk Hero",
-            "alignment": ["Neutral", "Good"],
-            "equipment": []
-        }
-        
-        # Extract class hints
-        class_keywords = {
-            "fighter": "Fighter", "warrior": "Fighter", "knight": "Fighter",
-            "wizard": "Wizard", "mage": "Wizard", "sorcerer": "Sorcerer",
-            "cleric": "Cleric", "priest": "Cleric", "paladin": "Paladin",
-            "rogue": "Rogue", "thief": "Rogue", "assassin": "Rogue",
-            "ranger": "Ranger", "hunter": "Ranger", "druid": "Druid",
-            "bard": "Bard", "musician": "Bard", "barbarian": "Barbarian",
-            "monk": "Monk", "warlock": "Warlock"
-        }
-        
-        for keyword, class_name in class_keywords.items():
-            if keyword in prompt_lower:
-                concept["classes"] = {class_name: level}
-                break
-        
-        # If no class found, default to Fighter
-        if not concept["classes"]:
-            concept["classes"] = {"Fighter": level}
-        
-        # Extract species hints
-        species_keywords = {
-            "elf": "Elf", "elven": "Elf", "dwarf": "Dwarf", "dwarven": "Dwarf",
-            "halfling": "Halfling", "tiefling": "Tiefling", "dragonborn": "Dragonborn",
-            "human": "Human", "gnome": "Gnome", "half-orc": "Half-Orc", "orc": "Half-Orc"
-        }
-        
-        for keyword, species_name in species_keywords.items():
-            if keyword in prompt_lower:
-                concept["species"] = species_name
-                break
-        
-        # Extract name if quoted or obvious
-        import re
-        name_match = re.search(r'named? ["\']?([A-Za-z]+)["\']?', prompt)
-        if name_match:
-            concept["name"] = name_match.group(1).title()
-        elif re.search(r'^[A-Z][a-z]+ ', prompt):
-            # If prompt starts with a capitalized word, assume it's a name
-            first_word = prompt.split()[0]
-            if first_word.isalpha() and first_word[0].isupper():
-                concept["name"] = first_word
-        
-        return concept
+        try:
+            weapon_name = weapon.get("name", "").lower()
+            weapon_desc = weapon.get("description", "").lower()
+            weapon_type = weapon.get("type", "").lower()
+            weapon_category = weapon.get("category", "").lower()
+            
+            # Check keywords in weapon name and description
+            keywords = theme_logic.get("keywords", [])
+            if any(keyword.lower() in weapon_name or keyword.lower() in weapon_desc for keyword in keywords):
+                return True
+            
+            # Check type preferences
+            preferred_types = theme_logic.get("types", [])
+            if any(weapon_type_pref.lower() in weapon_type or weapon_type_pref.lower() in weapon_category 
+                   for weapon_type_pref in preferred_types):
+                return True
+            
+            # Avoid certain types if specified
+            avoid_types = theme_logic.get("avoid", [])
+            if any(avoid_type.lower() in weapon_name or avoid_type.lower() in weapon_desc or avoid_type.lower() in weapon_type 
+                   for avoid_type in avoid_types):
+                return False
+            
+            return False
+            
+        except Exception as e:
+            logger.warning(f"Error evaluating weapon for theme: {e}")
+            return False
 

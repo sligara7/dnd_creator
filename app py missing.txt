@@ -64,6 +64,8 @@ I'll help you completely refactor the creation.py script for campaign creation. 
 - Psychological experiment integration
 - Setting theme system
 
+### Setup Map (both campaign and encounter maps)
+- use https://docs.getimg.ai/reference/introduction
 
 ###################### /backend
 

@@ -1,3 +1,95 @@
+# =========================================================================
+# RETHEME CHARACTERS ENDPOINT (BULK, BRANCHING)
+# =========================================================================
+from pydantic import BaseModel
+from fastapi import Body
+from typing import List, Dict, Any, Optional
+
+class RethemeCharactersRequest(BaseModel):
+    character_ids: List[str]
+    theme: str
+    branch_name: Optional[str] = None  # Optional: custom branch name prefix
+    description: Optional[str] = None
+
+class RethemeCharactersResult(BaseModel):
+    character_id: str
+    success: bool
+    new_branch_id: Optional[str] = None
+    new_branch_name: Optional[str] = None
+    error: Optional[str] = None
+
+class RethemeCharactersResponse(BaseModel):
+    results: List[RethemeCharactersResult]
+    theme: str
+
+
+import asyncio
+
+@app.post("/api/v2/characters/retheme", response_model=RethemeCharactersResponse, tags=["characters", "theming", "versioning"])
+async def retheme_characters(request: RethemeCharactersRequest = Body(...), db = Depends(get_db)):
+    """
+    Retheme a list of characters with a new campaign theme. Each rethemed character is saved as a new branch/version.
+    Processes all characters asynchronously for performance.
+    """
+    factory = app.state.creation_factory
+    logger.info(f"Starting retheming for {len(request.character_ids)} characters with theme '{request.theme}'")
+
+    async def retheme_one(character_id: str) -> RethemeCharactersResult:
+        try:
+            # Load character
+            character = CharacterDB.get_character(db, character_id)
+            if not character:
+                logger.warning(f"Character not found: {character_id}")
+                return RethemeCharactersResult(character_id=character_id, success=False, error="Character not found")
+            character_data = character.to_dict() if hasattr(character, 'to_dict') else dict(character)
+
+            # Generate rethemed version using LLM-driven logic
+            theme_prompt = f"Retheme this character for the campaign theme: '{request.theme}'. Keep core identity, but adapt all flavor, spells, equipment, and backstory to fit the new theme."
+            try:
+                rethemed = await factory.evolve_existing(
+                    CreationOptions.CHARACTER,
+                    character_data,
+                    theme_prompt,
+                    theme=request.theme,
+                    preserve_backstory=True,
+                    user_preferences={}
+                )
+            except Exception as e:
+                logger.error(f"LLM retheming failed for {character_id}: {e}")
+                return RethemeCharactersResult(character_id=character_id, success=False, error=f"LLM retheming failed: {e}")
+
+            # Save as a new branch/version using the helper
+            branch_name = request.branch_name or f"theme-{request.theme.replace(' ', '_').lower()}"
+            branch_description = request.description or f"Rethemed for campaign theme: {request.theme}"
+            try:
+                branch_info = CharacterDB.create_theme_branch_for_character(
+                    db,
+                    character_id=character_id,
+                    theme=request.theme,
+                    branch_name=branch_name,
+                    description=branch_description,
+                    base_version=None
+                )
+                CharacterDB.save_character_sheet(db, rethemed, character_id, branch=branch_info.branch_name)
+                logger.info(f"Rethemed character {character_id} saved to branch {branch_info.branch_name}")
+                return RethemeCharactersResult(
+                    character_id=character_id,
+                    success=True,
+                    new_branch_id=getattr(branch_info, 'branch_id', None),
+                    new_branch_name=getattr(branch_info, 'branch_name', branch_name)
+                )
+            except Exception as e:
+                logger.error(f"Failed to save rethemed character {character_id}: {e}")
+                return RethemeCharactersResult(character_id=character_id, success=False, error=f"Branch save failed: {e}")
+        except Exception as e:
+            logger.error(f"Retheming failed for {character_id}: {e}")
+            return RethemeCharactersResult(character_id=character_id, success=False, error=str(e))
+
+    # Run all retheming tasks concurrently
+    tasks = [retheme_one(cid) for cid in request.character_ids]
+    results = await asyncio.gather(*tasks)
+    logger.info(f"Retheming complete for theme '{request.theme}'. Success: {sum(1 for r in results if r.success)}, Failures: {sum(1 for r in results if not r.success)}")
+    return RethemeCharactersResponse(results=results, theme=request.theme)
 """
 FastAPI main application for D&D Character Creator - COMPLETE V2 API.
 

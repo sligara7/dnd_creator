@@ -1,3 +1,75 @@
+
+# =========================
+# BACKEND CONTENT LISTING ENDPOINTS (PROXY)
+# =========================
+
+# Place these endpoints after app = FastAPI(...)
+
+import httpx
+
+# ...existing code...
+
+# Place these endpoints after app = FastAPI(...)
+
+# Backend content listing endpoints for DM browsing
+def register_backend_content_endpoints(app):
+    @app.get("/api/v2/backend/characters", tags=["backend-content"])
+    async def list_backend_characters(skip: int = 0, limit: int = 50):
+        """List available characters (PCs, NPCs, monsters) from the backend service."""
+        backend_url = "http://localhost:8000/api/v2/characters"  # Adjust as needed
+        params = {"skip": skip, "limit": limit}
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(backend_url, params=params, timeout=30.0)
+                response.raise_for_status()
+                return response.json()
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @app.get("/api/v2/backend/items", tags=["backend-content"])
+    async def list_backend_items(skip: int = 0, limit: int = 50):
+        """List available items from the backend service."""
+        backend_url = "http://localhost:8000/api/v2/items"  # Adjust as needed
+        params = {"skip": skip, "limit": limit}
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(backend_url, params=params, timeout=30.0)
+                response.raise_for_status()
+                return response.json()
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @app.get("/api/v2/backend/monsters", tags=["backend-content"])
+    async def list_backend_monsters(skip: int = 0, limit: int = 50):
+        """List available monsters from the backend service."""
+        backend_url = "http://localhost:8000/api/v2/monsters"  # Adjust as needed
+        params = {"skip": skip, "limit": limit}
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(backend_url, params=params, timeout=30.0)
+                response.raise_for_status()
+                return response.json()
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @app.get("/api/v2/backend/spells", tags=["backend-content"])
+    async def list_backend_spells(skip: int = 0, limit: int = 50):
+        """List available spells from the backend service."""
+        backend_url = "http://localhost:8000/api/v2/spells"  # Adjust as needed
+        params = {"skip": skip, "limit": limit}
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(backend_url, params=params, timeout=30.0)
+                response.raise_for_status()
+                return response.json()
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+# ...existing code...
+
+# Register backend content endpoints after app is created
+# (app is defined after imports, so move this call after app = FastAPI(...))
+# ...existing code...
 """
 D&D Campaign Creation API
 ========================
@@ -218,11 +290,45 @@ async def get_campaign(campaign_id: str, db=Depends(get_db)):
 
 @app.put("/api/v2/campaigns/{campaign_id}", response_model=CampaignResponse, tags=["campaigns"])
 async def update_campaign(campaign_id: str, request: CampaignUpdateRequest, db=Depends(get_db)):
+    import httpx
     updates = request.dict(exclude_unset=True)
+    # Fetch current campaign to compare themes
+    current_campaign = CampaignDB.get_campaign(db, campaign_id)
+    if not current_campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    old_themes = set(current_campaign.themes or [])
+    new_themes = set(updates.get("themes", old_themes))
+    themes_changed = ("themes" in updates) and (old_themes != new_themes)
+
     db_campaign = CampaignDB.update_campaign(db, campaign_id, updates)
     if not db_campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    return CampaignResponse(
+
+    retheme_status = None
+    if themes_changed:
+        # Fetch all character links for this campaign
+        character_links = CampaignBackendLinkDB.list_campaign_characters(db, campaign_id)
+        character_ids = [link.character_id for link in character_links]
+        if character_ids and new_themes:
+            # Call character service retheme endpoint
+            character_service_url = "http://localhost:8000/api/v2/characters/retheme"  # Adjust as needed
+            payload = {
+                "character_ids": character_ids,
+                "theme": list(new_themes)[0] if len(new_themes) == 1 else list(new_themes)
+            }
+            try:
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(character_service_url, json=payload, timeout=60.0)
+                    response.raise_for_status()
+                    retheme_status = response.json()
+            except Exception as e:
+                logger.error(f"Failed to trigger character retheming: {e}")
+                retheme_status = {"success": False, "error": str(e)}
+        else:
+            retheme_status = {"skipped": True, "reason": "No characters or no new theme"}
+
+    result = CampaignResponse(
         id=db_campaign.id,
         title=db_campaign.title,
         description=db_campaign.description,
@@ -232,6 +338,10 @@ async def update_campaign(campaign_id: str, request: CampaignUpdateRequest, db=D
         created_at=db_campaign.created_at.isoformat() if db_campaign.created_at else None,
         updated_at=db_campaign.updated_at.isoformat() if db_campaign.updated_at else None
     )
+    # Optionally, include retheme_status in the response for tracking
+    if themes_changed:
+        return {"campaign": result, "retheme_status": retheme_status}
+    return result
 
 @app.delete("/api/v2/campaigns/{campaign_id}", tags=["campaigns"])
 async def delete_campaign(campaign_id: str, db=Depends(get_db)):

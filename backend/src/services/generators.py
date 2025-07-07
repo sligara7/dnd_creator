@@ -7,6 +7,7 @@
 from typing import Dict, Any, List, Optional
 import json
 import logging
+import random
 from src.services.llm_service import LLMService
 from src.models.custom_content_models import (
     ContentRegistry, CustomSpecies, CustomClass, CustomSpell, 
@@ -28,61 +29,46 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 class BackstoryGenerator:
-    """Enhanced backstory generator with timeout management."""
-    
+    """Enhanced backstory generator with timeout management and theme support."""
     def __init__(self, llm_service: LLMService):
         self.llm_service = llm_service
         self.base_timeout = 15
-    
-    async def generate_compelling_backstory(self, character_data: Dict[str, Any], 
-                                    user_description: str) -> Dict[str, str]:
-        """Generate backstory with comprehensive fallbacks."""
-        
+
+    async def generate_compelling_backstory(self, character_data: Dict[str, Any], user_description: str, themes: Optional[List[str]] = None) -> Dict[str, str]:
+        """Generate backstory with comprehensive fallbacks and theme(s) support."""
         logger.info("Starting backstory generation...")
-        
         try:
-            return await self._generate_simple_backstory(character_data, user_description)
+            return await self._generate_simple_backstory(character_data, user_description, themes)
         except Exception as e:
             logger.warning(f"Backstory generation failed: {e}")
-            return self._get_fallback_backstory(character_data, user_description)
-    
-    async def generate_backstory(self, character_data: Dict[str, Any], 
-                          user_description: str) -> Dict[str, str]:
+            return self._get_fallback_backstory(character_data, user_description, themes)
+
+    async def generate_backstory(self, character_data: Dict[str, Any], user_description: str, themes: Optional[List[str]] = None) -> Dict[str, str]:
         """Generate backstory - alias for generate_compelling_backstory."""
-        return await self.generate_compelling_backstory(character_data, user_description)
-    
-    async def _generate_simple_backstory(self, character_data: Dict[str, Any], 
-                                 user_description: str) -> Dict[str, str]:
-        """Generate a simplified backstory with short timeout."""
-        
+        return await self.generate_compelling_backstory(character_data, user_description, themes)
+
+    async def _generate_simple_backstory(self, character_data: Dict[str, Any], user_description: str, themes: Optional[List[str]] = None) -> Dict[str, str]:
+        """Generate a simplified backstory with short timeout and theme(s) support."""
         name = character_data.get('name', 'Unknown')
         species = character_data.get('species', 'Human')
         classes = list(character_data.get('classes', {}).keys())
         primary_class = classes[0] if classes else 'Adventurer'
-        
-        # Compact prompt for speed
-        prompt = f"""Character: {name}, {species} {primary_class}
-Description: {user_description}
-
-Return ONLY this JSON (no other text):
-{{"main_backstory":"2 sentences about their past","origin":"Where from","motivation":"What drives them","secret":"Hidden aspect","relationships":"Key connections"}}"""
-        
+        theme_text = f"\nTheme(s): {', '.join(themes)}" if themes else ""
+        prompt = f"""Character: {name}, {species} {primary_class}\nDescription: {user_description}{theme_text}\n\nReturn ONLY this JSON (no other text):\n{{"main_backstory":"2 sentences about their past","origin":"Where from","motivation":"What drives them","secret":"Hidden aspect","relationships":"Key connections"}}"""
         try:
             response = await self.llm_service.generate_content(prompt)
             cleaned_response = self._clean_json_response(response)
             backstory_data = json.loads(cleaned_response)
-            
             required_fields = ["main_backstory", "origin", "motivation", "secret", "relationships"]
             if all(field in backstory_data for field in required_fields):
                 logger.info("Backstory generation successful")
                 return backstory_data
             else:
                 logger.warning("Generated backstory missing required fields")
-                return self._get_fallback_backstory(character_data, user_description)
-                
+                return self._get_fallback_backstory(character_data, user_description, themes)
         except (TimeoutError, json.JSONDecodeError) as e:
             logger.warning(f"Backstory generation failed: {e}")
-            return self._get_fallback_backstory(character_data, user_description)
+            return self._get_fallback_backstory(character_data, user_description, themes)
     
     def _clean_json_response(self, response: str) -> str:
         """Clean JSON response."""
@@ -95,37 +81,29 @@ Return ONLY this JSON (no other text):
             raise ValueError("No JSON found in response")
         return response[start:end+1]
     
-    def _get_fallback_backstory(self, character_data: Dict[str, Any], 
-                              user_description: str) -> Dict[str, str]:
-        """Generate fallback backstory using templates."""
-        
+    def _get_fallback_backstory(self, character_data: Dict[str, Any], user_description: str, themes: Optional[List[str]] = None) -> Dict[str, str]:
+        """Generate fallback backstory using templates, with optional theme(s)."""
         name = character_data.get('name', 'Unknown')
         species = character_data.get('species', 'Human')
         classes = list(character_data.get('classes', {}).keys())
         primary_class = classes[0] if classes else 'Adventurer'
-        
+        theme_line = f" The campaign theme(s): {', '.join(themes)}." if themes else ""
         backstory_templates = {
-            "main_backstory": f"{name} was born a {species} in a distant land, where they discovered their calling as a {primary_class}. Through trials and hardship, they developed the skills that would define their path as an adventurer.",
-            "origin": f"Hails from a {species} community where {primary_class.lower()} traditions run deep in the culture.",
-            "motivation": f"Driven by a desire to master the {primary_class.lower()} arts and prove themselves worthy of their heritage.",
-            "secret": f"Carries a burden from their past that they've never shared with anyone, related to how they became a {primary_class}.",
-            "relationships": f"Maintains connections to their {species} roots while forging new bonds with fellow adventurers who share their goals."
+            "main_backstory": f"{name} was born a {species} in a distant land, where they discovered their calling as a {primary_class}.{theme_line} Through trials and hardship, they developed the skills that would define their path as an adventurer.",
+            "origin": f"Hails from a {species} community where {primary_class.lower()} traditions run deep in the culture.{theme_line}",
+            "motivation": f"Driven by a desire to master the {primary_class.lower()} arts and prove themselves worthy of their heritage.{theme_line}",
+            "secret": f"Carries a burden from their past that they've never shared with anyone, related to how they became a {primary_class}.{theme_line}",
+            "relationships": f"Maintains connections to their {species} roots while forging new bonds with fellow adventurers who share their goals.{theme_line}"
         }
-        
-        # Customize based on description keywords
         description_lower = user_description.lower()
-        
         if any(word in description_lower for word in ["tragic", "loss", "death"]):
-            backstory_templates["secret"] = "Haunted by a tragic loss that set them on their current path."
-            backstory_templates["motivation"] = "Seeks redemption or justice for past wrongs."
-        
+            backstory_templates["secret"] = "Haunted by a tragic loss that set them on their current path." + theme_line
+            backstory_templates["motivation"] = "Seeks redemption or justice for past wrongs." + theme_line
         if any(word in description_lower for word in ["noble", "royal"]):
-            backstory_templates["origin"] = "Born into nobility but chose the adventurer's life for reasons they keep private."
-        
+            backstory_templates["origin"] = "Born into nobility but chose the adventurer's life for reasons they keep private." + theme_line
         if any(word in description_lower for word in ["mysterious", "unknown"]):
-            backstory_templates["origin"] = "Origins shrouded in mystery, even to themselves."
-            backstory_templates["secret"] = "Possesses knowledge or abilities they don't fully understand."
-        
+            backstory_templates["origin"] = "Origins shrouded in mystery, even to themselves." + theme_line
+            backstory_templates["secret"] = "Possesses knowledge or abilities they don't fully understand." + theme_line
         logger.info("Using fallback backstory template")
         return backstory_templates
     
@@ -138,16 +116,13 @@ Return ONLY this JSON (no other text):
 # ============================================================================
 
 class CustomContentGenerator:
-    """Generator for custom species, classes, items, and spells aligned with character concept."""
-    
+    """Generator for custom species, classes, items, and spells aligned with character concept and theme."""
     def __init__(self, llm_service: LLMService, content_registry: ContentRegistry):
         self.llm_service = llm_service
         self.content_registry = content_registry
-    
-    async def generate_custom_content_for_character(self, character_data: Dict[str, Any], 
-                                            user_description: str) -> Dict[str, List[str]]:
-        """Generate comprehensive custom content aligned with the character concept."""
-        
+
+    async def generate_custom_content_for_character(self, character_data: Dict[str, Any], user_description: str, themes: Optional[List[str]] = None) -> Dict[str, List[str]]:
+        """Generate comprehensive custom content aligned with the character concept and theme(s)."""
         created_content = {
             "species": [],
             "classes": [],
@@ -156,75 +131,79 @@ class CustomContentGenerator:
             "armor": [],
             "feats": []
         }
-        
         try:
             # Generate custom species if needed
             if self._should_create_custom_species(character_data, user_description):
-                species = await self._generate_custom_species(character_data, user_description)
+                species = await self._generate_custom_species(character_data, user_description, themes)
                 if species:
                     self.content_registry.register_species(species)
                     created_content["species"].append(species.name)
-            
             # Generate custom class if needed
             custom_class = None
             if self._should_create_custom_class(character_data, user_description):
-                custom_class = await self._generate_custom_class(character_data, user_description)
+                custom_class = await self._generate_custom_class(character_data, user_description, themes)
                 if custom_class:
                     self.content_registry.register_class(custom_class)
                     created_content["classes"].append(custom_class.name)
-            
             # Generate custom spells - enhanced logic for custom spellcaster classes
             should_create_spells = (
-                self._character_is_spellcaster(character_data) or  # Existing spellcaster
-                self._is_custom_spellcaster_class(custom_class, user_description)  # New custom spellcaster
+                self._character_is_spellcaster(character_data) or
+                self._is_custom_spellcaster_class(custom_class, user_description)
             )
-            
             if should_create_spells:
-                # Determine spell count and themes based on class type
                 spell_count = self._calculate_appropriate_spell_count(character_data, custom_class, user_description)
-                spells = await self._generate_custom_spells(character_data, user_description, count=spell_count, custom_class=custom_class)
+                spells = await self._generate_custom_spells(character_data, user_description, count=spell_count, custom_class=custom_class, themes=themes)
                 for spell in spells:
                     if spell:
                         self.content_registry.register_spell(spell)
                         created_content["spells"].append(spell.name)
-            
             # Generate custom weapons
-            weapons = await self._generate_custom_weapons(character_data, user_description, count=1)
+            weapons = await self._generate_custom_weapons(character_data, user_description, count=1, themes=themes)
             for weapon in weapons:
                 if weapon:
                     self.content_registry.register_weapon(weapon)
                     created_content["weapons"].append(weapon.name)
-            
             # Generate custom armor
-            armor = await self._generate_custom_armor(character_data, user_description)
+            armor = await self._generate_custom_armor(character_data, user_description, themes)
             if armor:
                 self.content_registry.register_armor(armor)
                 created_content["armor"].append(armor.name)
-            
             # Generate custom feat
-            feat = await self._generate_custom_feat(character_data, user_description)
+            feat = await self._generate_custom_feat(character_data, user_description, themes)
             if feat:
                 self.content_registry.register_feat(feat)
                 created_content["feats"].append(feat.name)
-            
             # Validate and balance all generated content
             validation_results = self.validate_and_balance_custom_content(created_content, character_data)
-            
-            # Log validation results
             if validation_results['warnings']:
                 for warning in validation_results['warnings']:
                     logger.warning(f"Content validation: {warning}")
-            
             if validation_results['adjustments_made']:
                 logger.info(f"Balance adjustments applied: {len(validation_results['adjustments_made'])}")
-            
-            # Add validation metadata to content
             created_content['_validation'] = validation_results
-        
         except Exception as e:
             logger.error(f"Error generating custom content: {e}")
-        
         return created_content
+
+    # --- Retheming/Updating Methods ---
+    async def retheme_custom_content(self, content_type: str, content_data: Dict[str, Any], new_themes: List[str]) -> Any:
+        """Retheme or update an existing custom content item with new themes."""
+        # Dispatch to the appropriate method
+        if content_type == "species":
+            return await self._generate_custom_species(content_data, content_data.get('description', ''), new_themes)
+        elif content_type == "class":
+            return await self._generate_custom_class(content_data, content_data.get('description', ''), new_themes)
+        elif content_type == "spell":
+            return await self._generate_custom_spells(content_data, content_data.get('description', ''), count=1, custom_class=None, themes=new_themes)
+        elif content_type == "weapon":
+            return await self._generate_custom_weapons(content_data, content_data.get('description', ''), count=1, themes=new_themes)
+        elif content_type == "armor":
+            return await self._generate_custom_armor(content_data, content_data.get('description', ''), new_themes)
+        elif content_type == "feat":
+            return await self._generate_custom_feat(content_data, content_data.get('description', ''), new_themes)
+        else:
+            logger.warning(f"Unknown content type for retheming: {content_type}")
+            return None
     
     def _should_create_custom_species(self, character_data: Dict[str, Any], 
                                     user_description: str) -> bool:
@@ -358,52 +337,35 @@ class CustomContentGenerator:
         
         return "\n".join(context_parts)
     
-    async def _generate_custom_species(self, character_data: Dict[str, Any], 
-                               user_description: str) -> Optional[CustomSpecies]:
-        """Generate a custom species."""
+    async def _generate_custom_species(self, character_data: Dict[str, Any], user_description: str, themes: Optional[List[str]] = None) -> Optional[CustomSpecies]:
+        """Generate a custom species with optional themes."""
         try:
             name = character_data.get('name', 'Unknown')
-            
-            prompt = f"""Create a unique D&D species for {name}.
-Description: {user_description}
-
-Return ONLY this JSON:
-{{"name":"Species Name","size":"Medium","speed":30,"traits":["trait1","trait2"],"languages":["Common"],"proficiencies":[],"ability_score_bonuses":{{}},"description":"Brief description"}}"""
-            
+            theme_text = f"\nTheme(s): {', '.join(themes)}" if themes else ""
+            prompt = f"""Create a unique D&D species for {name}.{theme_text}\nDescription: {user_description}\n\nReturn ONLY this JSON:\n{{"name":"Species Name","size":"Medium","speed":30,"traits":["trait1","trait2"],"languages":["Common"],"proficiencies":[],"ability_score_bonuses":{{}},"description":"Brief description"}}"""
             response = await self.llm_service.generate_content(prompt)
             data = json.loads(self._clean_json_response(response))
-            
             species = CustomSpecies(
                 name=data["name"],
                 description=data["description"],
                 size=data["size"],
                 speed=data["speed"]
             )
-            
-            # Set additional properties after initialization
             species.innate_traits = data.get("traits", [])
             species.languages = data.get("languages", ["Common"])
-            
             return species
         except Exception as e:
             logger.error(f"Failed to generate custom species: {e}")
             return None
     
-    async def _generate_custom_class(self, character_data: Dict[str, Any], 
-                             user_description: str) -> Optional[CustomClass]:
-        """Generate a custom class."""
+    async def _generate_custom_class(self, character_data: Dict[str, Any], user_description: str, themes: Optional[List[str]] = None) -> Optional[CustomClass]:
+        """Generate a custom class with optional themes."""
         try:
             name = character_data.get('name', 'Unknown')
-            
-            prompt = f"""Create a unique D&D class for {name}.
-Description: {user_description}
-
-Return ONLY this JSON:
-{{"name":"Class Name","hit_die":8,"primary_ability":"Strength","saves":["Strength","Constitution"],"proficiencies":{{"armor":["Light"],"weapons":["Simple"],"tools":[],"skills":2}},"features":{{"1":[{{"name":"Feature","description":"Description"}}]}},"description":"Brief description"}}"""
-            
+            theme_text = f"\nTheme(s): {', '.join(themes)}" if themes else ""
+            prompt = f"""Create a unique D&D class for {name}.{theme_text}\nDescription: {user_description}\n\nReturn ONLY this JSON:\n{{"name":"Class Name","hit_die":8,"primary_ability":"Strength","saves":["Strength","Constitution"],"proficiencies":{{"armor":["Light"],"weapons":["Simple"],"tools":[],"skills":2}},"features":{{"1":[{{"name":"Feature","description":"Description"}}]}},"description":"Brief description"}}"""
             response = await self.llm_service.generate_content(prompt)
             data = json.loads(self._clean_json_response(response))
-            
             custom_class = CustomClass(
                 name=data["name"],
                 description=data["description"],
@@ -411,60 +373,33 @@ Return ONLY this JSON:
                 primary_abilities=[data["primary_ability"]],
                 saving_throws=data["saves"]
             )
-            
-            # Set additional properties after initialization
             custom_class.armor_proficiencies = data["proficiencies"]["armor"]
             custom_class.weapon_proficiencies = data["proficiencies"]["weapons"]
             custom_class.tool_proficiencies = data["proficiencies"]["tools"]
             custom_class.skill_choices = data["proficiencies"]["skills"]
             custom_class.features = data["features"]
-            
             return custom_class
         except Exception as e:
             logger.error(f"Failed to generate custom class: {e}")
             return None
     
-    async def _generate_custom_spells(self, character_data: Dict[str, Any], 
-                              user_description: str, count: int = 3, custom_class: Optional[Any] = None) -> List[CustomSpell]:
-        """Generate custom spells with thematic consistency and appropriate spellcasting mechanics."""
+    async def _generate_custom_spells(self, character_data: Dict[str, Any], user_description: str, count: int = 3, custom_class: Optional[Any] = None, themes: Optional[List[str]] = None) -> List[CustomSpell]:
+        """Generate custom spells with thematic consistency, appropriate spellcasting mechanics, and themes support."""
         spells = []
         try:
             name = character_data.get('name', 'Unknown')
             character_level = character_data.get('level', 1)
-            
-            # Extract themes from description
-            themes = self._extract_simple_themes(user_description)
-            theme_desc = f" with {themes[0]} theme" if themes else ""
-            
-            # Determine spellcasting type and mechanics for the class
+            # Use explicit themes or extract from description
+            spell_themes = themes if themes else self._extract_simple_themes(user_description)
+            theme_desc = f" with {', '.join(spell_themes)} theme(s)" if spell_themes else ""
             spellcasting_info = self._determine_custom_spellcasting_type(custom_class, user_description)
-            
-            # Determine appropriate spell level distribution
             spell_levels = self._calculate_spell_level_distribution(character_level, count, spellcasting_info)
-            
-            # Create spell generation prompt with spellcasting mechanics context
             mechanics_context = self._build_spellcasting_mechanics_context(spellcasting_info)
-            
-            prompt = f"""Create {count} unique D&D spells for {name}{theme_desc}.
-Character Level: {character_level}
-Spellcasting Type: {spellcasting_info['type']}
-{mechanics_context}
-Description: {user_description}
-
-Generate spells at these levels: {spell_levels}
-Make spells thematically consistent with the character concept and spellcasting style.
-Include rich lore and backstory for each spell.
-
-Return ONLY this JSON array:
-[{{"name":"Spell Name","level":1,"school":"Evocation","casting_time":"1 action","range":"60 feet","components":["V","S"],"duration":"Instantaneous","description":"Spell mechanical effect","ritual":false,"origin_story":"How this spell was discovered or created","creator_name":"Who created this spell","casting_flavor":"Visual and sensory description when cast"}}]"""
-            
+            prompt = f"""Create {count} unique D&D spells for {name}{theme_desc}.\nCharacter Level: {character_level}\nSpellcasting Type: {spellcasting_info['type']}\n{mechanics_context}\nDescription: {user_description}\n\nGenerate spells at these levels: {spell_levels}\nMake spells thematically consistent with the character concept and spellcasting style.\nInclude rich lore and backstory for each spell.\n\nReturn ONLY this JSON array:\n[{{"name":"Spell Name","level":1,"school":"Evocation","casting_time":"1 action","range":"60 feet","components":["V","S"],"duration":"Instantaneous","description":"Spell mechanical effect","ritual":false,"origin_story":"How this spell was discovered or created","creator_name":"Who created this spell","casting_flavor":"Visual and sensory description when cast"}}]"""
             response = await self.llm_service.generate_content(prompt)
             data = json.loads(self._clean_json_response(response))
-            
             for i, spell_data in enumerate(data[:count]):
-                # Assign appropriate spell level from our distribution
                 assigned_level = spell_levels[i] if i < len(spell_levels) else 1
-                
                 spell = CustomSpell(
                     name=spell_data["name"],
                     level=assigned_level,
@@ -478,22 +413,16 @@ Return ONLY this JSON array:
                 spells.append(spell)
         except Exception as e:
             logger.error(f"Failed to generate custom spells: {e}")
-        
         return spells
     
-    async def _generate_custom_weapons(self, character_data: Dict[str, Any], 
-                               user_description: str, count: int = 2) -> List[CustomWeapon]:
-        """Generate custom weapons with thematic consistency and level appropriateness."""
+    async def _generate_custom_weapons(self, character_data: Dict[str, Any], user_description: str, count: int = 2, themes: Optional[List[str]] = None) -> List[CustomWeapon]:
+        """Generate custom weapons with thematic consistency, level appropriateness, and themes support."""
         weapons = []
         try:
             name = character_data.get('name', 'Unknown')
             character_level = character_data.get('level', 1)
-            
-            # Extract themes for consistent weapon generation
-            themes = self._extract_simple_themes(user_description)
-            theme_desc = f" with {themes[0]} theme" if themes else ""
-            
-            # Determine appropriate weapon tier
+            weapon_themes = themes if themes else self._extract_simple_themes(user_description)
+            theme_desc = f" with {', '.join(weapon_themes)} theme(s)" if weapon_themes else ""
             if character_level <= 4:
                 weapon_tier = "simple, non-magical"
             elif character_level <= 10:
@@ -502,19 +431,9 @@ Return ONLY this JSON array:
                 weapon_tier = "magical with special properties"
             else:
                 weapon_tier = "rare magical with unique abilities"
-            
-            prompt = f"""Create {count} unique D&D weapons for {name}{theme_desc}.
-Character Level: {character_level} (appropriate tier: {weapon_tier})
-Description: {user_description}
-
-Make weapons thematically consistent with the character concept and appropriate for level {character_level}.
-
-Return ONLY this JSON array:
-[{{"name":"Weapon Name","weapon_type":"martial","damage":"1d8","damage_type":"slashing","properties":["versatile"],"weight":3,"cost":"15 gp","description":"Weapon description"}}]"""
-            
+            prompt = f"""Create {count} unique D&D weapons for {name}{theme_desc}.\nCharacter Level: {character_level} (appropriate tier: {weapon_tier})\nDescription: {user_description}\n\nMake weapons thematically consistent with the character concept and appropriate for level {character_level}.\n\nReturn ONLY this JSON array:\n[{{"name":"Weapon Name","weapon_type":"martial","damage":"1d8","damage_type":"slashing","properties":["versatile"],"weight":3,"cost":"15 gp","description":"Weapon description"}}]"""
             response = await self.llm_service.generate_content(prompt)
             data = json.loads(self._clean_json_response(response))
-            
             for weapon_data in data[:count]:
                 weapon = CustomWeapon(
                     name=weapon_data["name"],
@@ -529,24 +448,16 @@ Return ONLY this JSON array:
                 weapons.append(weapon)
         except Exception as e:
             logger.error(f"Failed to generate custom weapons: {e}")
-        
         return weapons
     
-    async def _generate_custom_armor(self, character_data: Dict[str, Any], 
-                             user_description: str) -> Optional[CustomArmor]:
-        """Generate custom armor."""
+    async def _generate_custom_armor(self, character_data: Dict[str, Any], user_description: str, themes: Optional[List[str]] = None) -> Optional[CustomArmor]:
+        """Generate custom armor with optional themes."""
         try:
             name = character_data.get('name', 'Unknown')
-            
-            prompt = f"""Create unique D&D armor for {name}.
-Description: {user_description}
-
-Return ONLY this JSON:
-{{"name":"Armor Name","armor_type":"light","base_ac":12,"dex_modifier_max":2,"strength_requirement":0,"stealth_disadvantage":false,"weight":10,"cost":"50 gp","description":"Armor description"}}"""
-            
+            theme_text = f"\nTheme(s): {', '.join(themes)}" if themes else ""
+            prompt = f"""Create unique D&D armor for {name}.{theme_text}\nDescription: {user_description}\n\nReturn ONLY this JSON:\n{{"name":"Armor Name","armor_type":"light","base_ac":12,"dex_modifier_max":2,"strength_requirement":0,"stealth_disadvantage":false,"weight":10,"cost":"50 gp","description":"Armor description"}}"""
             response = await self.llm_service.generate_content(prompt)
             data = json.loads(self._clean_json_response(response))
-            
             return CustomArmor(
                 name=data["name"],
                 armor_type=data["armor_type"],
@@ -570,21 +481,14 @@ Return ONLY this JSON:
         else:
             return "full"
 
-    async def _generate_custom_feat(self, character_data: Dict[str, Any], 
-                            user_description: str) -> Optional[CustomFeat]:
-        """Generate custom feat."""
+    async def _generate_custom_feat(self, character_data: Dict[str, Any], user_description: str, themes: Optional[List[str]] = None) -> Optional[CustomFeat]:
+        """Generate custom feat with optional themes."""
         try:
             name = character_data.get('name', 'Unknown')
-            
-            prompt = f"""Create a unique D&D feat for {name}.
-Description: {user_description}
-
-Return ONLY this JSON:
-{{"name":"Feat Name","prerequisites":"None","benefits":["Benefit 1","Benefit 2"],"description":"Feat description"}}"""
-            
+            theme_text = f"\nTheme(s): {', '.join(themes)}" if themes else ""
+            prompt = f"""Create a unique D&D feat for {name}.{theme_text}\nDescription: {user_description}\n\nReturn ONLY this JSON:\n{{"name":"Feat Name","prerequisites":"None","benefits":["Benefit 1","Benefit 2"],"description":"Feat description"}}"""
             response = await self.llm_service.generate_content(prompt)
             data = json.loads(self._clean_json_response(response))
-            
             return CustomFeat(
                 name=data["name"],
                 prerequisites=data.get("prerequisites", "None"),
@@ -802,7 +706,7 @@ class NPCGenerator:
         self.custom_content_generator = CustomContentGenerator(llm_service, content_registry)
         self.backstory_generator = BackstoryGenerator(llm_service)
 
-    async def generate_npc(self, npc_role: str, challenge_rating: float = 1.0, user_description: str = "") -> Dict[str, Any]:
+    async def generate_npc(self, npc_role: str, challenge_rating: float = 1.0, user_description: str = "", themes: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Generate a comprehensive NPC with roleplay elements and balanced challenge rating.
         Returns a dictionary representing the complete NPC.
@@ -811,7 +715,7 @@ class NPCGenerator:
         stats = self._generate_npc_stats_for_cr(npc_role, challenge_rating)
         
         # 2. Generate roleplay elements
-        roleplay = await self._generate_npc_roleplay(npc_role, user_description)
+        roleplay = await self._generate_npc_roleplay(npc_role, user_description, themes)
         
         # 3. Generate custom content if needed
         npc_data = {
@@ -819,7 +723,7 @@ class NPCGenerator:
             'classes': {npc_role: self._get_level_for_cr(challenge_rating)},
             'level': self._get_level_for_cr(challenge_rating)
         }
-        custom_content = await self.custom_content_generator.generate_custom_content_for_character(npc_data, user_description)
+        custom_content = await self.custom_content_generator.generate_custom_content_for_character(npc_data, user_description, themes)
         
         # 4. Generate equipment appropriate for role and CR
         equipment = self._generate_npc_equipment_for_cr(npc_role, challenge_rating, custom_content)
@@ -846,11 +750,12 @@ class NPCGenerator:
         
         return npc
     
-    async def _generate_npc_roleplay(self, npc_role: str, user_description: str) -> Dict[str, Any]:
+    async def _generate_npc_roleplay(self, npc_role: str, user_description: str, themes: Optional[List[str]] = None) -> Dict[str, Any]:
         """Generate comprehensive roleplay elements for NPCs."""
         try:
+            theme_text = f"\nTheme(s): {', '.join(themes)}" if themes else ""
             prompt = f"""Create roleplay details for a D&D NPC.
-Role: {npc_role}
+Role: {npc_role}{theme_text}
 Description: {user_description}
 
 Return ONLY this JSON:

@@ -1,3 +1,34 @@
+# =========================================================================
+# HELPER: CREATE THEME BRANCH FOR CHARACTER
+# =========================================================================
+@staticmethod
+def create_theme_branch_for_character(db: Session, character_id: str, theme: str, branch_name: str = None, description: str = None, parent_branch: str = "main"):
+    """
+    Create a new branch for a character with a theme label.
+    Looks up the character's repository, then creates a branch with the given theme.
+    Returns the new CharacterBranch object.
+    """
+    # Get the character and its repository
+    character = CharacterDB.get_character(db, character_id)
+    if not character:
+        raise ValueError(f"Character not found: {character_id}")
+    repository_id = getattr(character, 'repository_id', None)
+    if not repository_id:
+        raise ValueError(f"Character {character_id} does not have a repository_id")
+
+    # Compose branch name and description
+    branch_name = branch_name or f"theme-{theme.replace(' ', '_').lower()}"
+    description = description or f"Rethemed for campaign theme: {theme}"
+
+    # Create the branch using the existing method
+    branch = CharacterDB.create_branch(
+        db,
+        repository_id=repository_id,
+        branch_name=branch_name,
+        description=description,
+        parent_branch=parent_branch
+    )
+    return branch
 """
 Database models for the D&D Character Creator with Git-like versioning system.
 """

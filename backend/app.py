@@ -304,6 +304,7 @@ class CharacterResponse(BaseModel):
     character_classes: Dict[str, int]
     backstory: str
     created_at: str
+    user_modified: Optional[bool] = False
 
 class CharacterStateUpdateRequest(BaseModel):
     """Character state update for gameplay."""
@@ -362,6 +363,7 @@ class InventoryResponse(BaseModel):
     inventory: List[Dict[str, Any]]
     equipped_items: Dict[str, str]
     attuned_items: List[str]
+    user_modified: Optional[bool] = False
 
 
 # ============================================================================
@@ -405,6 +407,7 @@ class JournalEntryResponse(BaseModel):
     story_beats: List[str]
     created_at: str
     updated_at: str
+    user_modified: Optional[bool] = False
 
 
 
@@ -412,6 +415,21 @@ class JournalEntryResponse(BaseModel):
 # JOURNAL MANAGEMENT ENDPOINTS (CRUD)
 # =========================================================================
 from pydantic import conint
+
+
+# ============================================================================
+# GENERIC DIRECT EDIT REQUEST MODEL
+# ============================================================================
+from typing import Dict, Any, Optional
+from pydantic import BaseModel, Field
+
+class DirectEditRequest(BaseModel):
+    """
+    Generic request model for direct user/DM edits to any object.
+    Accepts a dict of fields to update, with optional notes for audit trail.
+    """
+    updates: Dict[str, Any] = Field(..., description="Fields and values to update. Keys are field names, values are new values.")
+    notes: Optional[str] = Field(None, description="Optional notes or reason for the manual edit.")
 
 # =========================================================================
 # XP TRACKING MODELS & ENDPOINTS (CRITICAL DEV_VISION.MD REQUIREMENT)

@@ -485,3 +485,8 @@ podman run -d \
   -e OPENAI_API_KEY="your-key" \
   -e SECRET_KEY="your-secret" \
   dnd-char-creator
+
+# added theme inputs to creations process
+
+# TODO
+Create endpoint to directly edit character, backstory, journal, NPCs, monsters, and items - this may need a walkthrough process so that text is entered where appropriate, integers, booleans, etc are entered properly.  Somehow need to flag or mark that it has been "user modified" so that the DM knows.

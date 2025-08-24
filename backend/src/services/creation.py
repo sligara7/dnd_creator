@@ -214,12 +214,43 @@ class BaseCreator(ABC):
         
         json_str = response[first_brace:last_brace + 1]
         
+        # Robust JSON cleaning to handle control characters and invalid content
+        json_str = self._sanitize_json_string(json_str)
+        
         # Basic JSON repair
         open_braces = json_str.count('{')
         close_braces = json_str.count('}')
         
         if open_braces > close_braces:
             json_str += '}' * (open_braces - close_braces)
+        
+        return json_str
+    
+    def _sanitize_json_string(self, json_str: str) -> str:
+        """Sanitize JSON string to handle control characters and encoding issues."""
+        import re
+        
+        # Remove or replace problematic control characters
+        # Keep only allowed whitespace characters (space, tab, newline, carriage return)
+        json_str = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', json_str)
+        
+        # Handle common issues in JSON strings
+        # Fix unescaped quotes in string values (but be careful not to break JSON structure)
+        def fix_unescaped_quotes(match):
+            content = match.group(1)
+            # Only escape quotes that aren't already escaped
+            content = re.sub(r'(?<!\\)"', r'\\"', content)
+            return f'"{content}"'
+        
+        # Apply quote fixing to string values (between quotes, but not in keys or structural elements)
+        # This is a basic approach - for complex cases, a proper JSON parser would be better
+        json_str = re.sub(r'"([^"]*?(?:\\.[^"]*?)*)"', fix_unescaped_quotes, json_str)
+        
+        # Fix common newline issues in JSON strings
+        json_str = json_str.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+        
+        # Remove any remaining invalid UTF-8 sequences
+        json_str = json_str.encode('utf-8', errors='ignore').decode('utf-8')
         
         return json_str
     

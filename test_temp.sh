@@ -310,7 +310,7 @@ EOF
 # Tests the /backend service running in a podman container
 # Covers: creation, theming, versioning, leveling, multi-classing, and listing
 
-# set -e  # Exit on any error (disabled for better debugging)
+#set -e  # Exit on any error
 
 # Environment Variables Check
 if [ -z "$OPENAI_API_KEY" ]; then
@@ -685,7 +685,7 @@ test_retheming() {
 {
     "creation_type": "character",
     "character_id": "$character_id",
-    "evolution_prompt": "Transform this character into a cyberpunk setting",
+    "evolution_prompt": "Transform this character into a cyberpunk setting with high-tech equipment and cyber enhancements while preserving core personality",
     "theme": "$new_theme",
     "preserve_backstory": true,
     "user_preferences": {
@@ -730,7 +730,7 @@ test_level_up() {
 {
     "creation_type": "character",
     "character_id": "$character_id",
-    "evolution_prompt": "Level up this character gaining new abilities",
+    "evolution_prompt": "Level up this character to level 5, gaining new abilities and improved stats",
     "user_preferences": {
         "new_level": 5,
         "evolution_type": "level_up"
@@ -1464,7 +1464,7 @@ test_npc_refinement() {
 {
     "creation_type": "npc",
     "character_id": "$npc_id",
-    "evolution_prompt": "Refine and improve this NPC based on user feedback",
+    "evolution_prompt": "$refinement_prompt",
     "theme": "$theme",
     "user_preferences": {
         "evolution_type": "refine",
@@ -1837,7 +1837,7 @@ test_item_refinement() {
 {
     "creation_type": "$item_type",
     "item_id": "$item_id",
-    "evolution_prompt": "Refine and improve this item based on user feedback",
+    "evolution_prompt": "$refinement_prompt",
     "theme": "$theme",
     "user_preferences": {
         "evolution_type": "refine",

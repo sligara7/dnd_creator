@@ -1,6 +1,6 @@
-# D&D Character Creator Image Service
+# D&D Character Creator Campaign Service
 
-Image generation and management service for the D&D Character Creator application.
+Campaign and party management service for the D&D Character Creator application.
 
 ## Quick Start
 
@@ -8,24 +8,23 @@ Image generation and management service for the D&D Character Creator applicatio
 
 1. **Build the container:**
    ```bash
-   podman build -t dnd-image-service .
+   podman build -t dnd-campaign-service .
    ```
 
 2. **Run with environment variables:**
    ```bash
    podman run -d \
-     --name dnd-image-service \
-     -p 8002:8000 \
+     --name dnd-campaign-service \
+     -p 8001:8000 \
      --network dnd_network \
-     --gpus all \
      -e MESSAGE_HUB_URL="http://message_hub:8200" \
      -e SECRET_KEY="your-64-char-secret-key" \
-     dnd-image-service
+     dnd-campaign-service
    ```
 
 3. **Access the API:**
-   - API Documentation: http://localhost:8002/docs
-   - Health Check: http://localhost:8002/health
+   - API Documentation: http://localhost:8001/docs
+   - Health Check: http://localhost:8001/health
 
 ## Required Environment Variables
 
@@ -45,7 +44,6 @@ The container is optimized for rootless Podman deployment with:
 - Health checks
 - Proper logging
 - Volume support for data persistence
-- GPU support for image generation
 
 ## Architecture
 
@@ -56,48 +54,36 @@ The container is optimized for rootless Podman deployment with:
 
 ### Service Integration
 - **Message Hub Client**: Communication with other services
-- Image generation prompts through LLM Service
-- Image generation through Stable Diffusion
+- Campaign content generation through LLM Service
+- Campaign maps and tokens through Image Service
+- Character data from Character Service
 
 ### Database
-- Independent PostgreSQL database for image metadata
-- Binary storage for generated images
+- Independent PostgreSQL database for campaign data
+- Git-like version control for campaign changes
 - Async/await database operations
-
-## Image Generation Features
-
-### Character Portraits
-- Character portrait generation
-- Token generation for VTTs
-- Style consistency control
-- Image history and versioning
-
-### Campaign Maps
-- Battle map generation
-- World map generation
-- Location-specific map styles
-- Map overlay support
 
 ## Service Communication
 
 ### Outbound Messages
-- Image generation prompts to LLM Service
-- Generated image notifications
+- Campaign content generation requests to LLM Service
+- Map and token requests to Image Service
+- Character data requests to Character Service
 
 ### Inbound Messages
-- Portrait requests from Character Service
-- Map requests from Campaign Service
+- Character updates from Character Service
+- Map and token generation status from Image Service
 
-## Resource Management
+## Git-like Campaign Version Control
 
-- GPU utilization monitoring
-- Image generation queue
-- Resource allocation strategies
-- Cache management for common requests
+- Campaign state snapshots
+- Branch support for alternate storylines
+- Merge capability for storyline integration
+- Revert support for undoing changes
 
 ## Health and Monitoring
 
 - Health endpoint: `/health`
 - Metrics endpoint: `/metrics`
-- GPU status monitoring
+- Structured logging with JSON output
 - Service registration with Message Hub

@@ -220,11 +220,11 @@ class TransactionManager:
             # Sleep before next cleanup
             await asyncio.sleep(10)  # Check every 10 seconds
     
-    def get_metrics(self) -> Dict[str, Any]:
+    def get_metrics(self) -> Dict[str, any]:
         """Get transaction manager metrics."""
         return {
-            "active_transactions": len(self.active_transactions),
-            "completed_transactions": len(self.completed_transactions),
+            "active_transactions": list(self.active_transactions.keys()),
+            "completed_transactions": list(self.completed_transactions.keys()),
             "transactions": {
                 "active": {
                     tx_id: tx.get_metrics()

@@ -7,45 +7,13 @@ from datetime import datetime
 from typing import AsyncGenerator, List
 from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.event_store.models import Event, EventStream, EventSubscription, EventType, Base
 from src.event_store.service import EventStore
 from src.models import ServiceType
 
-# Test database URL
-TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
-
-@pytest.fixture
-async def engine():
-    """Create a test database engine."""
-    engine = create_async_engine(TEST_DATABASE_URL, echo=True)
-    
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
-    
-    yield engine
-    
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    
-    await engine.dispose()
-
-@pytest.fixture
-def session_factory(engine):
-    """Create a test session factory."""
-    return sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
-
-@pytest.fixture
-async def event_store(session_factory) -> EventStore:
-    """Create a test event store instance."""
-    store = EventStore(session_factory)
-    await store.initialize_database()
-    return store
+# Fixtures for db_engine, session_factory, and event_store are provided in tests/conftest.py
 
 @pytest.mark.asyncio
 async def test_append_event(event_store: EventStore):
@@ -62,7 +30,7 @@ async def test_append_event(event_store: EventStore):
     assert event.event_type == EventType.CHARACTER_CREATED
     assert event.source_service == ServiceType.CHARACTER_SERVICE.value
     assert event.data == {"character_id": "test-123"}
-    assert event.metadata == {"version": "1.0"}
+    assert event.event_metadata == {"version": "1.0"}
     assert event.sequence_number == 1
 
 @pytest.mark.asyncio
@@ -104,7 +72,7 @@ async def test_create_stream(event_store: EventStore):
     assert stream.stream_id is not None
     assert isinstance(UUID(stream.stream_id), UUID)
     assert stream.stream_type == "test"
-    assert stream.metadata == {"version": "1.0"}
+    assert stream.stream_metadata == {"version": "1.0"}
     assert stream.created_at is not None
     assert stream.last_event_at is None
 
@@ -157,8 +125,10 @@ async def test_get_subscription_events(event_store: EventStore):
     
     # Verify subscription was updated
     async with event_store.session_factory() as session:
+        from sqlalchemy import text
         result = await session.execute(
-            f"SELECT last_processed_sequence FROM event_subscription WHERE subscription_id = '{subscription.subscription_id}'"
+            text("SELECT last_processed_sequence FROM event_subscriptions WHERE subscription_id = :sid"),
+            {"sid": subscription.subscription_id}
         )
         last_seq = result.scalar()
         assert last_seq == 5

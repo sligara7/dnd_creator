@@ -72,7 +72,7 @@ class EventStore:
                     event_id=str(uuid.uuid4()),
                     source_service=source_service.value,
                     data=data,
-                    metadata=metadata,
+                    event_metadata=metadata or {},
                     correlation_id=correlation_id,
                     causation_id=causation_id,
                     sequence_number=next_seq,
@@ -151,7 +151,7 @@ class EventStore:
                 stream = EventStream(
                     stream_id=str(uuid.uuid4()),
                     stream_type=stream_type,
-                    metadata=metadata
+                    stream_metadata=metadata or {}
                 )
                 
                 session.add(stream)
@@ -175,9 +175,9 @@ class EventStore:
                 subscription = EventSubscription(
                     subscription_id=str(uuid.uuid4()),
                     subscriber_service=subscriber_service.value,
-                    event_types=[e.value for e in (event_types or [])],
-                    source_services=[s.value for s in (source_services or [])],
-                    metadata=metadata
+                    event_types=event_types,
+                    source_services=source_services,
+                    subscription_metadata=metadata or {}
                 )
                 
                 session.add(subscription)

@@ -18,7 +18,7 @@ from src.event_store.service import EventStore
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 @pytest_asyncio.fixture
-async def engine():
+async def db_engine():
     """Create a test database engine."""
     engine = create_async_engine(
         TEST_DATABASE_URL,
@@ -39,20 +39,21 @@ async def engine():
     await engine.dispose()
 
 @pytest_asyncio.fixture
-def session_factory(engine):
+def session_factory(db_engine):
     """Create a test session factory."""
     return sessionmaker(
-        engine,
+        bind=db_engine,
         class_=AsyncSession,
         expire_on_commit=False,
         autoflush=False
     )
 
 @pytest_asyncio.fixture
-async def event_store(session_factory) -> EventStore:
+async def event_store(session_factory, db_engine) -> EventStore:
     """Create a test event store instance."""
     store = EventStore(session_factory)
-    await store.initialize_database()
+    async with db_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
     return store
 
 @pytest.fixture(scope="session")

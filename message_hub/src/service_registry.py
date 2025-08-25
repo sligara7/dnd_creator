@@ -29,7 +29,30 @@ class ServiceRegistry:
         # Start health check loop
         asyncio.create_task(self._health_check_loop())
     
-    async def register_service(self, registration: ServiceRegistration):
+async def register_service(self, registration: ServiceRegistration) -> bool:
+        """Register a service in the registry.
+        
+        Args:
+            registration: Service registration info
+            
+        Returns:
+            bool: True if registration successful
+        """
+        try:
+            # Basic validation
+            if not registration.url or not registration.health_check:
+                return False
+            
+            # Store service info
+            self.services[registration.name] = registration
+            
+            logger.info("service_registered",
+                      service=registration.name.value,
+                      url=registration.url)
+            return True
+            
+        except ValidationError:
+            return False
         """Register a new service or update existing registration."""
         try:
             # Validate service is reachable

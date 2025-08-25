@@ -65,7 +65,7 @@ class Event(Base):
     
     # Event data
     data = Column(JSON, nullable=False)
-    metadata = Column(JSON, nullable=True)
+    event_metadata = Column('metadata', JSON, nullable=True)
     
     # Correlation for distributed tracing
     correlation_id = Column(String(36), nullable=True)
@@ -100,7 +100,7 @@ class EventStream(Base):
     last_event_at = Column(DateTime, nullable=True)
     
     # Stream metadata
-    metadata = Column(JSON, nullable=True)
+    stream_metadata = Column('metadata', JSON, nullable=True)
     
     def __repr__(self):
         return (f"<EventStream(id={self.id}, "
@@ -137,7 +137,7 @@ class EventSubscription(Base):
     last_error_at = Column(DateTime, nullable=True)
     
     # Subscription metadata
-    metadata = Column(JSON, nullable=True)
+    subscription_metadata = Column('metadata', JSON, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     
     def __repr__(self):

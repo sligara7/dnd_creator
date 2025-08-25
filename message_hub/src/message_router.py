@@ -7,7 +7,7 @@ Handles message routing and delivery between services.
 import structlog
 import httpx
 from circuitbreaker import circuit
-from typing import Optional
+from typing import Optional, Any
 
 from .config import Settings
 from .models import ServiceMessage, ServiceResponse, ServiceType
@@ -116,12 +116,6 @@ class MessageRouter:
         )
         response.raise_for_status()
         
-        return ServiceResponse(
-            correlation_id=message.correlation_id,
-            status="success",
-            data=response.json()
-        )
-        
         # Store event if message type has a corresponding event type
         event_type = message_to_event_type(message.message_type)
         if event_type:
@@ -135,29 +129,23 @@ class MessageRouter:
                 data=message.payload,
                 metadata=metadata
             )
+        
+        return ServiceResponse(
+            correlation_id=message.correlation_id,
+            status="success",
+            data=response.json()
+        )
     
     def _get_endpoint_for_message(self, message: ServiceMessage) -> str:
         """Determine the appropriate endpoint for a message type."""
         
         # Map message types to endpoints
+        from .models import MessageType
         endpoints = {
-            # Character Service Endpoints
-            "create_character": "/v1/characters",
-            "update_character": "/v1/characters/{id}",
-            "get_character": "/v1/characters/{id}",
-            
-            # Campaign Service Endpoints
-            "create_campaign": "/v1/campaigns",
-            "update_campaign": "/v1/campaigns/{id}",
-            "add_character": "/v1/campaigns/{id}/characters",
-            
-            # Image Service Endpoints
-            "generate_portrait": "/v1/images/portrait",
-            "generate_map": "/v1/images/map",
-            
-            # LLM Service Endpoints
-            "generate_text": "/v1/generate/text",
-            "generate_image": "/v1/generate/image"
+            # Character Events routed as messages
+            MessageType.CHARACTER_CREATED: "/v1/events",
+            MessageType.CHARACTER_UPDATED: "/v1/events",
+            MessageType.CHARACTER_DELETED: "/v1/events",
         }
         
         endpoint = endpoints.get(message.message_type)

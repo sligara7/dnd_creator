@@ -1,0 +1,526 @@
+openapi: 3.0.0
+info:
+  title: D&D Character Service API
+  version: 1.0.0
+  description: API for creating and managing D&D characters in both traditional and Antitheticon campaigns
+
+servers:
+  - url: http://api.dndtools.local/v1
+    description: Local development server
+
+paths:
+  /characters:
+    post:
+      summary: Create a new character
+      operationId: createCharacter
+      tags: [Characters]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CharacterCreationRequest'
+      responses:
+        '201':
+          description: Character created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Character'
+
+  /characters/{characterId}:
+    get:
+      summary: Get character details
+      operationId: getCharacter
+      tags: [Characters]
+      parameters:
+        - name: characterId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Character details retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Character'
+
+  /characters/{characterId}/evolution:
+    post:
+      summary: Process character evolution event
+      operationId: evolveCharacter
+      tags: [Character Evolution]
+      parameters:
+        - name: characterId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvolutionEvent'
+      responses:
+        '200':
+          description: Evolution processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvolutionResponse'
+
+  /characters/{characterId}/relationships:
+    post:
+      summary: Create or update character relationship
+      operationId: updateRelationship
+      tags: [Relationships]
+      parameters:
+        - name: characterId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RelationshipUpdate'
+      responses:
+        '200':
+          description: Relationship updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Relationship'
+
+  /antitheticon:
+    post:
+      summary: Create new Antitheticon mastermind
+      operationId: createAntitheticon
+      tags: [Antitheticon]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AntithesiconCreationRequest'
+      responses:
+        '201':
+          description: Antitheticon created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Antitheticon'
+
+  /antitheticon/{antithesiconId}/identities:
+    post:
+      summary: Create false identity for Antitheticon
+      operationId: createFalseIdentity
+      tags: [Antitheticon]
+      parameters:
+        - name: antithesiconId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FalseIdentityRequest'
+      responses:
+        '201':
+          description: False identity created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FalseIdentity'
+
+  /campaigns/{campaignId}/events:
+    post:
+      summary: Process campaign event
+      operationId: processCampaignEvent
+      tags: [Campaign Integration]
+      parameters:
+        - name: campaignId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CampaignEvent'
+      responses:
+        '200':
+          description: Event processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventProcessingResponse'
+
+components:
+  schemas:
+    CharacterCreationRequest:
+      type: object
+      required:
+        - campaignType
+        - characterType
+        - theme
+      properties:
+        campaignType:
+          type: string
+          enum: [traditional, antitheticon]
+        characterType:
+          type: string
+          enum: [player, npc, antagonist, mastermind]
+        theme:
+          type: object
+          properties:
+            setting:
+              type: string
+            style:
+              type: string
+            elements:
+              type: array
+              items:
+                type: string
+        requirements:
+          type: object
+          properties:
+            level:
+              type: integer
+            role:
+              type: string
+            restrictions:
+              type: array
+              items:
+                type: string
+
+    Character:
+      type: object
+      required:
+        - characterId
+        - baseData
+        - narrativeElements
+      properties:
+        characterId:
+          type: string
+        baseData:
+          type: object
+          properties:
+            stats:
+              type: object
+            abilities:
+              type: array
+              items:
+                type: object
+            background:
+              type: object
+        narrativeElements:
+          type: object
+          properties:
+            personality:
+              type: object
+            relationships:
+              type: array
+              items:
+                $ref: '#/components/schemas/Relationship'
+            goals:
+              type: array
+              items:
+                type: object
+        campaignIntegration:
+          type: object
+          properties:
+            hooks:
+              type: array
+              items:
+                type: object
+            plotPoints:
+              type: array
+              items:
+                type: object
+            worldConnections:
+              type: array
+              items:
+                type: object
+
+    EvolutionEvent:
+      type: object
+      required:
+        - eventType
+        - description
+        - impact
+      properties:
+        eventType:
+          type: string
+          enum: [moral_choice, skill_gain, relationship_change, story_event]
+        description:
+          type: string
+        impact:
+          type: object
+          properties:
+            immediate:
+              type: object
+            longTerm:
+              type: object
+        context:
+          type: object
+
+    EvolutionResponse:
+      type: object
+      properties:
+        characterUpdates:
+          type: object
+          properties:
+            statChanges:
+              type: object
+            narrativeChanges:
+              type: object
+            relationshipUpdates:
+              type: array
+              items:
+                $ref: '#/components/schemas/RelationshipUpdate'
+        storyImplications:
+          type: object
+          properties:
+            immediate:
+              type: array
+              items:
+                type: string
+            future:
+              type: array
+              items:
+                type: string
+            hooks:
+              type: array
+              items:
+                type: object
+        worldEffects:
+          type: object
+          properties:
+            immediate:
+              type: array
+              items:
+                type: object
+            longTerm:
+              type: array
+              items:
+                type: object
+
+    Relationship:
+      type: object
+      required:
+        - fromCharacter
+        - toCharacter
+        - currentState
+      properties:
+        fromCharacter:
+          type: string
+        toCharacter:
+          type: string
+        currentState:
+          type: string
+        history:
+          type: array
+          items:
+            type: object
+        tensionPoints:
+          type: array
+          items:
+            type: string
+        developmentPotential:
+          type: array
+          items:
+            type: object
+        storyHooks:
+          type: array
+          items:
+            type: object
+
+    RelationshipUpdate:
+      type: object
+      required:
+        - fromCharacter
+        - toCharacter
+        - changeType
+      properties:
+        fromCharacter:
+          type: string
+        toCharacter:
+          type: string
+        changeType:
+          type: string
+          enum: [development, conflict, resolution]
+        details:
+          type: object
+
+    AntithesiconCreationRequest:
+      type: object
+      required:
+        - theme
+        - complexity
+      properties:
+        theme:
+          type: object
+          properties:
+            setting:
+              type: string
+            style:
+              type: string
+            elements:
+              type: array
+              items:
+                type: string
+        complexity:
+          type: integer
+          minimum: 1
+          maximum: 5
+        focus:
+          type: string
+          enum: [identity, operation, motive, capability, presence]
+
+    Antitheticon:
+      type: object
+      required:
+        - id
+        - theme
+        - networks
+      properties:
+        id:
+          type: string
+        theme:
+          type: object
+        networks:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeceptionNetwork'
+        identities:
+          type: array
+          items:
+            $ref: '#/components/schemas/FalseIdentity'
+        operations:
+          type: array
+          items:
+            type: object
+
+    FalseIdentityRequest:
+      type: object
+      required:
+        - apparentIdentity
+        - trueNature
+      properties:
+        apparentIdentity:
+          type: object
+          properties:
+            name:
+              type: string
+            role:
+              type: string
+            traits:
+              type: array
+              items:
+                type: string
+        trueNature:
+          type: object
+          properties:
+            capabilities:
+              type: array
+              items:
+                type: string
+            goals:
+              type: array
+              items:
+                type: string
+
+    FalseIdentity:
+      type: object
+      required:
+        - identityId
+        - apparentTraits
+        - trueTraits
+      properties:
+        identityId:
+          type: string
+        apparentTraits:
+          type: object
+        trueTraits:
+          type: object
+        deceptionMethods:
+          type: array
+          items:
+            type: string
+        plantedEvidence:
+          type: array
+          items:
+            type: object
+        contingencyPlans:
+          type: array
+          items:
+            type: object
+
+    DeceptionNetwork:
+      type: object
+      required:
+        - networkId
+        - primaryIdentity
+        - supportingIdentities
+      properties:
+        networkId:
+          type: string
+        primaryIdentity:
+          $ref: '#/components/schemas/FalseIdentity'
+        supportingIdentities:
+          type: array
+          items:
+            $ref: '#/components/schemas/FalseIdentity'
+        operations:
+          type: array
+          items:
+            type: object
+        contingencies:
+          type: object
+
+    CampaignEvent:
+      type: object
+      required:
+        - eventType
+        - description
+        - affectedCharacters
+      properties:
+        eventType:
+          type: string
+        description:
+          type: string
+        affectedCharacters:
+          type: array
+          items:
+            type: string
+        context:
+          type: object
+        implications:
+          type: object
+
+    EventProcessingResponse:
+      type: object
+      properties:
+        characterEffects:
+          type: object
+          additionalProperties:
+            type: object
+        relationshipEffects:
+          type: array
+          items:
+            $ref: '#/components/schemas/RelationshipUpdate'
+        storyDevelopments:
+          type: object
+        worldChanges:
+          type: object

@@ -10,36 +10,36 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
 # Full stack development setup
 ./deployment/scripts/setup-full.sh
 
-# Backend-only development setup
-./deployment/scripts/setup-backend-dev.sh
+# Services development setup
+./deployment/scripts/setup-services.sh
 
-# Run individual backend service
+# Run individual service
 podman run -d \
-  --name dnd-char-creator \
+  --name dnd-character-service \
   -p 8000:8000 \
   -e OPENAI_API_KEY="${OPENAI_API_KEY}" \
   -e SECRET_KEY="${SECRET_KEY}" \
-  dnd-char-creator
+  dnd-character-service
 ```
 
 ### Testing
 
 ```bash
-# Run all backend tests
-podman exec dnd_character_api_dev python -m pytest -v
+# Run all tests
+podman exec dnd_character_service python -m pytest -v
 
 # Run specific test file
-podman exec dnd_character_api_dev python -m pytest path/to/test_file.py -v
+podman exec dnd_character_service python -m pytest path/to/test_file.py -v
 
 # Run tests with coverage
-podman exec dnd_character_api_dev python -m pytest --cov=. -v
+podman exec dnd_character_service python -m pytest --cov=. -v
 ```
 
 ### Development Tools
 
 ```bash
-# Access backend container shell
-podman exec -it dnd_character_api_dev /bin/bash
+# Access service container shell
+podman exec -it dnd_character_service /bin/bash
 
 # Check service health
 curl http://localhost:8000/health
@@ -53,7 +53,13 @@ podman-compose ps
 
 ## Architecture Overview
 
-The application follows a microservices architecture with the following services:
+The application follows a microservices architecture supporting two main campaign types: traditional D&D and Antitheticon (identity deception). Key documentation is split between:
+
+1. This file (WARP.md) - Development and deployment guidance
+2. SERVICE.md - High-level service architecture and functionality
+3. api-spec.yaml - OpenAPI specification detailing endpoints and schemas
+
+The system consists of the following services:
 
 # Service Architecture
 
@@ -62,6 +68,11 @@ The application follows a microservices architecture with the following services
 1. **Character Service** (`character_service/`)
    - Character creation and management API
    - Core D&D mechanics and validation
+   - Support for both campaign types:
+     * Traditional: Mechanically balanced D&D characters
+     * Antitheticon: Identity deception networks and plots
+   - Rich narrative development and evolution
+   - Campaign integration hooks
    - FastAPI + SQLAlchemy + Pydantic
    - Internal PostgreSQL database
    - Port: 8000
@@ -69,7 +80,12 @@ The application follows a microservices architecture with the following services
 2. **Campaign Service** (`campaign_service/`)
    - Campaign and party management
    - Character progression tracking
+   - Event processing and story hooks
+   - World effects integration
+   - Relationship tracking
    - Git-like version control for campaigns
+   - Theme management and balance
+   - Multi-layer plot tracking (Antitheticon)
    - Internal PostgreSQL database
    - Port: 8001
 
@@ -82,12 +98,56 @@ The application follows a microservices architecture with the following services
 
 ## Infrastructure Services
 
-1. **API Gateway** (`gateway/`)
-   - Single entry point for all client requests
-   - Route requests to appropriate services
-   - Handle authentication and authorization
-   - Basic request validation
-   - Port: 3000
+### API Gateway and Routing (Traefik)
+
+Traefik v2 is used as the API gateway. It discovers services via Docker labels and routes by path prefix.
+
+- Static config: `traefik/traefik.yml`
+- Dynamic middlewares: `traefik/dynamic/middlewares.yml`
+- Compose service: `docker-compose.yml` (service: traefik)
+
+Local development quick start:
+
+```bash
+# Start Traefik and all services
+docker-compose up -d
+
+# Traefik dashboard (dev mode only)
+http://localhost:8080
+
+# Service endpoints (via Traefik)
+http://localhost/api/character
+http://localhost/api/campaign
+http://localhost/api/world
+http://localhost/api/theme
+http://localhost/api/hub
+```
+
+Service label pattern (example for Character Service):
+
+```yaml
+labels:
+  - "traefik.enable=true"
+  - "traefik.http.routers.character.rule=PathPrefix(`/api/character`)"
+  - "traefik.http.middlewares.character-strip.stripprefix.prefixes=/api/character"
+  - "traefik.http.routers.character.middlewares=character-strip,cors,rate-limit,secure-headers"
+  - "traefik.http.services.character.loadbalancer.server.port=8000"
+```
+
+Production hardening checklist:
+- Enable HTTPS with Let’s Encrypt in `traefik/traefik.yml`
+- Redirect HTTP → HTTPS
+- Disable or protect the dashboard (port 8080)
+- Enable middlewares: CORS, rate limiting, security headers
+- Set request size/timeouts as appropriate
+- Keep services on a private Docker network; only Traefik is publicly exposed
+
+1. **API Gateway (Traefik)** (`traefik/`)
+   - Edge router and reverse proxy for all client requests
+   - Routes by path prefix to backend services (e.g., /api/character, /api/campaign)
+   - Handles TLS termination, middleware (CORS, rate limits, security headers)
+   - Can perform basic auth/API key checks at the edge
+   - Ports: 80 (HTTP), 443 (HTTPS), 8080 (dashboard in dev)
 
 2. **Message Hub** (`message_hub/`)
    - Central communication coordinator
@@ -104,6 +164,37 @@ The application follows a microservices architecture with the following services
    - API key and rate limit management
    - Response caching and optimization
    - Port: 8100
+
+## Service Features
+
+### Character Creation & Evolution
+- Support for traditional D&D and Antitheticon campaigns
+- Mechanically balanced character generation
+- Rich narrative development and backstory
+- Dynamic campaign integration
+- Character evolution tracking
+
+### Antitheticon System
+- Identity deception networks
+- Multi-layer plot management
+- Evolution and transformation tracking
+- Theme and balance management
+- Identity relationship mapping
+
+### Campaign Integration
+- Event processing and tracking
+- Story hook generation and management
+- World effect simulation
+- Character relationship tracking
+- Plot development assistance
+
+### Service Integration
+- Campaign service coordination
+- World state management
+- Theme service balancing
+- Story hook distribution
+- Cross-service event handling
+- State consistency management
 
 ## Service Communication Flow
 
@@ -214,7 +305,8 @@ Service Internal Layers
 - `/image_service/src/` - Image generation and management
 
 ### Infrastructure Services
-- `/api_gateway/` - API Gateway service
+- `/traefik/` - Traefik configuration (static and dynamic)
+- `/docker-compose.yml` - Orchestrates Traefik and services
 - `/message_hub/` - Service communication hub
 - `/llm_service/` - Centralized LLM operations
 

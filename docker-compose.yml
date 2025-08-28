@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  traefik:
+    image: traefik:v2.10
+    command:
+      - "--api.insecure=true"  # Enable dashboard - DISABLE in production
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"  # Dashboard port - DISABLE in production
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "./traefik:/etc/traefik"
+    networks:
+      - dnd_network
+
+  character-service:
+    build: ./character_service
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.character.rule=PathPrefix(`/api/character`)"
+      - "traefik.http.services.character.loadbalancer.server.port=8000"
+    networks:
+      - dnd_network
+
+  campaign-service:
+    build: ./campaign_service
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.campaign.rule=PathPrefix(`/api/campaign`)"
+      - "traefik.http.services.campaign.loadbalancer.server.port=8000"
+    networks:
+      - dnd_network
+
+  world-service:
+    build: ./world_service
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.world.rule=PathPrefix(`/api/world`)"
+      - "traefik.http.services.world.loadbalancer.server.port=8000"
+    networks:
+      - dnd_network
+
+  theme-service:
+    build: ./theme_service
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.theme.rule=PathPrefix(`/api/theme`)"
+      - "traefik.http.services.theme.loadbalancer.server.port=8000"
+    networks:
+      - dnd_network
+
+  message-hub:
+    build: ./message_hub
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.hub.rule=PathPrefix(`/api/hub`)"
+      - "traefik.http.services.hub.loadbalancer.server.port=8000"
+      - "traefik.http.routers.hub.middlewares=hub-stripprefix"
+      - "traefik.http.middlewares.hub-stripprefix.stripprefix.prefixes=/api/hub"
+    networks:
+      - dnd_network
+
+networks:
+  dnd_network:
+    driver: bridge

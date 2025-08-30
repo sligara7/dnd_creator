@@ -9,7 +9,14 @@ Last Updated: 2025-08-30
 ### 1.1 Purpose
 The API Gateway Service acts as the unified entry point for all client requests, providing authentication, routing, rate limiting, and monitoring capabilities for the D&D Character Creator system.
 
-### 1.2 Scope
+### 1.2 Core Principles
+- Single public entry point for the entire system
+- All inter-service communication routed through Message Hub
+- No direct service-to-service communication allowed
+- Authentication and authorization at edge only
+- All services isolated in private network
+
+### 1.3 Scope
 - Request routing and load balancing
 - Authentication and authorization
 - Rate limiting and throttling
@@ -35,7 +42,12 @@ The API Gateway Service acts as the unified entry point for all client requests,
 - FR1.4: Session management
 - FR1.5: OAuth2 integration
 
-### 2.2 Message Hub Integration
+### 2.2 Message Hub Integration (Required)
+- FR2.1: All service requests must route through Message Hub
+- FR2.2: No direct service-to-service communication
+- FR2.3: Centralized request tracking and correlation
+- FR2.4: Unified error handling and recovery
+- FR2.5: System-wide event propagation
 - FR2.1: Route all requests through Message Hub
 - FR2.2: Transform messages between formats
 - FR2.3: Handle synchronous/asynchronous patterns

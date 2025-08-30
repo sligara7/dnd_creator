@@ -4,7 +4,67 @@ Version: 1.0
 Status: Active
 Last Updated: 2025-08-30
 
-## 1. External Interface
+## 1. Gateway Architecture
+
+### 1.1 Traefik Overview
+The API Gateway is implemented using Traefik v2, providing:
+- Edge routing and load balancing
+- TLS termination and HTTPS enforcement
+- Authentication and authorization
+- Rate limiting and circuit breaking
+- Service discovery and health monitoring
+- Metrics collection and tracing
+
+### 1.2 Service Endpoints
+```yaml
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+  websecure:
+    address: ":443"
+    http:
+      tls:
+        certResolver: letsencrypt
+```
+
+### 1.3 Middleware Chain
+```yaml
+http:
+  middlewares:
+    # Security middleware
+    secure-headers:
+      headers:
+        frameDeny: true
+        sslRedirect: true
+        browserXssFilter: true
+        contentTypeNosniff: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        stsSeconds: 31536000
+    
+    # Authentication
+    auth:
+      forwardAuth:
+        address: "http://auth-service:8300/validate"
+        trustForwardHeader: true
+    
+    # Rate limiting
+    rate-limit:
+      rateLimit:
+        average: 100
+        burst: 50
+    
+    # Circuit breaker
+    circuit-breaker:
+      circuitBreaker:
+        expression: "NetworkErrorRatio() > 0.10"
+```
+
+## 2. External Interface
 
 ### 1.1 Base URL
 ```
@@ -273,7 +333,79 @@ http_request_duration_seconds_bucket{le="0.1",path="/character"} 900
 - `VALIDATION_ERROR`: Invalid request data
 - `INTERNAL_ERROR`: Internal server error
 
-## 10. Service Discovery
+## 10. Traefik Configuration
+
+### 10.1 Static Configuration
+```yaml
+api:
+  dashboard: true
+  insecure: false
+
+entryPoints:
+  web:
+    address: ":80"
+  websecure:
+    address: ":443"
+
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: internal
+  file:
+    directory: "/etc/traefik/dynamic"
+    watch: true
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: "admin@dndcreator.com"
+      storage: "/etc/traefik/acme/acme.json"
+      httpChallenge:
+        entryPoint: web
+```
+
+### 10.2 Dynamic Configuration
+```yaml
+http:
+  routers:
+    character-service:
+      rule: "PathPrefix(`/api/v2/characters`)"
+      service: "character-service"
+      middlewares:
+        - auth
+        - rate-limit
+        - secure-headers
+      tls: {}
+    
+    campaign-service:
+      rule: "PathPrefix(`/api/v2/campaigns`)"
+      service: "campaign-service"
+      middlewares:
+        - auth
+        - rate-limit
+        - secure-headers
+      tls: {}
+
+  services:
+    character-service:
+      loadBalancer:
+        servers:
+          - url: "http://character-service:8000"
+        healthCheck:
+          path: "/health"
+          interval: "10s"
+    
+    campaign-service:
+      loadBalancer:
+        servers:
+          - url: "http://campaign-service:8001"
+        healthCheck:
+          path: "/health"
+          interval: "10s"
+```
+
+## 11. Service Discovery
 
 ### 10.1 Service Registration
 ```http

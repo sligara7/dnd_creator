@@ -1,8 +1,12 @@
 # Interface Control Document: Message Hub Service (ICD-MH-001)
 
-Version: 1.0
+Version: 2.0
 Status: Active
 Last Updated: 2025-08-30
+
+## Introduction
+
+The Message Hub is the central communication backbone of the D&D Character Creator system. It facilitates all inter-service communication, ensuring service isolation and reliable message delivery. No direct service-to-service communication is permitted - all interactions MUST flow through the Message Hub.
 
 ## 1. Service Interface
 
@@ -11,11 +15,28 @@ Last Updated: 2025-08-30
 http://message-hub:8200
 ```
 
-### 1.2 Authentication Headers
+### 1.2 Key Principles
+
+1. All inter-service communication MUST go through Message Hub
+2. No direct service-to-service connections allowed
+3. Services operate in isolation with Message Hub as intermediary
+4. Consistent message delivery and error handling
+5. Centralized service discovery and health monitoring
+
+### 1.2 Core Principles
+
+1. All inter-service communication MUST go through Message Hub
+2. No direct service-to-service connections allowed
+3. Services operate in isolation with Message Hub as intermediary
+4. All events have a standardized format
+5. Event subscriptions are explicit and documented
+
+### 1.3 Authentication Headers
 ```
 X-Service-Name: <service_name>
 X-Service-Key: <service_auth_key>
 X-Request-ID: <uuid>
+X-Correlation-ID: <uuid>
 Content-Type: application/json
 ```
 
@@ -65,7 +86,81 @@ GET /message/{id}
 }
 ```
 
-## 3. Event API
+## 3. Event System
+
+### 3.1 Core Event Format
+```json
+{
+  "id": "uuid",
+  "type": "event",
+  "source": "service_name",
+  "event_type": "string",
+  "correlation_id": "uuid",
+  "timestamp": "2025-08-30T14:49:14Z",
+  "payload": {}
+}
+```
+
+### 3.2 Standard Event Types
+
+#### Character Service Events
+Published:
+- `character.created`: Character creation complete
+- `character.updated`: Character details updated
+- `character.deleted`: Character removed
+- `character.validated`: Character validation complete
+- `character.leveled_up`: Character level increased
+- `character.refined`: Character refinements applied
+- `character.journal_updated`: Journal entries modified
+- `character.inventory_changed`: Inventory items modified
+- `character.spells_changed`: Spell list modified
+
+Subscribed:
+- `campaign.theme_changed`: Campaign theme updated
+- `campaign.validated`: Campaign validation complete
+- `llm.content_generated`: LLM content received
+- `llm.refinement_suggested`: LLM refinements available
+
+#### Campaign Service Events
+Published:
+- `campaign.created`: Campaign creation complete
+- `campaign.evolved`: Campaign evolution applied
+- `campaign.chapter_created`: New chapter added
+- `campaign.validate_character`: Character validation requested
+- `campaign.character_approved`: Character approved for campaign
+
+Subscribed:
+- `character.created`: New character available
+- `character.updated`: Character modifications
+- `character.validated`: Character validation complete
+- `llm.content_generated`: LLM content received
+
+#### Image Service Events
+Published:
+- `image.portrait_generated`: Portrait creation complete
+- `image.map_generated`: Map generation complete
+- `image.item_generated`: Item visualization complete
+- `image.theme_applied`: Theme application complete
+
+Subscribed:
+- `character.updated`: Character appearance changed
+- `campaign.theme_changed`: Visual theme updated
+- `llm.generate_prompt`: Generation prompt received
+
+#### Catalog Service Events
+Published:
+- `catalog.item.created`: Item added to catalog
+- `catalog.item.updated`: Item details modified
+- `catalog.item.deleted`: Item removed from catalog
+- `catalog.item.validated`: Item validation complete
+- `catalog.theme.applied`: Theme application complete
+
+Subscribed:
+- `character.created`: New character reference
+- `campaign.theme_changed`: Theme update needed
+- `llm.content_generated`: New content available
+
+### 3.3 Event API
 
 ### 3.1 Publish Event
 ```http

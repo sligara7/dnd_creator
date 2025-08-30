@@ -1,0 +1,115 @@
+# LLM Service Configuration
+
+server:
+  port: 8100
+  host: 0.0.0.0
+  workers: 2
+  timeout: 60
+
+message_hub:
+  url: http://message-hub:8200
+  timeout: 5s
+  health_check:
+    path: /health
+    interval: 10s
+    timeout: 5s
+    threshold: 3
+
+models:
+  default: gpt-4
+  available:
+    gpt-4:
+      provider: openai
+      api_key: ${OPENAI_API_KEY}
+      max_tokens: 8000
+      temperature: 0.7
+      timeout: 45s
+      retry:
+        max_attempts: 3
+        backoff_factor: 2
+    
+    claude-3:
+      provider: anthropic
+      api_key: ${ANTHROPIC_API_KEY}
+      max_tokens: 4000
+      temperature: 0.7
+      timeout: 45s
+      retry:
+        max_attempts: 3
+        backoff_factor: 2
+
+rate_limits:
+  default:
+    requests_per_minute: 10
+    tokens_per_minute: 100000
+  custom:
+    character-service:
+      requests_per_minute: 20
+      tokens_per_minute: 200000
+
+prompts:
+  path: /app/prompts
+  default_context: dnd_5e
+  template_format: jinja2
+  cache_ttl: 3600  # 1 hour
+
+caching:
+  enabled: true
+  type: redis
+  redis:
+    host: redis
+    port: 6379
+    db: 4
+  ttl: 3600  # 1 hour
+  max_size: 1000
+
+queue:
+  type: redis
+  redis:
+    host: redis
+    port: 6379
+    db: 5
+  max_size: 1000
+  timeout: 300  # 5 minutes
+  priority_levels: 3
+
+monitoring:
+  metrics_enabled: true
+  log_level: info
+  log_format: json
+  metrics_port: 8101
+  include_prompts: false  # Don't log actual prompts for privacy
+
+events:
+  enabled: true
+  types:
+    - request_received
+    - request_completed
+    - request_failed
+    - rate_limit_exceeded
+    - model_switched
+  batch_size: 100
+  retry:
+    max_attempts: 3
+    backoff_factor: 2
+
+fallback:
+  enabled: true
+  triggers:
+    - error_rate_threshold: 0.1  # 10% errors
+    - latency_threshold: 2000  # 2 seconds
+    - unavailability_duration: 60  # 1 minute
+  alternative_models:
+    - gpt-3.5-turbo
+    - claude-2
+  max_retries: 2
+
+security:
+  prompt_validation:
+    enabled: true
+    max_length: 4000
+    forbidden_tokens: []
+  response_validation:
+    enabled: true
+    max_length: 8000
+    content_filter: true

@@ -1,0 +1,82 @@
+# Character Service Configuration
+
+server:
+  port: 8000
+  host: 0.0.0.0
+  workers: 2
+  timeout: 30
+
+message_hub:
+  url: http://message-hub:8200
+  timeout: 5s
+  health_check:
+    path: /health
+    interval: 10s
+    timeout: 5s
+    threshold: 3
+
+database:
+  type: postgresql
+  host: character-db
+  port: 5432
+  name: character_db
+  user: ${DB_USER}
+  password: ${DB_PASSWORD}
+  pool_size: 10
+  max_overflow: 5
+
+llm:
+  service_url: http://llm-service:8100
+  timeout: 60s
+  cache_ttl: 3600  # 1 hour
+  retry:
+    max_attempts: 3
+    backoff_factor: 2
+
+rules:
+  character_creation:
+    min_level: 1
+    max_level: 20
+    points_buy:
+      total_points: 27
+      min_score: 8
+      max_score: 15
+    ability_score_limits:
+      min: 3
+      max: 20
+    starting_gold:
+      formula: "class_base * (2d6)"
+
+monitoring:
+  metrics_enabled: true
+  log_level: info
+  log_format: json
+  metrics_port: 8001
+
+caching:
+  enabled: true
+  type: redis
+  redis:
+    host: redis
+    port: 6379
+    db: 0
+  ttl: 3600  # 1 hour
+  max_size: 1000
+
+validation:
+  schemas_path: /app/schemas
+  custom_rules_path: /app/rules
+
+events:
+  enabled: true
+  types:
+    - character_created
+    - character_updated
+    - character_deleted
+    - ability_scores_rolled
+    - level_up
+    - equipment_changed
+  batch_size: 100
+  retry:
+    max_attempts: 3
+    backoff_factor: 2

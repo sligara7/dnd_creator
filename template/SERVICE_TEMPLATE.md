@@ -1,0 +1,258 @@
+# Service Template Structure
+
+Each service in the D&D Character Creator system follows this standard structure:
+
+```
+service_name/
+│
+├── Dockerfile              # Service-specific Dockerfile
+├── pixi.toml              # Service dependencies and tasks
+├── README.md              # Service documentation
+│
+├── src/                   # Source code directory
+│   └── service_name/      # Main package directory
+│       ├── __init__.py
+│       ├── main.py        # FastAPI application entry point
+│       ├── config.py      # Configuration settings
+│       │
+│       ├── api/           # API endpoints
+│       │   ├── __init__.py
+│       │   ├── v1/        # API version 1
+│       │   └── v2/        # API version 2 (if needed)
+│       │
+│       ├── core/          # Core business logic
+│       │   ├── __init__.py
+│       │   ├── models.py     # Domain models
+│       │   ├── schemas.py    # Pydantic schemas
+│       │   └── services.py   # Business logic services
+│       │
+│       ├── db/            # Database related code
+│       │   ├── __init__.py
+│       │   ├── models.py     # SQLModel/DB models
+│       │   ├── migrations/   # Alembic migrations
+│       │   └── repositories/ # Repository pattern implementations
+│       │
+│       ├── utils/         # Utility functions and classes
+│       │   ├── __init__.py
+│       │   ├── constants.py
+│       │   └── helpers.py
+│       │
+│       └── workers/       # Background workers (if needed)
+│           ├── __init__.py
+│           └── tasks.py
+│
+├── tests/                 # Test directory
+│   ├── __init__.py
+│   ├── conftest.py       # Pytest configuration and fixtures
+│   │
+│   ├── unit/            # Unit tests
+│   │   ├── __init__.py
+│   │   ├── test_models.py
+│   │   └── test_services.py
+│   │
+│   ├── integration/     # Integration tests
+│   │   ├── __init__.py
+│   │   └── test_api.py
+│   │
+│   └── e2e/            # End-to-end tests
+│       ├── __init__.py
+│       └── test_flows.py
+│
+└── deployment/          # Deployment configurations
+    ├── docker-compose.yml     # Local development compose
+    ├── k8s/                  # Kubernetes manifests (if used)
+    └── monitoring/           # Monitoring configurations
+```
+
+## Common Components
+
+### 1. Configuration (config.py)
+```python
+from pydantic_settings import BaseSettings
+from typing import Any, Dict, Optional
+
+class Settings(BaseSettings):
+    # Service-specific settings
+    SERVICE_NAME: str
+    DEBUG: bool = False
+    
+    # Database settings
+    DATABASE_URL: str
+    
+    # Authentication
+    AUTH_SERVICE_URL: str
+    
+    # Message Hub
+    MESSAGE_HUB_URL: str
+    
+    # Redis (if needed)
+    REDIS_URL: Optional[str] = None
+    
+    # Service-specific settings here
+    
+    class Config:
+        env_file = ".env"
+```
+
+### 2. Main Application (main.py)
+```python
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from .api import router as api_router
+from .core import services
+from .config import Settings
+
+def create_application() -> FastAPI:
+    settings = Settings()
+    
+    app = FastAPI(
+        title=f"{settings.SERVICE_NAME} API",
+        description=f"API for {settings.SERVICE_NAME}",
+        version="1.0.0",
+    )
+    
+    # Add CORS middleware
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    
+    # Add routers
+    app.include_router(api_router, prefix="/api")
+    
+    return app
+
+app = create_application()
+```
+
+### 3. Database Models (db/models.py)
+```python
+from sqlmodel import SQLModel, Field
+from datetime import datetime
+from typing import Optional
+
+class BaseModel(SQLModel):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Add common model functionality here
+```
+
+### 4. Repository Pattern (db/repositories/base.py)
+```python
+from typing import Generic, TypeVar, Type, Optional
+from sqlmodel import SQLModel, select
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+ModelType = TypeVar("ModelType", bound=SQLModel)
+
+class BaseRepository(Generic[ModelType]):
+    def __init__(self, model: Type[ModelType], session: AsyncSession):
+        self.model = model
+        self.session = session
+    
+    async def get(self, id: int) -> Optional[ModelType]:
+        query = select(self.model).where(self.model.id == id)
+        result = await self.session.execute(query)
+        return result.scalar_one_or_none()
+    
+    async def create(self, obj_in: ModelType) -> ModelType:
+        self.session.add(obj_in)
+        await self.session.commit()
+        await self.session.refresh(obj_in)
+        return obj_in
+```
+
+### 5. Service Layer (core/services.py)
+```python
+from typing import Generic, TypeVar
+from .models import BaseModel
+from ..db.repositories.base import BaseRepository
+
+ModelType = TypeVar("ModelType", bound=BaseModel)
+
+class BaseService(Generic[ModelType]):
+    def __init__(self, repository: BaseRepository[ModelType]):
+        self.repository = repository
+    
+    async def get(self, id: int) -> ModelType:
+        return await self.repository.get(id)
+    
+    async def create(self, obj_in: ModelType) -> ModelType:
+        return await self.repository.create(obj_in)
+```
+
+## Testing Structure
+
+### 1. Fixtures (conftest.py)
+```python
+import pytest
+from fastapi.testclient import TestClient
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from your_service.main import app
+from your_service.db.session import get_session
+
+@pytest.fixture
+def client() -> TestClient:
+    return TestClient(app)
+
+@pytest.fixture
+async def db_session() -> AsyncSession:
+    # Setup test database session
+    ...
+```
+
+### 2. Unit Tests (tests/unit/test_models.py)
+```python
+import pytest
+from your_service.core.models import YourModel
+
+def test_model_creation():
+    model = YourModel(name="test")
+    assert model.name == "test"
+```
+
+### 3. Integration Tests (tests/integration/test_api.py)
+```python
+from fastapi.testclient import TestClient
+
+def test_create_item(client: TestClient):
+    response = client.post("/api/v1/items/", json={"name": "test"})
+    assert response.status_code == 200
+```
+
+## Service Dependencies
+
+Common dependencies in pixi.toml:
+1. Core Dependencies:
+   - fastapi
+   - uvicorn
+   - sqlmodel
+   - alembic
+   - pydantic
+   - pydantic-settings
+
+2. Development Dependencies:
+   - pytest
+   - pytest-asyncio
+   - black
+   - isort
+   - ruff
+   - mypy
+
+3. Service-specific Dependencies:
+   - Based on service requirements
+
+## Deployment
+
+Each service includes:
+1. Dockerfile for containerization
+2. docker-compose.yml for local development
+3. Kubernetes manifests (if using K8s)
+4. Monitoring configuration (Prometheus/Grafana)

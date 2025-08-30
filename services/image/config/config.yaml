@@ -1,0 +1,112 @@
+# Image Service Configuration
+
+server:
+  port: 8002
+  host: 0.0.0.0
+  workers: 2
+  timeout: 45
+
+message_hub:
+  url: http://message-hub:8200
+  timeout: 5s
+  health_check:
+    path: /health
+    interval: 10s
+    timeout: 5s
+    threshold: 3
+
+llm:
+  service_url: http://llm-service:8100
+  timeout: 60s
+  cache_ttl: 3600  # 1 hour
+  retry:
+    max_attempts: 3
+    backoff_factor: 2
+
+storage:
+  type: s3  # or local
+  s3:
+    bucket: dnd-character-images
+    region: us-west-2
+    access_key: ${AWS_ACCESS_KEY}
+    secret_key: ${AWS_SECRET_KEY}
+  local:
+    path: /app/images
+  temp_dir: /tmp/image-processing
+
+image_generation:
+  provider: stable_diffusion  # or dalle
+  api_key: ${IMAGE_GEN_API_KEY}
+  default_size: 512x512
+  max_size: 1024x1024
+  supported_formats:
+    - png
+    - jpg
+    - webp
+  styles:
+    - fantasy
+    - realistic
+    - anime
+    - pixel_art
+  safety_filter: true
+  default_params:
+    steps: 50
+    cfg_scale: 7.5
+    seed: 0  # random
+
+processing:
+  max_concurrent_jobs: 5
+  timeout: 180  # 3 minutes
+  max_retries: 3
+  formats:
+    - png
+    - jpg
+    - webp
+  operations:
+    - resize
+    - crop
+    - enhance
+    - style_transfer
+  size_limits:
+    min_width: 64
+    max_width: 2048
+    min_height: 64
+    max_height: 2048
+
+caching:
+  enabled: true
+  type: redis
+  redis:
+    host: redis
+    port: 6379
+    db: 2
+  ttl: 3600  # 1 hour
+  max_size: 1000
+
+queue:
+  type: redis
+  redis:
+    host: redis
+    port: 6379
+    db: 3
+  max_size: 1000
+  timeout: 300  # 5 minutes
+
+monitoring:
+  metrics_enabled: true
+  log_level: info
+  log_format: json
+  metrics_port: 8003
+
+events:
+  enabled: true
+  types:
+    - generation_started
+    - generation_completed
+    - generation_failed
+    - image_processed
+    - image_stored
+  batch_size: 100
+  retry:
+    max_attempts: 3
+    backoff_factor: 2

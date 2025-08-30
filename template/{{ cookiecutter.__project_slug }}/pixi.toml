@@ -1,0 +1,81 @@
+[project]
+name = "{{ cookiecutter.__project_slug }}"
+version = "0.1.0"
+description = "{{ cookiecutter.project_description }}"
+authors = ["{{ cookiecutter.author_name }} <{{ cookiecutter.author_email }}>"]
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-64", "win-64"]
+
+[tasks]
+start = "uvicorn {{ cookiecutter.__project_slug }}.main:app --host 0.0.0.0 --port 8000 --reload"
+test = "pytest tests/ --cov={{ cookiecutter.__project_slug }} --cov-report=term-missing --cov-report=xml -v"
+format = { cmd = ["black", ".", "isort", "."]}
+lint = { cmd = ["ruff", "check", ".", "black", "--check", ".", "isort", "--check-only", "."]}
+type-check = "mypy ."
+migrate = { cmd = ["alembic", "upgrade", "head"] }
+create-migration = { cmd = ["alembic", "revision", "--autogenerate", "-m"] }
+shell = "ipython"
+
+[dependencies]
+python = "=={{ cookiecutter.py_version }}"
+fastapi = "*"
+uvicorn = "*"
+sqlmodel = "*"
+alembic = "*"
+asyncpg = "*"
+python-jose = "*"
+passlib = "*"
+pydantic = "*"
+pydantic-settings = "*"
+python-multipart = "*"
+email-validator = "*"
+python-jose = "*"
+bcrypt = "*"
+aioredis = "*"
+{% if cookiecutter.use_celery == "yes" %}
+celery = "*"
+{% endif %}
+{% if cookiecutter.use_sentry == "yes" %}
+sentry-sdk = "*"
+{% endif %}
+
+[dev-dependencies]
+pytest = "*"
+pytest-cov = "*"
+pytest-asyncio = "*"
+black = "*"
+isort = "*"
+ruff = "*"
+mypy = "*"
+ipython = "*"
+httpx = "*"
+factory-boy = "*"
+
+[feature.dev]
+dependencies = [
+    "pytest",
+    "pytest-cov",
+    "pytest-asyncio",
+    "black",
+    "isort",
+    "ruff",
+    "mypy",
+    "ipython",
+    "httpx",
+    "factory-boy"
+]
+
+[feature.prod]
+dependencies = [
+    "gunicorn",
+    "uvicorn[standard]"
+]
+
+[environments]
+default = "dev"
+
+[environments.dev]
+features = ["dev"]
+
+[environments.prod]
+features = ["prod"]

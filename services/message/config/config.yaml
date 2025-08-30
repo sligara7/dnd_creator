@@ -1,0 +1,83 @@
+# Message Hub Service Configuration
+
+server:
+  port: 8200
+  host: 0.0.0.0
+  workers: 4
+  timeout: 60
+
+redis:
+  host: localhost
+  port: 6379
+  db: 0
+
+services:
+  character:
+    url: http://character-service:8000
+    timeout: 30s
+    health_check:
+      path: /health
+      interval: 10s
+      timeout: 5s
+      threshold: 3
+    rate_limit:
+      requests_per_minute: 60
+      burst: 10
+
+  campaign:
+    url: http://campaign-service:8001
+    timeout: 30s
+    health_check:
+      path: /health
+      interval: 10s
+      timeout: 5s
+      threshold: 3
+    rate_limit:
+      requests_per_minute: 30
+      burst: 5
+
+  image:
+    url: http://image-service:8002
+    timeout: 45s
+    health_check:
+      path: /health
+      interval: 10s
+      timeout: 5s
+      threshold: 3
+    rate_limit:
+      requests_per_minute: 20
+      burst: 3
+
+  llm:
+    url: http://llm-service:8100
+    timeout: 60s
+    health_check:
+      path: /health
+      interval: 10s
+      timeout: 5s
+      threshold: 3
+    rate_limit:
+      requests_per_minute: 10
+      burst: 2
+
+circuit_breaker:
+  default:
+    threshold: 5
+    timeout: 10s
+    reset_timeout: 60s
+
+caching:
+  enabled: true
+  ttl: 3600  # 1 hour
+  max_size: 1000
+
+monitoring:
+  metrics_enabled: true
+  log_level: info
+  log_format: json
+  metrics_port: 8201
+
+events:
+  replay_batch_size: 100
+  storage_duration: 7d  # 7 days
+  max_retry: 3

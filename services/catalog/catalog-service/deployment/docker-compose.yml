@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  catalog-service:
+    build: .
+    ports:
+      - "8003:8003"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/catalog-service
+      - MESSAGE_HUB_URL=http://message-hub:8200
+      - AUTH_SERVICE_URL=http://auth-service:8300
+    volumes:
+      - .:/app
+    depends_on:
+      - db
+      - redis
+    networks:
+      - dnd_network
+
+  db:
+    image: postgres:15
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=catalog-service
+    volumes:
+      - catalog-service_data:/var/lib/postgresql/data
+    networks:
+      - dnd_network
+
+  redis:
+    image: redis:7
+    networks:
+      - dnd_network
+
+volumes:
+  catalog-service_data:
+
+networks:
+  dnd_network:
+    external: true

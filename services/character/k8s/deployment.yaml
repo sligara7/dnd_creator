@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: character-service
+  namespace: dnd-services
+  labels:
+    app: character-service
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: character-service
+  template:
+    metadata:
+      labels:
+        app: character-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: character-service
+          image: character-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              name: web
+          env:
+            - name: API_V1_STR
+              value: /api/v1
+            - name: PROJECT_NAME
+              value: "D&D Character Service"
+            - name: VERSION
+              value: "2.0.0"
+            - name: ENVIRONMENT
+              value: production
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: character-service-secrets
+                  key: database-url
+            - name: MESSAGE_HUB_URL
+              value: http://message-hub:8200
+            - name: CAMPAIGN_SERVICE_URL
+              value: http://campaign-service:8001
+            - name: IMAGE_SERVICE_URL
+              value: http://image-service:8002
+            - name: CATALOG_SERVICE_URL
+              value: http://catalog-service:8003
+            - name: LLM_SERVICE_URL
+              value: http://llm-service:8100
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: character-service-secrets
+                  key: redis-url
+            - name: METRICS_ENABLED
+              value: "true"
+            - name: PROMETHEUS_MULTIPROC_DIR
+              value: /tmp
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: "500m"
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: web
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: web
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          volumeMounts:
+            - name: prometheus-data
+              mountPath: /tmp
+      volumes:
+        - name: prometheus-data
+          emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - character-service
+                topologyKey: kubernetes.io/hostname

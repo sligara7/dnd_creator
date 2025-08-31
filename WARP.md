@@ -32,22 +32,50 @@ podman run -d \
   dnd-character-service
 ```
 
+### Environment Setup
+
+```bash
+# Local development environment setup (runs inside pixi shell)
+pixi shell
+
+# Build container with pixi environment
+FROM ghcr.io/prefix-dev/pixi:latest
+COPY . /app
+WORKDIR /app
+RUN pixi install
+```
+
 ### Testing
 
 ```bash
-# Run all tests
-podman exec dnd_character_service python -m pytest -v
+# Run all tests (in pixi shell)
+pixi run test
 
 # Run specific test file
-podman exec dnd_character_service python -m pytest path/to/test_file.py -v
+pixi run pytest path/to/test_file.py -v
 
 # Run tests with coverage
-podman exec dnd_character_service python -m pytest --cov=. -v
+pixi run coverage
+
+# Run inside container
+podman exec dnd_character_service pixi run test
 ```
 
 ### Development Tools
 
 ```bash
+# Start local development server
+pixi run start
+
+# Format code
+pixi run format
+
+# Lint code
+pixi run lint
+
+# Type checking
+pixi run typecheck
+
 # Access service container shell
 podman exec -it dnd_character_service /bin/bash
 

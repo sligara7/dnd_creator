@@ -1,82 +1,110 @@
 # Character Service Configuration
 
-server:
-  port: 8000
-  host: 0.0.0.0
-  workers: 2
-  timeout: 30
+# Service Information
+service:
+  name: character_service
+  version: "2.0.0"
+  description: "D&D Character Creation and Management Service"
 
-message_hub:
-  url: http://message-hub:8200
-  timeout: 5s
-  health_check:
-    path: /health
-    interval: 10s
-    timeout: 5s
-    threshold: 3
+# API Configuration
+api:
+  version: "v1"
+  title: "D&D Character Service"
+  description: "Character Creation and Management for D&D 5e 2024"
+  docs_url: "/docs"
+  redoc_url: "/redoc"
+  openapi_url: "/openapi.json"
 
+# CORS Configuration
+cors:
+  origins: ["*"]
+  allow_credentials: true
+  allow_methods: ["*"]
+  allow_headers: ["*"]
+
+# Database Configuration
 database:
   type: postgresql
-  host: character-db
-  port: 5432
-  name: character_db
-  user: ${DB_USER}
-  password: ${DB_PASSWORD}
-  pool_size: 10
-  max_overflow: 5
+  pool_size: 20
+  max_overflow: 10
+  pool_timeout: 30
+  pool_recycle: 1800
+  connect_timeout: 10
+  echo: false
 
+# Message Hub Integration
+message_hub:
+  heartbeat_interval: 30
+  retry_interval: 5
+  max_retries: 3
+  timeout: 10
+
+# LLM Service Configuration
 llm:
-  service_url: http://llm-service:8100
-  timeout: 60s
-  cache_ttl: 3600  # 1 hour
-  retry:
-    max_attempts: 3
-    backoff_factor: 2
+  default_model: gpt-4
+  fallback_model: gpt-3.5-turbo
+  timeout: 30
+  max_tokens: 2000
+  temperature: 0.7
+  retry_attempts: 3
+  backoff_factor: 2
 
-rules:
-  character_creation:
-    min_level: 1
-    max_level: 20
-    points_buy:
-      total_points: 27
-      min_score: 8
-      max_score: 15
-    ability_score_limits:
-      min: 3
-      max: 20
-    starting_gold:
-      formula: "class_base * (2d6)"
+# Image Service Integration
+image:
+  timeout: 30
+  max_retries: 3
+  formats: ["png", "jpg", "webp"]
+  max_size: 5242880  # 5MB
 
-monitoring:
-  metrics_enabled: true
-  log_level: info
-  log_format: json
-  metrics_port: 8001
+# Catalog Service Integration
+catalog:
+  timeout: 10
+  max_retries: 3
+  cache_ttl: 3600
 
-caching:
-  enabled: true
+# Cache Configuration
+cache:
   type: redis
-  redis:
-    host: redis
-    port: 6379
-    db: 0
-  ttl: 3600  # 1 hour
-  max_size: 1000
+  prefix: "char_svc:"
+  ttl: 3600
+  connection_pool: 20
 
-validation:
-  schemas_path: /app/schemas
-  custom_rules_path: /app/rules
+# Logging Configuration
+logging:
+  level: INFO
+  format: json
+  file_path: "/var/log/character_service.log"
+  max_size: 100  # MB
+  backup_count: 10
+  console_logging: true
 
-events:
+# Metrics Configuration
+metrics:
   enabled: true
-  types:
-    - character_created
-    - character_updated
-    - character_deleted
-    - ability_scores_rolled
-    - level_up
-    - equipment_changed
-  batch_size: 100
-  retry:
-    max_attempts: 3
-    backoff_factor: 2
+  collection_interval: 15
+  retention_days: 30
+  labels:
+    environment: development
+    service: character_service
+
+# Health Check Configuration
+health:
+  enabled: true
+  interval: 30
+  timeout: 5
+  failures_threshold: 3
+
+# Security Configuration
+security:
+  secret_key_length: 32
+  password_min_length: 8
+  token_expiry: 3600
+  max_login_attempts: 5
+  lockout_duration: 300
+
+# Feature Flags
+features:
+  antitheticon_enabled: true
+  journal_system: true
+  version_control: true
+  content_generation: true

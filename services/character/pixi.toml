@@ -1,102 +1,51 @@
 [project]
-name = "character"
+name = "character-service"
 version = "0.1.0"
-description = "Character creation and management service for D&D Character Creator"
-authors = ["Your Name <your.email@example.com>"]
+description = "D&D Character Creation and Management Service"
+authors = ["OpenSourceLoot <dnd@opensourceloot.dev>"]
 channels = ["conda-forge"]
 platforms = ["linux-64", "osx-64", "win-64"]
 
 [tasks]
-start = "uvicorn character.main:app --host 0.0.0.0 --port 8000 --reload"
-test = "pytest tests/ --cov=character --cov-report=term-missing --cov-report=xml -v"
-format = { cmd = ["black", ".", "isort", "."] }
-lint = { cmd = ["ruff", "check", ".", "black", "--check", ".", "isort", "--check-only", "."] }
-type-check = "mypy ."
-migrate = { cmd = ["alembic", "upgrade", "head"] }
-create-migration = { cmd = ["alembic", "revision", "--autogenerate", "-m"] }
-shell = "ipython"
+start = "uvicorn character_service.main:app --host 0.0.0.0 --port 8000 --reload"
+test = "pytest tests/ -v"
+lint = "flake8 src/ tests/"
+format = "black src/ tests/"
+typecheck = "mypy src/ tests/"
+coverage = "pytest --cov=src/ tests/ -v"
+docs = "mkdocs serve"
 
 [dependencies]
-# Core Framework
-python = "==3.11"
-fastapi = "==0.115.6"
-uvicorn = {version = "==0.32.1", extras = ["standard"]}
+python = ">=3.10,<3.11"
+fastapi = ">=0.100.0,<1.0"
+uvicorn = ">=0.22.0,<1.0"
+sqlalchemy = ">=2.0.0,<3.0"
+pydantic = ">=2.0.0,<3.0"
+alembic = ">=1.11.0,<2.0"
+psycopg2-binary = ">=2.9.0,<3.0"
+httpx = ">=0.24.0,<1.0"
+python-jose = ">=3.3.0,<4.0"
+python-multipart = ">=0.0.6,<1.0"
+redis = ">=4.6.0,<5.0"
+prometheus-client = ">=0.17.0,<1.0"
+python-dotenv = ">=1.0.0,<2.0"
 
-# Core Database Support
-sqlalchemy = "==2.0.23"
-alembic = "==1.12.1"
-psycopg2-binary = "==2.9.9"
-asyncpg = "==0.29.0"
-aiosqlite = "==0.19.0"
-
-# Data Validation & Serialization
-pydantic = "==2.11.7"
-pydantic-settings = "==2.6.1"
-
-# HTTP Client for LLM APIs
-httpx = "==0.28.1"
-requests = "==2.31.0"
-
-# AI/LLM Services
-openai = "==1.58.1"
-ollama = "==0.5.1"
-
-# Security & Authentication
-python-jose = {version = "==3.3.0", features = ["cryptography"]}
-passlib = {version = "==1.7.4", features = ["bcrypt"]}
-python-multipart = "==0.0.6"
-
-# Configuration Management
-python-dotenv = "==1.0.0"
-
-# Logging
-structlog = "==23.2.0"
-
-# Performance Monitoring
-prometheus-client = "==0.19.0"
-psutil = "==5.9.6"
-
-# Redis Cache
-redis = "*"
-aioredis = "*"
-
-[dev-dependencies]
-pytest = "*"
-pytest-cov = "*"
-pytest-asyncio = "*"
-black = "*"
-isort = "*"
-ruff = "*"
-mypy = "*"
-ipython = "*"
-httpx = "*"
-factory-boy = "*"
-
-[feature.dev]
+[environments.test]
 dependencies = [
-    "pytest",
-    "pytest-cov",
-    "pytest-asyncio",
-    "black",
-    "isort",
-    "ruff",
-    "mypy",
-    "ipython",
-    "httpx",
-    "factory-boy"
+    "pytest>=7.4.0,<8.0",
+    "pytest-cov>=4.1.0,<5.0",
+    "pytest-asyncio>=0.21.0,<1.0"
 ]
-
-[feature.prod]
-dependencies = [
-    "gunicorn",
-    "uvicorn[standard]"
-]
-
-[environments]
-default = "dev"
 
 [environments.dev]
-features = ["dev"]
+dependencies = [
+    "flake8>=6.0.0,<7.0",
+    "black>=23.7.0,<24.0",
+    "mypy>=1.4.0,<2.0"
+]
 
-[environments.prod]
-features = ["prod"]
+[environments.docs]
+dependencies = [
+    "mkdocs>=1.5.0,<2.0",
+    "mkdocs-material>=9.1.0,<10.0"
+]

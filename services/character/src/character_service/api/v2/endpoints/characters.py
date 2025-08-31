@@ -1,8 +1,9 @@
 """Character Management Endpoints"""
 
 from typing import List
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Body, Path, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from character_service.core.database import get_db
 from character_service.repositories.character_repository import CharacterRepository
@@ -17,7 +18,7 @@ router = APIRouter()
 
 @router.get("", response_model=List[Character])
 async def list_characters(
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     limit: int = Query(100, ge=1, le=500, description="Maximum number of characters to return"),
     offset: int = Query(0, ge=0, description="Number of characters to skip")
 ):
@@ -28,7 +29,7 @@ async def list_characters(
 @router.get("/{character_id}", response_model=Character)
 async def get_character(
     character_id: str = Path(..., description="ID of the character to retrieve."),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """Get a specific character by ID."""
     repo = CharacterRepository(db)
@@ -40,7 +41,7 @@ async def get_character(
 @router.post("", response_model=Character)
 async def create_character(
     character: CharacterCreate,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """Create a new character."""
     repo = CharacterRepository(db)
@@ -50,7 +51,7 @@ async def create_character(
 async def update_character(
     character_id: str = Path(..., description="ID of the character to update."),
     character: CharacterUpdate = Body(...),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """Update a character."""
     repo = CharacterRepository(db)
@@ -62,7 +63,7 @@ async def update_character(
 @router.delete("/{character_id}")
 async def delete_character(
     character_id: str = Path(..., description="ID of the character to delete."),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """Delete a character."""
     repo = CharacterRepository(db)
@@ -74,7 +75,7 @@ async def delete_character(
 async def direct_edit_character(
     character_id: str = Path(..., description="ID of the character to edit directly."),
     edit: DirectEditRequest = Body(..., description="Fields and values to update."),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """Directly edit a character's fields (DM/user override)."""
     repo = CharacterRepository(db)

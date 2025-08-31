@@ -2,12 +2,10 @@
 
 from fastapi import APIRouter
 
-from character_service.api.v1.endpoints import (
+from character_service.api.v2.endpoints import (
     characters,
     journals,
     inventory,
-    evolution,
-    antitheticon,
     health,
 )
 
@@ -41,16 +39,3 @@ router.include_router(
     tags=["inventory"],
 )
 
-# Character evolution endpoints
-router.include_router(
-    evolution.router,
-    prefix="/evolution",
-    tags=["evolution"],
-)
-
-# Antitheticon system endpoints
-router.include_router(
-    antitheticon.router,
-    prefix="/antitheticon",
-    tags=["antitheticon"],
-)

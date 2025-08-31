@@ -2,14 +2,12 @@ version: '3.8'
 
 services:
   character_service:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: dnd-character-service:latest
     ports:
       - "8000:8000"
     environment:
       # Service Configuration
-      - API_V1_STR=/api/v1
+      - API_VERSION=v1
       - PROJECT_NAME=D&D Character Service
       - VERSION=2.0.0
       - ENVIRONMENT=development
@@ -25,11 +23,12 @@ services:
       - LLM_SERVICE_URL=http://llm-service:8100
       
       # Cache Configuration
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://redis:6380/0
       
       # Metrics Configuration
       - METRICS_ENABLED=true
       - PROMETHEUS_MULTIPROC_DIR=/tmp
+      - SECRET_KEY=dev_secret_key_change_me
     volumes:
       - ./logs:/app/logs
       - prometheus_data:/tmp
@@ -40,16 +39,16 @@ services:
       - dnd_network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
 
   db:
-    image: postgres:14-alpine
+    image: docker.io/library/postgres:16-alpine
     ports:
-      - "5432:5432"
+      - "5433:5432"
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
@@ -67,9 +66,9 @@ services:
       start_period: 10s
 
   redis:
-    image: redis:7-alpine
+    image: docker.io/library/redis:7-alpine
     ports:
-      - "6379:6379"
+      - "6380:6379"
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
@@ -84,7 +83,7 @@ services:
       start_period: 10s
 
   prometheus:
-    image: prom/prometheus:v2.45.0
+    image: docker.io/prom/prometheus:v2.45.0
     ports:
       - "9090:9090"
     volumes:
@@ -100,7 +99,7 @@ services:
       - '--web.console.templates=/usr/share/prometheus/consoles'
 
   grafana:
-    image: grafana/grafana:10.0.3
+    image: docker.io/grafana/grafana:10.0.3
     ports:
       - "3000:3000"
     environment:

@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from character_service.api.v2 import router as api_v2_router
+from character_service.api.v2.router import router as api_v2_router
 from character_service.core import config
 
 app = FastAPI(

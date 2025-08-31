@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = '2024_08_24_journals'
-down_revision = '2024_08_23_add_unified_catalog'  # Adjust based on your previous migration
+down_revision = '2024_08_24_initial_schema'  # Depends on initial schema
 branch_labels = None
 depends_on = None
 

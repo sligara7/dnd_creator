@@ -10,11 +10,20 @@ Last Updated: 2025-08-30
 The Character Service provides AI-powered D&D 5e 2024 character creation and management, enabling users to create, evolve, and manage ANY character concept through a combination of official D&D content and AI-generated custom content.
 
 ### 1.2 Core Mission
-- **Creative Freedom**: Generate non-traditional characters beyond standard D&D constraints
-- **Custom Content Creation**: Create new classes, species, feats, spells, weapons, and armor
-- **Deep Storytelling**: Generate compelling backstories aligned with character concepts
-- **Iterative Development**: Collaborative character refinement through user feedback
-- **Traditional Foundation**: Prioritize existing D&D content when appropriate
+
+#### Primary Mission
+- **Concept to Character**: Transform ANY character concept into a valid D&D character
+- **Smart Content Mix**: Blend new and existing D&D content efficiently
+- **Gameplay Evolution**: Evolve characters based on actual play style
+- **Iterative Refinement**: Continuous character improvement through feedback
+
+#### Key Principles
+- Start with user's character concept (even non-D&D concepts like "Yoda")
+- Use LLM to understand and translate the concept
+- Create custom content when needed (classes, species, etc.)
+- Use existing D&D content catalog when appropriate
+- Track actual gameplay to inform character evolution
+- Allow continuous refinement and iteration
 
 ### 1.3 Scope
 - Character creation and management

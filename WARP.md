@@ -5,12 +5,18 @@ Status: Active
 Last Updated: 2025-08-30
 
 ## Core Mission
-Create a next-generation D&D 5e 2024 character creation and campaign management system that:
-- Enables ANY character concept through AI-powered content generation
-- Supports deep storytelling and character evolution
-- Provides theme-aware campaign integration
-- Maintains D&D 5e 2024 rules compliance
-- Offers seamless service communication
+Create a next-generation D&D 5e 2024 character creation and campaign management system that augments human creativity by:
+- Making ANY character concept playable in D&D through LLM-assisted content generation
+- Supporting iterative character design and refinement with the player
+- Evolving characters based on how they're actually played in campaigns
+- Maintaining D&D 5e 2024 rules compliance while enabling creative freedom
+- Offering seamless integration between character creation and campaign play
+
+Key Principles:
+- LLMs assist and augment human creativity, not replace it
+- Players can realize ANY character concept within D&D rules
+- Characters evolve naturally through actual gameplay
+- Campaign stories emerge from player choices and character development
 
 ## Common Development Commands
 
@@ -596,7 +602,112 @@ Production Security Requirements:
 - Cross-service event handling
 - State consistency management
 
-## Service Communication Flow
+## Pixi Environment Guidelines
+
+### Using Pixi in Dockerfiles
+
+When building service containers with Pixi, follow these guidelines to ensure proper environment setup:
+
+1. **Base Image Configuration**
+   ```dockerfile
+   FROM ghcr.io/prefix-dev/pixi:latest
+   
+   # Install system dependencies first
+   USER root
+   RUN apt-get update && apt-get install -y \
+       curl \
+       build-essential \
+       libpq-dev \
+       && rm -rf /var/lib/apt/lists/*
+   ```
+
+2. **User Setup**
+   ```dockerfile
+   # Create non-root user (let system assign UID)
+   RUN useradd -m service_user
+   
+   # Set up directories and permissions
+   WORKDIR /app
+   RUN mkdir -p /app/src /app/config /tmp \
+       && chown -R service_user:service_user /app /tmp
+   ```
+
+3. **pixi.toml Configuration**
+   ```toml
+   [project]
+   name = "service-name"
+   version = "0.1.0"
+   channels = ["conda-forge", "nodefaults"]
+   platforms = ["linux-64"]  # Container-only, single platform
+   
+   [dependencies]
+   python = ">=3.10,<3.11"
+   # Only conda-forge packages here
+   
+   [pypi-dependencies]
+   # Packages not available in conda-forge
+   redis = ">=4.6.0,<5.0"
+   
+   [feature.test]
+   dependencies = { pytest = ">=7.4.0,<8.0" }
+   
+   [environments]
+   default = { features = ["test"] }
+   ```
+
+4. **File Copying Strategy**
+   ```dockerfile
+   # Switch to service user for pixi operations
+   USER service_user
+   
+   # Copy config files first to leverage layer caching
+   COPY --chown=service_user:service_user pixi.toml ./
+   
+   # Install dependencies
+   RUN pixi install
+   
+   # Copy application files
+   COPY --chown=service_user:service_user src/ src/
+   COPY --chown=service_user:service_user config/ config/
+   ```
+
+### Key Points
+
+1. **Platform Targeting**
+   - Limit platforms to `linux-64` for container builds
+   - Use `nodefaults` channel to ensure package consistency
+
+2. **Dependency Management**
+   - Use `dependencies` for conda-forge packages
+   - Use `pypi-dependencies` for packages not in conda-forge
+   - Check package availability in conda-forge before adding to dependencies
+   - Common packages that need pypi-dependencies:
+     * redis (not in conda-forge)
+     * prometheus-client (not in conda-forge)
+     * Some newer versions of packages
+     * Packages with platform-specific builds
+   - Move packages to pypi-dependencies if you see "No candidates were found" errors
+   - Use `feature` for optional/environment-specific packages
+   - Define environments to activate features
+   - When in doubt about package availability:
+     1. Check conda-forge first
+     2. If not found, use pypi-dependencies
+     3. If version conflicts occur, try pypi-dependencies
+
+3. **Common Issues to Avoid**
+   - Don't specify fixed UIDs in Dockerfile user creation
+   - Don't use array syntax for dependencies in pixi.toml
+   - Don't mix conda-forge and pip packages in main dependencies
+   - Don't copy application files before installing dependencies
+
+4. **Best Practices**
+   - Install system dependencies first
+   - Create non-root user for service
+   - Use proper file ownership with --chown
+   - Leverage layer caching with proper file copying order
+   - Set all necessary environment variables
+
+### Service Communication Flow
 
 ```ascii
 ┌──────────────────────────────────────────────────────────┐
@@ -739,6 +850,91 @@ Service Internal Layers
 - `/deployment/` - Deployment configurations and scripts
 - `/shared/` - Shared code and utilities
 - `/tests/` - Test suites for all components
+
+## Testing Guidelines
+
+### Async SQLAlchemy Testing
+
+1. **Project Structure**
+   - Organize code under src/service_name/ directory
+   - Add PYTHONPATH=. to pixi tasks for proper imports
+   - Use src layout with service package inside
+   Example structure:
+   ```
+   service/
+   ├── src/
+   │   └── service_name/
+   │       ├── core/
+   │       ├── models/
+   │       └── repositories/
+   ├── tests/
+   │   ├── conftest.py
+   │   └── utils/
+   │       └── db_utils.py
+   └── pixi.toml
+   ```
+
+2. **Test Database Configuration**
+   - Use TestSessionManager for centralized session management
+   - Configure connection pool settings for testing
+   - Enable nested transactions for test isolation
+   Example TestSessionManager configuration:
+   ```python
+   async def init(self) -> None:
+       self.engine = create_async_engine(
+           self.database_url,
+           echo=False,
+           future=True,
+           pool_size=5,
+           max_overflow=10,
+           pool_timeout=30,
+           pool_recycle=1800
+       )
+   ```
+
+3. **Test Fixtures**
+   - Use nested transactions for test isolation
+   - Avoid explicit commits in fixtures
+   - Use flush() instead of commit() for test data
+   - Properly type hints with AsyncSession
+   Example fixture:
+   ```python
+   @pytest.fixture(scope="function")
+   async def test_db(db_manager):
+       async with db_manager.begin_nested() as session:
+           yield session
+   ```
+
+4. **Transaction Management**
+   - Use nested transactions for automatic rollback
+   - Keep transaction scope tight and explicit
+   - Avoid manual transaction management in tests
+   - Let fixture teardown handle cleanup
+
+5. **Common Issues & Solutions**
+   - Import errors: Add PYTHONPATH=. to pixi tasks
+   - Session conflicts: Use nested transactions
+   - Pool exhaustion: Configure pool settings
+   - Cleanup issues: Use transaction rollback
+
+6. **Pixi Configuration**
+   - Add asyncpg to pypi-dependencies
+   - Include pytest-asyncio in test features
+   - Set PYTHONPATH in task definitions
+   Example pixi.toml:
+   ```toml
+   [pypi-dependencies]
+   asyncpg = ">=0.29.0,<1.0"
+   
+   [feature.test]
+   dependencies = { 
+       pytest = ">=7.4.0,<8.0",
+       pytest-asyncio = ">=0.21.0,<1.0"
+   }
+   
+   [tasks]
+   test = "PYTHONPATH=. pytest tests/ -v"
+   ```
 
 ## Development Guidelines
 

@@ -4,12 +4,20 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 
+class DirectEditRequest(BaseModel):
+    updates: Dict[str, Any] = {}
+    notes: Optional[str] = None
+
 class CharacterBase(BaseModel):
     """Base Character Schema"""
     name: str
-    user_id: str
-    campaign_id: Optional[str] = None
-    character_data: Dict[str, Any]
+    race: str
+    class_: str
+    background: str
+    alignment: str
+    data: Dict[str, Any] = Field(default_factory=dict)
+    level: Optional[int] = Field(default=1, ge=1)
+    experience: Optional[int] = Field(default=0, ge=0)
 
 class CharacterCreate(CharacterBase):
     """Character Creation Schema"""
@@ -38,6 +46,12 @@ class JournalEntryCreate(JournalEntryBase):
     """Journal Entry Creation Schema"""
     character_id: int
 
+class JournalEntryUpdate(BaseModel):
+    """Journal Entry Update Schema"""
+    title: Optional[str] = None
+    content: Optional[str] = None
+    entry_type: Optional[str] = None
+
 class JournalEntry(JournalEntryBase):
     """Journal Entry Response Schema"""
     id: int
@@ -56,6 +70,11 @@ class InventoryItemBase(BaseModel):
 class InventoryItemCreate(InventoryItemBase):
     """Inventory Item Creation Schema"""
     character_id: int
+
+class InventoryItemUpdate(BaseModel):
+    """Inventory Item Update Schema"""
+    item_data: Optional[Dict[str, Any]] = None
+    quantity: Optional[int] = Field(default=None, ge=0)
 
 class InventoryItem(InventoryItemBase):
     """Inventory Item Response Schema"""

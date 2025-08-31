@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=64.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "character_service"
+version = "0.1.0"
+description = "D&D Character Creation and Management Service"
+requires-python = ">=3.12,<3.13"
+authors = [
+    {name = "OpenSourceLoot", email = "dnd@opensourceloot.dev"}
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["character_service*"]
+exclude = ["tests*"]
+
+[tool.setuptools.package-data]
+character_service = ["py.typed"]

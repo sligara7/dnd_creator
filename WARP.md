@@ -41,46 +41,62 @@ podman run -d \
 ### Environment Setup
 
 ```bash
-# Local development environment setup (runs inside pixi shell)
-pixi shell
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-# Build container with pixi environment
-FROM ghcr.io/prefix-dev/pixi:latest
-COPY . /app
-WORKDIR /app
-RUN pixi install
+# Install Poetry
+pip install poetry
+
+# Install dependencies
+poetry install
+
+# Build container with Poetry
+FROM python:3.11-slim as builder
+RUN pip install poetry
+COPY pyproject.toml poetry.lock ./
+RUN poetry export -f requirements.txt --output requirements.txt --without-hashes
+
+FROM python:3.11-slim
+COPY --from=builder requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
 ```
 
 ### Testing
 
 ```bash
-# Run all tests (in pixi shell)
-pixi run test
+# Run all tests
+poetry run pytest
 
 # Run specific test file
-pixi run pytest path/to/test_file.py -v
+poetry run pytest path/to/test_file.py -v
 
 # Run tests with coverage
-pixi run coverage
+poetry run pytest --cov=src --cov-report=term-missing
 
 # Run inside container
-podman exec dnd_character_service pixi run test
+podman exec dnd_character_service poetry run pytest
 ```
 
 ### Development Tools
 
 ```bash
 # Start local development server
-pixi run start
+poetry run uvicorn src.service_name.main:app --reload
 
 # Format code
-pixi run format
+poetry run black .
+poetry run isort .
 
 # Lint code
-pixi run lint
+poetry run ruff check .
 
 # Type checking
-pixi run typecheck
+poetry run mypy .
+
+# Database migrations
+poetry run alembic upgrade head
 
 # Access service container shell
 podman exec -it dnd_character_service /bin/bash
@@ -144,6 +160,14 @@ The system comprises several layers of services:
    - Character creation and management
    - Custom content generation
    - Character evolution
+   - Character sheet management:
+     * Complete D&D 5e 2024 sheet support
+     * Independent variable management (modifiable fields)
+     * Derived variable calculation (computed fields)
+     * Field-level validation and access control
+     * Combat state tracking
+     * Resource management
+     * State consistency enforcement
    - Journal system
    - Inventory management
 
@@ -241,6 +265,38 @@ The system comprises several layers of services:
    - Support for both campaign types:
      * Traditional: Mechanically balanced D&D characters
      * Antitheticon: Identity deception networks and plots
+   - Complete character sheet management:
+     * Independent variable support (modifiable fields):
+       - Basic information (name, class, race, etc.)
+       - Base ability scores
+       - Current hit points and temporary hit points
+       - Death save counts
+       - Equipment and inventory
+       - Character details and appearance
+       - Resource usage (hit dice, spell slots)
+       - Condition states
+     * Derived variable computation (read-only fields):
+       - Ability score modifiers
+       - Armor class and initiative
+       - Saving throw bonuses
+       - Skill modifiers
+       - Passive scores
+       - Spell save DC and attack bonus
+     * State validation and consistency:
+       - Field-level validation
+       - Value range enforcement
+       - Cross-field dependency tracking
+       - Game rule compliance
+     * Combat state management:
+       - Hit point tracking
+       - Condition application/removal
+       - Death save handling
+       - Concentration tracking
+     * Resource tracking:
+       - Hit dice usage/recovery
+       - Spell slot management
+       - Class resource tracking
+       - Rest mechanics (short/long)
    - Rich narrative development and evolution
    - Campaign integration hooks
    - FastAPI + SQLAlchemy + Pydantic
@@ -602,110 +658,128 @@ Production Security Requirements:
 - Cross-service event handling
 - State consistency management
 
-## Pixi Environment Guidelines
+### Content Strategy & Branching
+- Reuse-first policy: always search catalog and use existing D&D content before generating new
+- Semantic search and theme-aware adaptation of existing content when needed
+- Git-like branching model:
+  * Characters: branch and preserve memory (journal, relationships, experiences)
+  * Items/Spells/Equipment: branch from root content; do not carry over prior adaptations
+- Clear provenance tracking for reused vs. custom-generated content
+- Merge and conflict resolution strategies for character branches
 
-### Using Pixi in Dockerfiles
+## Poetry Environment Guidelines
 
-When building service containers with Pixi, follow these guidelines to ensure proper environment setup:
+### Using Poetry in Dockerfiles
 
-1. **Base Image Configuration**
+When building service containers with Poetry, follow these guidelines to ensure proper environment setup:
+
+1. **Multi-stage Build**
    ```dockerfile
-   FROM ghcr.io/prefix-dev/pixi:latest
-   
-   # Install system dependencies first
-   USER root
-   RUN apt-get update && apt-get install -y \
-       curl \
-       build-essential \
-       libpq-dev \
+   # Builder stage for dependencies
+   FROM python:3.11-slim as builder
+
+   # Install Poetry and system dependencies
+   RUN pip install poetry && \
+       apt-get update && \
+       apt-get install -y \
+           curl \
+           build-essential \
+           libpq-dev \
        && rm -rf /var/lib/apt/lists/*
-   ```
 
-2. **User Setup**
-   ```dockerfile
-   # Create non-root user (let system assign UID)
-   RUN useradd -m service_user
-   
-   # Set up directories and permissions
+   # Copy dependency files only
    WORKDIR /app
-   RUN mkdir -p /app/src /app/config /tmp \
-       && chown -R service_user:service_user /app /tmp
+   COPY pyproject.toml poetry.lock ./
+
+   # Export dependencies to requirements.txt
+   RUN poetry export -f requirements.txt --output requirements.txt --without-hashes
    ```
 
-3. **pixi.toml Configuration**
+2. **Final Stage**
+   ```dockerfile
+   FROM python:3.11-slim
+
+   # Install runtime dependencies
+   RUN apt-get update && \
+       apt-get install -y \
+           libpq5 \
+       && rm -rf /var/lib/apt/lists/*
+
+   # Create non-root user
+   RUN useradd -m service_user
+
+   WORKDIR /app
+
+   # Copy requirements from builder
+   COPY --from=builder /app/requirements.txt .
+
+   # Install production dependencies
+   RUN pip install --no-cache-dir -r requirements.txt
+
+   # Set up application
+   COPY --chown=service_user:service_user . .
+   USER service_user
+   ```
+
+3. **pyproject.toml Configuration**
    ```toml
-   [project]
+   [build-system]
+   requires = ["poetry-core>=1.0.0"]
+   build-backend = "poetry.core.masonry.api"
+
+   [tool.poetry]
    name = "service-name"
    version = "0.1.0"
-   channels = ["conda-forge", "nodefaults"]
-   platforms = ["linux-64"]  # Container-only, single platform
-   
-   [dependencies]
-   python = ">=3.10,<3.11"
-   # Only conda-forge packages here
-   
-   [pypi-dependencies]
-   # Packages not available in conda-forge
-   redis = ">=4.6.0,<5.0"
-   
-   [feature.test]
-   dependencies = { pytest = ">=7.4.0,<8.0" }
-   
-   [environments]
-   default = { features = ["test"] }
-   ```
+   description = "Service description"
+   packages = [{include = "service_name", from = "src"}]
 
-4. **File Copying Strategy**
-   ```dockerfile
-   # Switch to service user for pixi operations
-   USER service_user
-   
-   # Copy config files first to leverage layer caching
-   COPY --chown=service_user:service_user pixi.toml ./
-   
-   # Install dependencies
-   RUN pixi install
-   
-   # Copy application files
-   COPY --chown=service_user:service_user src/ src/
-   COPY --chown=service_user:service_user config/ config/
+   [tool.poetry.dependencies]
+   python = "^3.11"
+   fastapi = "^0.103.0"
+   uvicorn = {extras = ["standard"], version = "^0.23.0"}
+   sqlalchemy = "^2.0.20"
+   alembic = "^1.11.3"
+   asyncpg = "^0.28.0"
+   pydantic = {extras = ["email"], version = "^2.3.0"}
+
+   [tool.poetry.group.dev.dependencies]
+   pytest = "^7.4.0"
+   pytest-asyncio = "^0.21.1"
+   pytest-cov = "^4.1.0"
+   black = "^23.7.0"
+   isort = "^5.12.0"
+   ruff = "^0.0.286"
+   mypy = "^1.5.1"
    ```
 
 ### Key Points
 
-1. **Platform Targeting**
-   - Limit platforms to `linux-64` for container builds
-   - Use `nodefaults` channel to ensure package consistency
+1. **Dependency Management**
+   - Use Poetry for all Python dependencies
+   - Define production dependencies in [tool.poetry.dependencies]
+   - Define development dependencies in [tool.poetry.group.dev.dependencies]
+   - Use extras for optional features (e.g., uvicorn[standard])
+   - Lock dependencies with poetry.lock
+   - Export requirements.txt for container builds
 
-2. **Dependency Management**
-   - Use `dependencies` for conda-forge packages
-   - Use `pypi-dependencies` for packages not in conda-forge
-   - Check package availability in conda-forge before adding to dependencies
-   - Common packages that need pypi-dependencies:
-     * redis (not in conda-forge)
-     * prometheus-client (not in conda-forge)
-     * Some newer versions of packages
-     * Packages with platform-specific builds
-   - Move packages to pypi-dependencies if you see "No candidates were found" errors
-   - Use `feature` for optional/environment-specific packages
-   - Define environments to activate features
-   - When in doubt about package availability:
-     1. Check conda-forge first
-     2. If not found, use pypi-dependencies
-     3. If version conflicts occur, try pypi-dependencies
+2. **Project Structure**
+   - Use src layout for better package management
+   - Keep source code in src/service_name/
+   - Include package data in pyproject.toml
+   - Use proper Python packaging standards
 
 3. **Common Issues to Avoid**
-   - Don't specify fixed UIDs in Dockerfile user creation
-   - Don't use array syntax for dependencies in pixi.toml
-   - Don't mix conda-forge and pip packages in main dependencies
-   - Don't copy application files before installing dependencies
+   - Don't mix pip and poetry installs
+   - Don't install dev dependencies in production
+   - Don't copy source before installing dependencies
+   - Don't run as root in containers
 
 4. **Best Practices**
-   - Install system dependencies first
+   - Use multi-stage Docker builds
    - Create non-root user for service
-   - Use proper file ownership with --chown
-   - Leverage layer caching with proper file copying order
-   - Set all necessary environment variables
+   - Use proper file ownership
+   - Cache dependency installation
+   - Export only needed dependencies
 
 ### Service Communication Flow
 
@@ -763,29 +837,47 @@ Prom = Prometheus
 The system uses Clean Architecture principles with clear separation of concerns:
 
 ```ascii
-┌─────────────────┐
-│   API Gateway   │  ← Single entry point for clients
-└───────┬─────────┘
-        │
-┌───────┼─────────┐
-│ Message Hub &   │  ← All inter-service communication
-│ Orchestrator    │
-└─┬─────┬─────┬───┘
-  │     │     │
-  │     │     │    ┌─────────────┐
-  │     │     │    │ LLM Service │
-  │     │     │    └─────────────┘
-  ▼     ▼     ▼         ▲
-┌────────┐ ┌────────┐   │   ┌────────┐
-│Character│ │Campaign│   │   │ Image  │
-│Service  │ │Service │───┘   │Service │
-└────────┘ └────────┘       └────────┘
-    │          │                │
-    ▼          ▼                ▼
-┌────────┐ ┌────────┐      ┌────────┐
-│Character│ │Campaign│      │ Image  │
-│   DB    │ │   DB   │      │   DB   │
-└────────┘ └────────┘      └────────┘
+┌──────────────────────────────── External Clients ────────────────────────────┐
+└───────────────────────────────────────┬────────────────────────────────────────┘
+                                        ▼
+┌────────────────────────────── Edge Layer Services ───────────────────────────┐
+│   ┌────────────┐              ┌────────────┐             ┌────────────┐      │
+│   │API Gateway │──────────────│   Auth     │─────────────│  Metrics  │      │
+│   └─────┬──────┘              └────────────┘             └────────────┘      │
+└─────────┼────────────────────────────────────────────────────────────────────┘
+          ▼
+┌─────────────────────────── Communication Layer ────────────────────────────┐
+│         ┌─────────────────────────────────┐                                 │
+│         │           Message Hub            │                                 │
+│         └─────────────────────────────────┘                                 │
+│                         │                                                   │
+│    ┌──────────────┬─────┴─────┬──────────────┬───────────────┐            │
+│    │              │           │              │               │            │
+│ ┌────────┐  ┌──────────┐ ┌─────────┐  ┌──────────┐   ┌────────────┐     │
+│ │ Cache  │  │ Storage  │ │  Auth   │  │  Search  │   │   Audit    │     │
+│ │Service │  │ Service  │ │ Service │  │ Service  │   │  Service   │     │
+│ └────────┘  └──────────┘ └─────────┘  └──────────┘   └────────────┘     │
+└───────────────────────────────│───────────────────────────────────────────┘
+                                │
+┌───────────────────────────────┼─────────────── Core Services ─────────────┐
+│                               │                                            │
+│  ┌────────────┐  ┌───────────┴──┐  ┌────────────┐  ┌──────────┐         │
+│  │ Character  │  │  Campaign    │  │   Image    │  │   LLM    │         │
+│  │  Service   │  │   Service    │  │  Service   │  │ Service  │         │
+│  └─────┬──────┘  └──────┬───────┘  └─────┬──────┘  └────┬─────┘         │
+│        │               │                 │              │              │
+│  ┌─────┴──────┐  ┌─────┴──────┐   ┌─────┴──────┐  ┌────┴─────┐         │
+│  │ Character  │  │  Campaign  │   │   Image    │  │Catalog   │         │
+│  │    DB      │  │     DB     │   │    DB      │  │Service   │         │
+│  └────────────┘  └────────────┘   └────────────┘  └──────────┘         │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────── Support Services ──────────────────────────────┐
+│  ┌────────────┐  ┌────────────┐   ┌────────────┐   ┌────────────┐          │
+│  │   Redis    │  │PostgreSQL  │   │    S3      │   │Elasticsearch│          │
+│  │   Cache    │  │  Cluster   │   │  Storage   │   │   Search    │          │
+│  └────────────┘  └────────────┘   └────────────┘   └────────────┘          │
+└────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 Each service follows Clean Architecture internally:
@@ -957,3 +1049,134 @@ Service Internal Layers
    - Follow Clean Architecture principles
    - Keep modules focused and single-purpose
    - Use dependency injection for better testability
+
+## Data Management Guidelines
+
+### Entity Identification and References
+
+1. **UUID Usage**
+   - All entities MUST use UUIDs as primary keys
+   - Use PostgreSQL's native UUID type (PGUUID from SQLAlchemy)
+   - Configure UUID auto-generation:
+   ```python
+   from uuid import UUID, uuid4
+   from sqlalchemy.dialects.postgresql import UUID as PGUUID
+   
+   class BaseModel(Base):
+       id = Column(PGUUID, primary_key=True, default=uuid4)
+   ```
+   - Foreign keys MUST reference UUIDs consistently:
+   ```python
+   character_id = Column(PGUUID, ForeignKey("characters.id"), nullable=False)
+   ```
+   - API schemas MUST use UUID type for all IDs:
+   ```python
+   from uuid import UUID
+   from pydantic import BaseModel
+   
+   class CharacterResponse(BaseModel):
+       id: UUID
+       # other fields
+   ```
+
+2. **Entity Lifecycle Management**
+   - ALL entities MUST implement soft delete
+   - Required fields for every entity:
+   ```python
+   is_deleted = Column(Boolean, nullable=False, server_default="false")
+   deleted_at = Column(DateTime)
+   created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+   updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+   ```
+   - NEVER use CASCADE delete in relationships
+   - Implement soft delete in repositories:
+   ```python
+   async def delete(self, entity_id: UUID) -> bool:
+       """Soft delete an entity"""
+       query = update(Entity).where(
+           Entity.id == entity_id,
+           Entity.is_deleted == False
+       ).values(
+           is_deleted=True,
+           deleted_at=datetime.utcnow(),
+           updated_at=datetime.utcnow()
+       )
+       result = await self.db.execute(query)
+       return result.rowcount > 0
+   ```
+
+3. **Query Patterns**
+   - Always filter out soft-deleted records by default:
+   ```python
+   async def get_all(self) -> List[Entity]:
+       query = select(Entity).where(Entity.is_deleted == False)
+       result = await self.db.execute(query)
+       return result.scalars().all()
+   ```
+   - Include deleted record queries only when explicitly needed:
+   ```python
+   async def get_all_including_deleted(self) -> List[Entity]:
+       query = select(Entity)
+       result = await self.db.execute(query)
+       return result.scalars().all()
+   ```
+
+4. **Migration Considerations**
+   - Add soft delete columns in initial migrations
+   - When adding new tables, always include:
+     * UUID primary key
+     * Soft delete columns
+     * Timestamp columns
+   - Example Alembic migration:
+   ```python
+   def upgrade():
+       op.create_table(
+           'entities',
+           sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
+           sa.Column('is_deleted', sa.Boolean(), server_default='false', nullable=False),
+           sa.Column('deleted_at', sa.DateTime(), nullable=True),
+           sa.Column('created_at', sa.DateTime(), server_default=sa.func.now(), nullable=False),
+           sa.Column('updated_at', sa.DateTime(), server_default=sa.func.now(), nullable=False)
+       )
+
+       # Add trigger for updated_at
+       op.execute("""
+           CREATE TRIGGER update_entities_modtime 
+               BEFORE UPDATE ON entities 
+               FOR EACH ROW 
+               EXECUTE FUNCTION update_updated_at_column();
+       """)
+   ```
+
+5. **Repository Pattern Implementation**
+   - Centralize soft delete logic in base repository
+   - Implement consistent query filtering
+   - Example base repository:
+   ```python
+   class BaseRepository[T]:
+       def __init__(self, db: AsyncSession):
+           self.db = db
+           self.model = self._get_model()
+
+       async def get(self, entity_id: UUID) -> Optional[T]:
+           query = select(self.model).where(
+               self.model.id == entity_id,
+               self.model.is_deleted == False
+           )
+           result = await self.db.execute(query)
+           return result.scalar_one_or_none()
+
+       async def soft_delete(self, entity_id: UUID) -> bool:
+           query = update(self.model).where(
+               self.model.id == entity_id,
+               self.model.is_deleted == False
+           ).values(
+               is_deleted=True,
+               deleted_at=datetime.utcnow(),
+               updated_at=datetime.utcnow()
+           )
+           result = await self.db.execute(query)
+           return result.rowcount > 0
+   ```
+
+These patterns, established in the Character Service, should be followed by all other services to ensure consistency and maintainability across the system.

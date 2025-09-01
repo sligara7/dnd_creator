@@ -3,7 +3,7 @@
 from fastapi.testclient import TestClient
 from tests.api.test_characters import create_test_character
 
-def create_test_item(client: TestClient, character_id: int, name: str = "Test Sword") -> dict:
+def create_test_item(client: TestClient, character_id: str, name: str = "Test Sword") -> dict:
     """Helper to create a test inventory item via HTTP."""
     item_data = {
         "character_id": character_id,
@@ -102,7 +102,7 @@ def test_list_inventory_items_invalid_character(client: TestClient):
 def test_create_inventory_item_invalid_character(client: TestClient):
     """Test creating inventory item for invalid character."""
     item_data = {
-        "character_id": 999999,
+"character_id": "999999",
         "item_data": {
             "name": "Invalid Item",
             "type": "weapon",

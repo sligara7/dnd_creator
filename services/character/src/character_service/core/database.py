@@ -13,10 +13,15 @@ from character_service.core.config import settings
 # Convert the database URL to an async URL
 async_database_url = settings.DATABASE_URL.replace('postgresql://', 'postgresql+asyncpg://')
 
-# Create async engine
+# Create async engine with connection pool settings
 engine = create_async_engine(
     async_database_url,
     pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=10,
+    pool_timeout=30,
+    pool_recycle=1800,
+    future=True,
     echo=False  # Set to True for SQL query logging
 )
 
@@ -31,8 +36,12 @@ AsyncSessionLocal = sessionmaker(
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Get async database session."""
-    async with AsyncSessionLocal() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
+    session = AsyncSessionLocal()
+    try:
+        yield session
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
+    finally:
+        await session.close()

@@ -53,13 +53,210 @@ The Character Service provides AI-powered D&D 5e 2024 character creation and man
   - Backstory
   - Personality traits
 
-### 2.2 Custom Content Generation
+### 2.1.1 Character Sheet Fields
+
+The character sheet MUST support all fields defined in the 2024 specification:
+
+#### Independent Variables (Modifiable Fields)
+
+Core Information:
+- Character Name (string)
+- Class & Level (class string, level 1-20)
+- Background (string)
+- Player Name (string)
+- Race/Species (string)
+- Alignment (LG, NG, CG, LN, N, CN, LE, NE, CE)
+- Experience Points (0-355,000+)
+
+Ability Scores:
+- Base Strength (1-20, max 30 with modifiers)
+- Base Dexterity (1-20, max 30 with modifiers)
+- Base Constitution (1-20, max 30 with modifiers)
+- Base Intelligence (1-20, max 30 with modifiers)
+- Base Wisdom (1-20, max 30 with modifiers)
+- Base Charisma (1-20, max 30 with modifiers)
+
+Health & Resources:
+- Current Hit Points (0 to max)
+- Temporary Hit Points (0+)
+- Hit Dice (based on class and level)
+- Death Save Successes/Failures (0-3 each)
+- Exhaustion Level (0-6)
+- Inspiration (0 or 1)
+
+Proficiencies:
+- Languages (list of strings)
+- Tool Proficiencies (list with types)
+- Weapon Proficiencies (list of types)
+- Armor Proficiencies (list of types)
+
+Equipment & Inventory:
+- Weapons (list with properties)
+- Armor (list with properties)
+- Other Equipment (list with properties)
+- Currency (CP, SP, EP, GP, PP)
+
+Character Details:
+- Age (number)
+- Height (string)
+- Weight (string)
+- Eye Color (string)
+- Skin Color (string)
+- Hair Color (string)
+- Personality Traits (string list)
+- Ideals (string list)
+- Bonds (string list)
+- Flaws (string list)
+
+Spellcasting (if applicable):
+- Spells Known/Prepared (list by level)
+- Spell Slots Used (by level)
+
+#### Derived Variables (Read-Only Fields)
+
+Ability Modifiers:
+- Strength Modifier ((score - 10) ÷ 2, rounded down)
+- Dexterity Modifier ((score - 10) ÷ 2, rounded down)
+- Constitution Modifier ((score - 10) ÷ 2, rounded down)
+- Intelligence Modifier ((score - 10) ÷ 2, rounded down)
+- Wisdom Modifier ((score - 10) ÷ 2, rounded down)
+- Charisma Modifier ((score - 10) ÷ 2, rounded down)
+
+Combat Statistics:
+- Armor Class (10 + Dex mod + armor/shield bonuses)
+- Initiative (Dex modifier + bonuses)
+- Speed (base from race + modifiers)
+- Hit Point Maximum (class HD max + Con mod at 1st, roll/avg + Con mod per level after)
+- Proficiency Bonus (based on level: +2 to +6)
+
+Saving Throws (all ability modifiers + proficiency if proficient):
+- Strength Save
+- Dexterity Save
+- Constitution Save
+- Intelligence Save
+- Wisdom Save
+- Charisma Save
+
+Skill Modifiers (ability modifier + proficiency if proficient):
+- Acrobatics (Dex)
+- Animal Handling (Wis)
+- Arcana (Int)
+- Athletics (Str)
+- Deception (Cha)
+- History (Int)
+- Insight (Wis)
+- Intimidation (Cha)
+- Investigation (Int)
+- Medicine (Wis)
+- Nature (Int)
+- Perception (Wis)
+- Performance (Cha)
+- Persuasion (Cha)
+- Religion (Int)
+- Sleight of Hand (Dex)
+- Stealth (Dex)
+- Survival (Wis)
+
+Passive Scores:
+- Passive Perception (10 + Perception bonus)
+- Passive Investigation (10 + Investigation bonus)
+- Passive Insight (10 + Insight bonus)
+
+Spellcasting (if applicable):
+- Spell Save DC (8 + proficiency + spellcasting ability modifier)
+- Spell Attack Bonus (proficiency + spellcasting ability modifier)
+- Total Spell Slots (by level, based on class/level)
+
+#### Tracked States
+
+Conditions (boolean flags):
+- Blinded
+- Charmed
+- Deafened
+- Frightened
+- Grappled
+- Incapacitated
+- Invisible
+- Paralyzed
+- Petrified
+- Poisoned
+- Prone
+- Restrained
+- Stunned
+- Unconscious
+
+Concentration:
+- Active (boolean)
+- Spell Being Concentrated On (string)
+
+### 2.2 Theme Management & Content Strategy
+
+#### 2.2.1 Theme Branching Model
+- Characters and their memories branch through themes while maintaining history
+- Equipment and content reset to root versions with each theme change
+- Each theme change creates new UUIDs for changed entities:
+  * New character version gets new UUID but tracks parent version
+  * Equipment links back to root theme version UUID
+  * Relationships between versions maintained in version graph
+
+Example Flow:
+Chapter 1 (Cyberpunk):
+```
+Yoda-CyberA (UUID-1)
+  |-- Lightsaber-CyberA (UUID-2)
+```
+
+Chapter 2 (Fantasy):
+```
+Yoda-FantasyA (UUID-3)
+  |-- parent: UUID-1 (Yoda-CyberA)
+  |-- Lightsaber-FantasyA (UUID-4)
+      |-- root: UUID-2 (Lightsaber-CyberA)
+```
+
+Chapter 3 (Return to Cyberpunk):
+```
+Yoda-CyberB (UUID-5)
+  |-- parent: UUID-3 (Yoda-FantasyA)
+  |-- Lightsaber-CyberA (UUID-2) # Original cyberpunk version
+```
+
+#### 2.2.2 Theme Version Relationships
+- Version Graph for Entity Types:
+  * Characters: Linear progression with parent links
+  * Equipment/Content: Star pattern with root links
+  * Theme transitions create new character versions
+  * Equipment relinks to original theme versions
+
+#### 2.2.3 Content Reuse Priority
+- MUST prioritize using existing D&D content before generating custom content
+- Search unified catalog with semantic matching for appropriate content
+- Allow minor modifications to existing content for theme alignment
+- Only generate custom content when no suitable existing content matches
+- Track content origin and modifications for auditing
+
+#### 2.2.2 Content Types
+- Primary Content (has memory and evolution):
+  * Characters
+  * Character relationships
+  * Character experiences and development
+  * Character narrative arcs
+- Reusable Content (resets to root on branching):
+  * Items (weapons, armor, tools)
+  * Spells
+  * Species/races
+  * Classes/subclasses
+  * Feats
+  * Background elements
+
+#### 2.2.3 Custom Content Generation
 - Custom species with balanced traits
 - Custom classes with progression
 - Custom feats
 - Custom spells
 - Custom weapons and armor
 - Balance validation for all custom content
+- Tracking of justification for custom vs. reused content
 
 ### 2.3 Iterative Refinement System
 - User-driven character updates
@@ -267,7 +464,39 @@ PUT /api/v2/characters/{id}/journal/{entry_id}/direct-edit
 
 ## 6. Data Models
 
-### 6.1 Character Model
+### 6.1 Version Control Model
+```json
+{
+  "version_graph": {
+    "id": "uuid",
+    "type": "character|equipment",
+    "versions": [
+      {
+        "id": "uuid",
+        "theme": "string",
+        "parent_id": "uuid|null",
+        "root_id": "uuid|null",
+        "created_at": "timestamp",
+        "entity_data": {}
+      }
+    ],
+    "relationships": [
+      {
+        "version_id": "uuid",
+        "related_content": [
+          {
+            "content_id": "uuid",
+            "relationship": "equipped|owned|created",
+            "theme_version": "string"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### 6.2 Character Model
 ```json
 {
   "id": "uuid",

@@ -1,58 +1,135 @@
-"""Test Configuration and Fixtures"""
-
+"""Test configuration and fixtures."""
 import asyncio
+import os
+from typing import AsyncGenerator, Generator
+from uuid import uuid4
+
 import pytest
+import pytest_asyncio
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from datetime import datetime
-from sqlalchemy.ext.asyncio import AsyncSession
+from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
-from character_service.core.database import get_db, Base
-from character_service.main import app as character_app
-from tests.utils.db import init_test_db, cleanup_test_db, get_test_db, TestingSessionLocal
+from character_service.config import Settings, get_settings
+from character_service.db.base import Base
+from character_service.db.session import get_session
+from character_service.main import create_application
 
+# Test database URL - ensure we use asyncpg driver
+db_url = os.getenv(
+    "TEST_DATABASE_URL",
+    "postgresql://postgres:postgres@localhost:5432/character_test",
+)
+TEST_DB_URL = db_url.replace("postgresql://", "postgresql+asyncpg://", 1) if db_url.startswith("postgresql://") else db_url
+
+
+# Settings override for testing
 @pytest.fixture(scope="session")
-def event_loop():
-    """Create event loop for async tests."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
+def settings() -> Settings:
+    """Override settings for testing."""
+    return Settings(
+        DATABASE_URL=TEST_DB_URL,
+        ENVIRONMENT="test",
+        DEBUG=True,
+        TESTING=True,
+    )
+
+
+# Database setup
+@pytest.fixture(scope="session")
+def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
+    """Create an event loop for testing."""
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
     yield loop
     loop.close()
 
+
 @pytest.fixture(scope="session")
-async def init_db():
-    """Initialize test database schema."""
-    await init_test_db()
+def db_engine(settings: Settings) -> AsyncEngine:
+    """Create database engine."""
+    engine = create_async_engine(
+        settings.DATABASE_URL,
+        echo=False,
+        future=True,
+        pool_size=5,
+        max_overflow=10,
+    )
+    return engine
+
+@pytest_asyncio.fixture(scope="session", autouse=True)
+async def initialize_db(db_engine: AsyncEngine) -> AsyncGenerator[None, None]:
+    """Initialize database tables."""
+    async with db_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.create_all)
     yield
-    await cleanup_test_db()
+    async with db_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
 
-@pytest.fixture
-def app() -> FastAPI:
-    """Create test FastAPI application with production-like DI."""
-    async def override_get_db():
-        """Mirror production get_db behavior exactly."""
-        async with TestingSessionLocal() as session:
-            try:
-                yield session
-            finally:
-                await session.close()
 
-    character_app.dependency_overrides[get_db] = override_get_db
-    yield character_app
-    character_app.dependency_overrides.clear()
+@pytest.fixture(scope="session")
+def async_session_maker(db_engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    """Create session factory."""
+    return async_sessionmaker(
+        bind=db_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autoflush=False,
+    )
 
-@pytest.fixture
-def client(app: FastAPI) -> TestClient:
+
+@pytest_asyncio.fixture(scope="function")
+async def db_session(
+    async_session_maker: async_sessionmaker[AsyncSession],
+    initialize_db: None,
+) -> AsyncGenerator[AsyncSession, None]:
+    """Create database session."""
+    async with async_session_maker() as session:
+        yield session
+        await session.rollback()
+
+
+# Application setup
+@pytest.fixture(scope="session")
+def app(settings: Settings, async_session_maker: async_sessionmaker[AsyncSession]) -> FastAPI:
+    """Create FastAPI application for testing."""
+    app = create_application()
+
+    # Override dependencies
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_session] = lambda: async_session_maker
+
+    return app
+
+
+@pytest_asyncio.fixture(scope="function")
+async def client(app: FastAPI) -> AsyncGenerator[AsyncClient, None]:
     """Create test client."""
-    return TestClient(app)
+    async with AsyncClient(app=app, base_url="http://test") as client:
+        yield client
 
+
+# Test data factories
 @pytest.fixture
-async def db_session(init_db) -> AsyncSession:
-    """Database session fixture for repository tests only.
-    
-    API tests should not use this - they should create/read via HTTP endpoints
-    to match production behavior.
-    """
-    async with TestingSessionLocal() as session:
-        async with session.begin():
-            yield session
-            await session.rollback()
+def random_uuid() -> str:
+    """Generate random UUID for testing."""
+    return str(uuid4())
+
+
+# Database fixtures for specific entities
+@pytest_asyncio.fixture(scope="function")
+async def clean_db(db_session: AsyncSession) -> AsyncGenerator[AsyncSession, None]:
+    """Provide clean database session."""
+    yield db_session
+    # Clean up any data created during the test
+    for table in reversed(Base.metadata.sorted_tables):
+        await db_session.execute(table.delete())
+    await db_session.commit()

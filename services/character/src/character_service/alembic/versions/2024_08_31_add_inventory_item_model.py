@@ -10,7 +10,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = '2024_08_31_inventory_items'
-down_revision = '2024_08_24_initial_schema'
+down_revision = '2024_08_24_initial_schema'  # Depends on initial schema
 branch_labels = None
 depends_on = None
 

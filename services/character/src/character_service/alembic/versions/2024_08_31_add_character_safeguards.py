@@ -10,7 +10,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = '2024_08_31_character_safeguards'
-down_revision = '2024_08_31_inventory_items'
+down_revision = '2024_08_31_inventory_items'  # Depends on inventory items
 branch_labels = None
 depends_on = None
 

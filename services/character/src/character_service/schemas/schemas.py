@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from typing import List, Optional, Dict, Any
+from uuid import UUID
 from pydantic import BaseModel, Field
 
 class DirectEditRequest(BaseModel):
@@ -9,29 +10,38 @@ class DirectEditRequest(BaseModel):
     notes: Optional[str] = None
 
 class CharacterBase(BaseModel):
-    """Base Character Schema"""
+    """Base Character Schema aligned with the Character model"""
     name: str
-    race: str
-    class_: str
-    background: str
-    alignment: str
-    data: Dict[str, Any] = Field(default_factory=dict)
-    level: Optional[int] = Field(default=1, ge=1)
-    experience: Optional[int] = Field(default=0, ge=0)
+    user_id: UUID
+    campaign_id: UUID
+    character_data: Dict[str, Any] = Field(default_factory=dict)
 
 class CharacterCreate(CharacterBase):
     """Character Creation Schema"""
     pass
 
-class CharacterUpdate(CharacterBase):
+class CharacterUpdate(BaseModel):
     """Character Update Schema"""
-    pass
+    name: Optional[str] = None
+    user_id: Optional[UUID] = None
+    campaign_id: Optional[UUID] = None
+    character_data: Optional[Dict[str, Any]] = None
 
-class Character(CharacterBase):
+class Character(BaseModel):
     """Character Response Schema"""
-    id: int
+    id: UUID
+    name: str
+    user_id: str
+    campaign_id: str
+    character_data: Dict[str, Any]
+    is_active: Optional[bool] = True
     created_at: datetime
     updated_at: datetime
+    level: Optional[int] = None
+    character_classes: Optional[Dict[str, int]] = None
+    ability_scores: Optional[Dict[str, int]] = None
+    skills: Optional[List[str]] = None
+    saving_throw_proficiencies: Optional[List[str]] = None
 
     class Config:
         from_attributes = True
@@ -44,7 +54,7 @@ class JournalEntryBase(BaseModel):
 
 class JournalEntryCreate(JournalEntryBase):
     """Journal Entry Creation Schema"""
-    character_id: int
+    character_id: UUID
 
 class JournalEntryUpdate(BaseModel):
     """Journal Entry Update Schema"""
@@ -54,8 +64,8 @@ class JournalEntryUpdate(BaseModel):
 
 class JournalEntry(JournalEntryBase):
     """Journal Entry Response Schema"""
-    id: int
-    character_id: int
+    id: UUID
+    character_id: UUID
     created_at: datetime
     updated_at: datetime
 
@@ -69,7 +79,7 @@ class InventoryItemBase(BaseModel):
 
 class InventoryItemCreate(InventoryItemBase):
     """Inventory Item Creation Schema"""
-    character_id: int
+    character_id: UUID
 
 class InventoryItemUpdate(BaseModel):
     """Inventory Item Update Schema"""
@@ -78,8 +88,8 @@ class InventoryItemUpdate(BaseModel):
 
 class InventoryItem(InventoryItemBase):
     """Inventory Item Response Schema"""
-    id: int
-    character_id: int
+    id: UUID
+    character_id: UUID
     created_at: datetime
     updated_at: datetime
 
@@ -88,14 +98,14 @@ class InventoryItem(InventoryItemBase):
 
 class CharacterVersionBase(BaseModel):
     """Base Character Version Schema"""
-    character_id: int
+    character_id: UUID
     version_number: int
     character_data: Dict[str, Any]
     change_description: str
 
 class CharacterVersion(CharacterVersionBase):
     """Character Version Response Schema"""
-    id: int
+    id: UUID
     created_at: datetime
 
     class Config:

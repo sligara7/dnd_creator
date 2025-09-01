@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/{{ cookiecutter.__project_slug }}
+      {% if cookiecutter.use_celery == "yes" %}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      {% endif %}
+      # Add other environment variables here
+    volumes:
+      - ./src:/app/src
+    depends_on:
+      - db
+      {% if cookiecutter.use_celery == "yes" %}
+      - redis
+      {% endif %}
+
+  db:
+    image: postgres:15
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB={{ cookiecutter.__project_slug }}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  {% if cookiecutter.use_celery == "yes" %}
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  celery:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A src.{{ cookiecutter.__project_slug }}.workers.tasks worker --loglevel=info
+    volumes:
+      - ./src:/app/src
+    depends_on:
+      - redis
+      - db
+  {% endif %}
+
+volumes:
+  postgres_data:
+  {% if cookiecutter.use_celery == "yes" %}
+  redis_data:
+  {% endif %}

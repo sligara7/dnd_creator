@@ -4,7 +4,7 @@ from datetime import datetime
 from fastapi.testclient import TestClient
 from tests.api.test_characters import create_test_character
 
-def create_test_journal_entry(client: TestClient, character_id: int, title: str = "Test Entry") -> dict:
+def create_test_journal_entry(client: TestClient, character_id: str, title: str = "Test Entry") -> dict:
     """Helper to create a test journal entry via HTTP."""
     entry_data = {
         "character_id": character_id,
@@ -81,7 +81,7 @@ def test_list_journal_entries_invalid_character(client: TestClient):
 def test_create_journal_entry_invalid_character(client: TestClient):
     """Test creating journal entry for invalid character."""
     entry_data = {
-        "character_id": 999999,
+"character_id": "999999",
         "title": "Invalid Entry",
         "content": "This should fail",
         "entry_type": "session"

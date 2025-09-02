@@ -14,6 +14,19 @@ class CharacterRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    def _get_safe_fields(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Get only the fields that are valid for the Character model."""
+        valid_fields = {
+            "name",
+            "user_id",
+            "campaign_id",
+            "parent_id",
+            "theme",
+            "character_data",
+            "is_active",
+        }
+        return {k: v for k, v in data.items() if k in valid_fields}
+
     async def get_all(self, limit: int = 100, offset: int = 0) -> List[Character]:
         """Get all active characters with pagination."""
         query = select(Character).where(Character.is_active == True).limit(limit).offset(offset)
@@ -28,19 +41,6 @@ class CharacterRepository:
         )
         result = await self.db.execute(query)
         return result.scalar_one_or_none()
-
-    def _get_safe_fields(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Get only the fields that are valid for the Character model."""
-        valid_fields = {
-            "name",
-            "user_id",
-            "campaign_id",
-            "character_data",
-            "is_active",
-            "user_modified",
-            "audit_trail"
-        }
-        return {k: v for k, v in data.items() if k in valid_fields}
 
     async def create(self, character: CharacterCreate) -> Character:
         """Create a new character"""
@@ -67,9 +67,14 @@ class CharacterRepository:
         updates = character.model_dump(exclude_unset=True)
         updates = self._get_safe_fields(updates)
 
-        # Apply filtered updates
+        # Apply filtered updates, merging character_data when provided
         for key, value in updates.items():
-            setattr(db_character, key, value)
+            if key == "character_data" and isinstance(value, dict):
+                current = dict(db_character.character_data or {})
+                current.update(value)
+                setattr(db_character, key, current)
+            else:
+                setattr(db_character, key, value)
         
         await self.db.flush()
         await self.db.refresh(db_character)
@@ -95,9 +100,9 @@ class CharacterRepository:
             return None
         
         # Merge evolution data with existing character data
-        current = dict(db_character.data or {})
+        current = dict(db_character.character_data or {})
         current.update(evolution_data)
-        db_character.data = current
+        db_character.character_data = current
         
         await self.db.flush()
         await self.db.refresh(db_character)

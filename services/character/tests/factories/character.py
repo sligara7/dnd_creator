@@ -9,7 +9,8 @@ def create_character_data(
     character_class: Optional[str] = None,
     level: int = 1,
     background: Optional[str] = None,
-    ability_scores: Optional[Dict[str, int]] = None
+    ability_scores: Optional[Dict[str, int]] = None,
+    theme: Optional[str] = None
 ) -> Dict[str, Any]:
     """Create test character data."""
     character_classes = {character_class or "Fighter": level}
@@ -31,11 +32,8 @@ def create_character_data(
     # Level 1-4: +2, Level 5-8: +3, Level 9-12: +4, Level 13-16: +5, Level 17-20: +6
     prof_bonus = 2 + (level - 1) // 4
 
-    return {
-        "id": str(uuid4()),
-        "name": name or "Test Character",
-        "user_id": str(uuid4()),
-        "campaign_id": str(uuid4()),
+    # Base character data
+    character_json = {
         "species": species or "Human",
         "character_classes": character_classes,
         "background": background or "Soldier",
@@ -52,4 +50,14 @@ def create_character_data(
         "proficiency_bonus": prof_bonus,
         "spell_save_dc": None,
         "spellcasting_ability": None
+    }
+
+    return {
+        "id": str(uuid4()),
+        "name": name or "Test Character",
+        "user_id": str(uuid4()),
+        "campaign_id": str(uuid4()),
+        "theme": theme or "traditional",
+        "character_data": character_json,
+        "is_active": True
     }

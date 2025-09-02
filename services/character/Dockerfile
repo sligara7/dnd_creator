@@ -35,8 +35,10 @@ RUN apt-get update && \
         curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
-RUN useradd -m service_user
+# Create non-root user and service directories
+RUN useradd -m service_user && \
+    mkdir -p /app/tmp && \
+    chown -R service_user:service_user /app
 WORKDIR /app
 
 # Copy Python dependencies from builder

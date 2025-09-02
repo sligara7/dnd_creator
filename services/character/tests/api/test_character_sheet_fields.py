@@ -5,10 +5,11 @@ from unittest.mock import ANY, patch
 from fastapi import status
 from fastapi.testclient import TestClient
 
-from ...app.api.v2.character_routes import router
-from ...app.models.character import Character, CharacterSheet
+from character_service.api.v2.router import router
+from character_service.models.models import Character
+from character_service.schemas.schemas import CombatState, ResourceState
+# TODO: Import enums from correct location once they are ported
 from ...app.models.enums import AbilityScore, Skill
-from ...app.schemas.character import CombatState, ResourceState
 
 @pytest.fixture
 def test_client():
@@ -22,17 +23,37 @@ def mock_character():
     return Character(
         id="test-uuid",
         name="Test Character",
-        species="Human",
-        class_name="Fighter",
-        level=1,
-        ability_scores={
-            AbilityScore.STRENGTH: 16,
-            AbilityScore.DEXTERITY: 14,
-            AbilityScore.CONSTITUTION: 15,
-            AbilityScore.INTELLIGENCE: 12,
-            AbilityScore.WISDOM: 13,
-            AbilityScore.CHARISMA: 11
-        }
+        theme="traditional",
+        character_data={
+            "species": "Human",
+            "class_name": "Fighter",
+            "level": 1,
+            "ability_scores": {
+                AbilityScore.STRENGTH: 16,
+                AbilityScore.DEXTERITY: 14,
+                AbilityScore.CONSTITUTION: 15,
+                AbilityScore.INTELLIGENCE: 12,
+                AbilityScore.WISDOM: 13,
+                AbilityScore.CHARISMA: 11
+            },
+            "current_hit_points": 12,
+            "temporary_hit_points": 0,
+            "hit_dice": {"d10": {"total": 1, "used": 0}},
+            "death_saves": {"successes": 0, "failures": 0},
+            "exhaustion_level": 0,
+            "inspiration": 0,
+            "proficiencies": {
+                "languages": ["Common"],
+                "tools": ["Smith's Tools"],
+                "weapons": ["Simple Weapons", "Martial Weapons"],
+                "armor": ["Light Armor", "Medium Armor", "Heavy Armor", "Shields"]
+            },
+            "conditions": [],
+            "concentration": {"active": False, "spell": None}
+        },
+        user_id="user-test-uuid",
+        campaign_id="campaign-test-uuid",
+        is_active=True
     )
 
 class TestCharacterSheetFields:

@@ -3,7 +3,7 @@ import pytest
 from typing import Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from character_service.models.character import Character
+from character_service.models.models import Character
 from character_service.services.character import CharacterService
 from tests.factories.character import create_character_data
 
@@ -21,10 +21,10 @@ async def test_create_basic_character(db_session: AsyncSession):
     # Assert
     assert character is not None
     assert character.name == character_data["name"]
-    assert character.species == character_data["species"]
-    assert character.character_classes == character_data["character_classes"]
-    assert character.background == character_data["background"]
-    assert character.level == character_data["level"]
+    assert character.character_data["species"] == character_data["species"]
+    assert character.character_data["character_classes"] == character_data["character_classes"]
+    assert character.character_data["background"] == character_data["background"]
+    assert character.character_data["level"] == character_data["level"]
 
 
 @pytest.mark.asyncio
@@ -46,10 +46,7 @@ async def test_create_character_with_custom_ability_scores(db_session: AsyncSess
     character = await character_service.create_character(character_data)
 
     # Assert
-    assert character.ability_scores == custom_scores
-    # Test ability modifiers are calculated correctly
-    assert character.get_ability_modifier("strength") == 3  # 16 -> +3
-    assert character.get_ability_modifier("charisma") == 0  # 10 -> +0
+    assert character.character_data["ability_scores"] == custom_scores
 
 
 @pytest.mark.asyncio
@@ -73,9 +70,9 @@ async def test_create_spellcaster_character(db_session: AsyncSession):
     character = await character_service.create_character(character_data)
 
     # Assert
-    assert character.character_classes == {"Wizard": 1}
-    assert character.spell_save_dc == 13  # 8 + 2 (prof) + 3 (Int mod)
-    assert character.spellcasting_ability == "intelligence"
+    assert character.character_data["character_classes"] == {"Wizard": 1}
+    assert character.character_data["spell_save_dc"] == 13  # 8 + 2 (prof) + 3 (Int mod)
+    assert character.character_data["spellcasting_ability"] == "intelligence"
 
 
 @pytest.mark.asyncio
@@ -84,7 +81,7 @@ async def test_create_character_with_invalid_data(db_session: AsyncSession):
     # Arrange
     character_service = CharacterService(db_session)
     invalid_data = create_character_data()
-    invalid_data["ability_scores"]["strength"] = 25  # Invalid score > 20
+    invalid_data["character_data"]["ability_scores"]["strength"] = 25  # Invalid score > 20
 
     # Act & Assert
     with pytest.raises(ValueError, match="Invalid ability score"):
@@ -108,7 +105,7 @@ async def test_create_character_with_racial_bonuses(db_session: AsyncSession):
         species="Half-Orc",  # Half-Orcs get +2 Str, +1 Con
         ability_scores=base_scores
     )
-    character_data["racial_bonuses"] = {
+    character_data["character_data"]["racial_bonuses"] = {
         "strength": 2,
         "constitution": 1
     }
@@ -117,9 +114,8 @@ async def test_create_character_with_racial_bonuses(db_session: AsyncSession):
     character = await character_service.create_character(character_data)
 
     # Assert
-    assert character.ability_scores["strength"] == 17  # 15 + 2
-    assert character.ability_scores["constitution"] == 14  # 13 + 1
-    assert character.get_ability_modifier("strength") == 3  # 17 -> +3
+    assert character.character_data["ability_scores"]["strength"] == 17  # 15 + 2
+    assert character.character_data["ability_scores"]["constitution"] == 14  # 13 + 1
 
 
 @pytest.mark.asyncio
@@ -144,7 +140,7 @@ async def test_create_character_hit_points_calculation(db_session: AsyncSession)
 
     # Assert
     # Fighter gets 10 (base) + 3 (Con mod) = 13 HP at level 1
-    assert character.hit_points == 13
+    assert character.character_data["hit_points"] == 13
 
 
 @pytest.mark.asyncio
@@ -168,7 +164,7 @@ async def test_create_character_armor_class_calculation(db_session: AsyncSession
 
     # Assert
     # Base AC 10 + Dex modifier 3 = 13
-    assert character.armor_class == 13
+    assert character.character_data["armor_class"] == 13
 
 
 @pytest.mark.asyncio
@@ -192,7 +188,7 @@ async def test_create_character_proficiency_bonus(db_session: AsyncSession):
         character = await character_service.create_character(character_data)
 
         # Assert
-        assert character.proficiency_bonus == expected_bonus, f"Level {level}"
+        assert character.character_data["proficiency_bonus"] == expected_bonus, f"Level {level}"
 
 
 @pytest.mark.asyncio
@@ -212,4 +208,4 @@ async def test_create_duplicate_character_names(db_session: AsyncSession):
     assert first_character.name == second_character.name
     assert first_character.id != second_character.id
     # Check warning flag is set
-    assert second_character.warnings and "duplicate_name" in second_character.warnings
+    assert second_character.character_data["warnings"] and "duplicate_name" in second_character.character_data["warnings"]

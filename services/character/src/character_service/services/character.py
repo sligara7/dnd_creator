@@ -5,7 +5,7 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from character_service.models.character import Character
+from character_service.models.models import Character
 
 
 class CharacterService:
@@ -19,28 +19,38 @@ class CharacterService:
 
     async def create_character(self, character_data: Dict[str, Any]) -> Character:
         """Create a new character."""
+        # Normalize input to support both legacy and new formats
+        input_data = character_data.get("character_data", character_data)
+
         # Validate data
-        self._validate_character_data(character_data)
+        self._validate_character_data(input_data)
 
         # Check for duplicate names
         duplicate_name = await self._check_duplicate_name(character_data["name"])
 
         # Create character instance
+        # Convert to new JSONB-based model
+        character_data_json = {
+            "species": input_data["species"],
+            "background": input_data["background"],
+            "level": input_data.get("level", 1),
+            "character_classes": input_data["character_classes"],
+            "ability_scores": input_data["ability_scores"],
+            "equipment": input_data.get("equipment", []),
+            "spells_known": input_data.get("spells_known", []),
+            "spells_prepared": input_data.get("spells_prepared", []),
+            "features": input_data.get("features", []),
+            "warnings": ["duplicate_name"] if duplicate_name else None
+        }
+        
         character = Character(
-            id=character_data.get("id", str(uuid4())),
+            id=character_data.get("id", uuid4()),
             name=character_data["name"],
             user_id=character_data["user_id"],
             campaign_id=character_data["campaign_id"],
-            species=character_data["species"],
-            background=character_data["background"],
-            level=character_data.get("level", 1),
-            character_classes=character_data["character_classes"],
-            ability_scores=character_data["ability_scores"],
-            equipment=character_data.get("equipment", []),
-            spells_known=character_data.get("spells_known", []),
-            spells_prepared=character_data.get("spells_prepared", []),
-            features=character_data.get("features", []),
-            warnings=["duplicate_name"] if duplicate_name else None
+            theme=character_data.get("theme", "traditional"),  # Default theme
+            character_data=character_data_json,
+            is_active=True
         )
 
         # Apply racial bonuses
@@ -65,7 +75,7 @@ class CharacterService:
 
     def _validate_character_data(self, data: Dict[str, Any]) -> None:
         """Validate character data."""
-        required_fields = ["name", "species", "background", "character_classes", "ability_scores", "user_id", "campaign_id"]
+        required_fields = ["species", "background", "character_classes", "ability_scores"]
         for field in required_fields:
             if field not in data:
                 raise ValueError(f"Missing required field: {field}")
@@ -83,15 +93,16 @@ class CharacterService:
 
     def _apply_racial_bonuses(self, character: Character, bonuses: Dict[str, int]) -> None:
         """Apply racial ability score bonuses."""
-        character.racial_bonuses = bonuses
+        data = character.character_data
+        data["racial_bonuses"] = bonuses
         for ability, bonus in bonuses.items():
-            current_score = character.ability_scores[ability]
-            character.ability_scores[ability] = min(20, current_score + bonus)
+            current_score = data["ability_scores"][ability]
+            data["ability_scores"][ability] = min(20, current_score + bonus)
 
     def _calculate_hit_points(self, character: Character) -> None:
         """Calculate character's hit points."""
         # Get primary class and its hit die
-        primary_class = next(iter(character.character_classes))
+        primary_class = next(iter(character.character_data["character_classes"]))
         hit_die_sizes = {
             "Barbarian": 12,
             "Fighter": 10, "Paladin": 10, "Ranger": 10,
@@ -101,33 +112,33 @@ class CharacterService:
         hit_die = hit_die_sizes.get(primary_class, 8)
 
         # Calculate HP: max hit die + Constitution modifier for first level
-        con_mod = character.get_ability_modifier("constitution")
+        con_mod = (character.character_data["ability_scores"].get("constitution", 10) - 10) // 2
         hp = hit_die + con_mod  # First level
 
         # Add average HP for remaining levels
-        for class_name, level in character.character_classes.items():
+        for class_name, level in character.character_data["character_classes"].items():
             if level > 1:
                 class_hit_die = hit_die_sizes.get(class_name, 8)
                 # Use average roll (half of hit die + 1) for remaining levels
                 hp += (class_hit_die // 2 + 1 + con_mod) * (level - 1)
 
-        character.hit_points = hp
+        character.character_data["hit_points"] = hp
 
     def _calculate_armor_class(self, character: Character) -> None:
         """Calculate character's armor class."""
         # Base AC 10 + Dexterity modifier (unarmored)
-        dex_mod = character.get_ability_modifier("dexterity")
-        character.armor_class = 10 + dex_mod
+        dex_mod = (character.character_data["ability_scores"].get("dexterity", 10) - 10) // 2
+        character.character_data["armor_class"] = 10 + dex_mod
 
     def _calculate_proficiency_bonus(self, character: Character) -> None:
         """Calculate character's proficiency bonus based on level."""
-        character.proficiency_bonus = 2 + ((character.level - 1) // 4)
+        character.character_data["proficiency_bonus"] = 2 + ((character.character_data["level"] - 1) // 4)
 
     def _is_spellcaster(self, character: Character) -> bool:
         """Check if character is a spellcaster."""
         return any(
             class_name in self.spellcasting_classes
-            for class_name in character.character_classes
+            for class_name in character.character_data["character_classes"]
         )
 
     def _setup_spellcasting(self, character: Character) -> None:
@@ -143,19 +154,19 @@ class CharacterService:
         # Find the highest level spellcasting class
         primary_class = None
         highest_level = 0
-        for class_name, level in character.character_classes.items():
+        for class_name, level in character.character_data["character_classes"].items():
             if class_name in spellcasting_abilities:
                 if level > highest_level:
                     primary_class = class_name
                     highest_level = level
 
         # Set spellcasting ability for highest level spellcasting class
-        character.spellcasting_ability = spellcasting_abilities.get(primary_class)
+        character.character_data["spellcasting_ability"] = spellcasting_abilities.get(primary_class)
 
         # Calculate spell save DC if applicable
-        if character.spellcasting_ability:
-            ability_mod = character.get_ability_modifier(character.spellcasting_ability)
-            character.spell_save_dc = 8 + character.proficiency_bonus + ability_mod
+        if spellcasting_ability := character.character_data.get("spellcasting_ability"):
+            ability_mod = (character.character_data["ability_scores"].get(spellcasting_ability, 10) - 10) // 2
+            character.character_data["spell_save_dc"] = 8 + character.character_data["proficiency_bonus"] + ability_mod
 
     async def get_character(self, character_id: str) -> Character:
         """Get a character by ID."""
@@ -174,20 +185,20 @@ class CharacterService:
         self._validate_level_up(character, level_up_data)
 
         # Update basic attributes
-        character.level = level_up_data["level"]
-        character.character_classes = level_up_data["character_classes"]
+        character.character_data["level"] = level_up_data["level"]
+        character.character_data["character_classes"] = level_up_data["character_classes"]
 
         # Handle hit points
         new_hp = self._calculate_level_up_hp(character, level_up_data)
-        character.hit_points = new_hp
+        character.character_data["hit_points"] = new_hp
 
         # Handle spellcasting
         self._setup_spellcasting(character)
 
         # Handle spells known if applicable
         if spells_added := level_up_data.get("spells_added"):
-            current_spells = character.spells_known or []
-            character.spells_known = current_spells + spells_added
+            current_spells = character.character_data.get("spells_known", [])
+            character.character_data["spells_known"] = current_spells + spells_added
 
         # Save changes
         await self.db.commit()
@@ -198,7 +209,7 @@ class CharacterService:
     def _validate_level_up(self, character: Character, level_up_data: Dict[str, Any]) -> None:
         """Validate level up data."""
         # Check level progression
-        if level_up_data["level"] != character.level + 1:
+        if level_up_data["level"] != character.character_data["level"] + 1:
             raise ValueError("Cannot skip levels")
 
         # Validate new class levels
@@ -207,7 +218,7 @@ class CharacterService:
 
         # Check if all classes exist in current classes or meet multiclass requirements
         for class_name, level in level_up_data["character_classes"].items():
-            if class_name not in character.character_classes:
+            if class_name not in character.character_data["character_classes"]:
                 self._validate_multiclass_requirements(character, class_name)
 
     def _validate_multiclass_requirements(self, character: Character, new_class: str) -> None:
@@ -229,7 +240,7 @@ class CharacterService:
 
         if new_class in requirements:
             for ability, min_score in requirements[new_class].items():
-                if character.ability_scores[ability] < min_score:
+                if character.character_data["ability_scores"][ability] < min_score:
                     raise ValueError(f"Does not meet requirements for {new_class} multiclass")
 
     def _calculate_level_up_hp(self, character: Character, level_up_data: Dict[str, Any]) -> int:
@@ -237,7 +248,7 @@ class CharacterService:
         # Get hit die size for the new class level
         new_class = None
         for class_name, level in level_up_data["character_classes"].items():
-            if level > character.character_classes.get(class_name, 0):
+            if level > character.character_data["character_classes"].get(class_name, 0):
                 new_class = class_name
                 break
 
@@ -250,5 +261,5 @@ class CharacterService:
         hit_die = hit_die_sizes.get(new_class, 8)
 
         # Add Constitution modifier and rolled value
-        con_mod = character.get_ability_modifier("constitution")
-        return character.hit_points + level_up_data["hp_roll"] + con_mod
+        con_mod = (character.character_data["ability_scores"].get("constitution", 10) - 10) // 2
+        return character.character_data["hit_points"] + level_up_data["hp_roll"] + con_mod

@@ -19,7 +19,7 @@ if config.config_file_name is not None:
 # add your model's MetaData object here
 # Import the models to ensure they're known to SQLAlchemy
 from character_service.db.base import Base
-from character_service.models.character import Character  # noqa
+from character_service.models.models import Character  # noqa
 
 target_metadata = Base.metadata
 

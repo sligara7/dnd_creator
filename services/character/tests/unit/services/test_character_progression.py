@@ -27,9 +27,9 @@ async def test_level_up_single_class(db_session: AsyncSession):
     updated_character = await character_service.get_character(character.id)
 
     # Verify level up changes
-    assert updated_character.level == 2
-    assert updated_character.character_classes["Fighter"] == 2
-    assert updated_character.hit_points == 18  # Base 10 + Con mod(1) + Rolled(6) + Con mod(1)
+    assert updated_character.character_data["level"] == 2
+    assert updated_character.character_data["character_classes"]["Fighter"] == 2
+    assert updated_character.character_data["hit_points"] == 18  # Base 10 + Con mod(1) + Rolled(6) + Con mod(1)
 
 
 @pytest.mark.asyncio
@@ -66,12 +66,12 @@ async def test_level_up_multiclass(db_session: AsyncSession):
     updated_character = await character_service.get_character(character.id)
 
     # Verify multiclass changes
-    assert updated_character.level == 3
-    assert updated_character.character_classes == {"Fighter": 2, "Cleric": 1}
+    assert updated_character.character_data["level"] == 3
+    assert updated_character.character_data["character_classes"] == {"Fighter": 2, "Cleric": 1}
     # Fighter HP: Base 10 + Con mod(1) + Level 2 roll(assumed 6) + Con mod(1)
     # Cleric HP: Level 3 roll(4) + Con mod(1)
-    assert updated_character.hit_points == 23  
-    assert updated_character.spellcasting_ability == "wisdom"
+    assert updated_character.character_data["hit_points"] == 23  
+    assert updated_character.character_data["spellcasting_ability"] == "wisdom"
 
 
 @pytest.mark.asyncio
@@ -148,8 +148,8 @@ async def test_level_up_spellcasting(db_session: AsyncSession):
     )
     character = await character_service.create_character(character_data)
     
-    assert character.spellcasting_ability == "intelligence"
-    assert character.spell_save_dc == 13  # 8 + prof(2) + int mod(3)
+    assert character.character_data["spellcasting_ability"] == "intelligence"
+    assert character.character_data["spell_save_dc"] == 13  # 8 + prof(2) + int mod(3)
 
     # Level up to 2
     level_up_data = {
@@ -163,6 +163,6 @@ async def test_level_up_spellcasting(db_session: AsyncSession):
     updated_character = await character_service.get_character(character.id)
 
     # Verify spellcasting progression
-    assert "Magic Missile" in updated_character.spells_known
-    assert "Shield" in updated_character.spells_known
-    assert updated_character.spell_save_dc == 13  # Same at level 2
+    assert "Magic Missile" in updated_character.character_data.get("spells_known", [])
+    assert "Shield" in updated_character.character_data.get("spells_known", [])
+    assert updated_character.character_data["spell_save_dc"] == 13  # Same at level 2

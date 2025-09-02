@@ -1,115 +1,92 @@
 """Character Management Endpoints"""
-
 from typing import List
-from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Body, Path, Query
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends, HTTPException, Query
+from uuid import UUID
 
-from character_service.core.database import get_db
-from character_service.repositories.character_repository import CharacterRepository
-from character_service.schemas.schemas import (
-    Character, 
+from character_service.api.v2.dependencies import get_character_service
+from character_service.api.v2.models import (
     CharacterCreate,
-    CharacterUpdate,
-    DirectEditRequest
+    CharacterResponse,
+    ErrorResponse,
 )
+from character_service.services.interfaces import CharacterService
 
 router = APIRouter()
 
-@router.get("", response_model=List[Character])
+@router.get(
+    "",
+    response_model=List[CharacterResponse],
+    responses={500: {"model": ErrorResponse}},
+)
 async def list_characters(
-    db: AsyncSession = Depends(get_db),
-    limit: int = Query(100, ge=1, le=500, description="Maximum number of characters to return"),
-    offset: int = Query(0, ge=0, description="Number of characters to skip")
-):
-    """List all characters with pagination."""
-    repo = CharacterRepository(db)
-    return await repo.get_all(limit=limit, offset=offset)
+    user_id: UUID = Query(..., description="User ID to filter characters by"),
+    character_service: CharacterService = Depends(get_character_service),
+) -> List[CharacterResponse]:
+    """List all characters for a user."""
+    try:
+        characters = await character_service.get_characters_by_user(user_id)
+        return [CharacterResponse.model_validate(c.model_dump()) for c in characters]
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e),
+        )
 
-@router.get("/{character_id}", response_model=Character)
+@router.get(
+    "/{character_id}",
+    response_model=CharacterResponse,
+    responses={404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
 async def get_character(
-    character_id: str = Path(..., description="ID of the character to retrieve."),
-    db: AsyncSession = Depends(get_db)
-):
-    """Get a specific character by ID."""
-    repo = CharacterRepository(db)
-    character = await repo.get(character_id)
+    character_id: UUID,
+    character_service: CharacterService = Depends(get_character_service),
+) -> CharacterResponse:
+    """Get character by ID."""
+    character = await character_service.get_character(character_id)
     if not character:
-        raise HTTPException(status_code=404, detail="Character not found")
-    return character
+        raise HTTPException(
+            status_code=404,
+            detail=f"Character {character_id} not found",
+        )
+    return CharacterResponse.model_validate(character.model_dump())
 
-@router.post("", response_model=Character)
+@router.post(
+    "",
+    response_model=CharacterResponse,
+    responses={500: {"model": ErrorResponse}},
+)
 async def create_character(
-    character: CharacterCreate,
-    db: AsyncSession = Depends(get_db)
-):
+    character_create: CharacterCreate,
+    character_service: CharacterService = Depends(get_character_service),
+) -> CharacterResponse:
     """Create a new character."""
-    repo = CharacterRepository(db)
-    return await repo.create(character)
+    try:
+        character = await character_service.create_character(
+            name=character_create.name,
+            theme=character_create.theme,
+            user_id=character_create.user_id,
+            campaign_id=character_create.campaign_id,
+            character_data=character_create.character_data,
+        )
+        return CharacterResponse.model_validate(character.model_dump())
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e),
+        )
 
-@router.put("/{character_id}", response_model=Character)
-async def update_character(
-    character_id: str = Path(..., description="ID of the character to update."),
-    character: CharacterUpdate = Body(...),
-    db: AsyncSession = Depends(get_db)
-):
-    """Update a character."""
-    repo = CharacterRepository(db)
-    updated_character = await repo.update(character_id, character)
-    if not updated_character:
-        raise HTTPException(status_code=404, detail="Character not found")
-    return updated_character
-
-@router.delete("/{character_id}")
+@router.delete(
+    "/{character_id}",
+    responses={404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
 async def delete_character(
-    character_id: str = Path(..., description="ID of the character to delete."),
-    db: AsyncSession = Depends(get_db)
-):
-    """Delete a character."""
-    repo = CharacterRepository(db)
-    if not await repo.delete(character_id):
-        raise HTTPException(status_code=404, detail="Character not found")
-    return {"message": "Character deleted successfully"}
-
-@router.post("/{character_id}/direct-edit", response_model=Character)
-async def direct_edit_character(
-    character_id: str = Path(..., description="ID of the character to edit directly."),
-    edit: DirectEditRequest = Body(..., description="Fields and values to update."),
-    db: AsyncSession = Depends(get_db)
-):
-    """Directly edit a character's fields (DM/user override)."""
-    repo = CharacterRepository(db)
-    character = await repo.get(character_id)
-    if not character:
-        raise HTTPException(status_code=404, detail="Character not found")
-    
-    # Apply updates and set user_modified flag
-    updates = edit.updates or {}
-    errors = []
-    
-    # Only allow updating fields that exist on the character object
-    for field, value in updates.items():
-        if hasattr(character, field):
-            try:
-                setattr(character, field, value)
-            except Exception as e:
-                errors.append(f"Failed to update '{field}': {e}")
-        else:
-            errors.append(f"Field '{field}' does not exist on character.")
-    
-    if errors:
-        raise HTTPException(status_code=400, detail={"errors": errors})
-    
-    # Set user_modified flag and audit trail
-    character.user_modified = True
-    if not hasattr(character, "audit_trail"):
-        character.audit_trail = []
-    
-    character.audit_trail.append({
-        "timestamp": datetime.utcnow().isoformat() + "Z",
-        "fields_changed": list(updates.keys()),
-        "notes": edit.notes,
-        "username": "dev"  # TODO: Get from auth context
-    })
-    
-    return await repo.update(character_id, character)
+    character_id: UUID,
+    character_service: CharacterService = Depends(get_character_service),
+) -> None:
+    """Delete character by ID."""
+    deleted = await character_service.delete_character(character_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Character {character_id} not found",
+        )

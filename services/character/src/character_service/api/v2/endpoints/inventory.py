@@ -1,130 +1,120 @@
 """Inventory Management Endpoints"""
-
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, Body, Path, Query
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException
+from uuid import UUID
 
-from character_service.core.database import get_db
-from character_service.repositories.character_repository import CharacterRepository
-from character_service.repositories.inventory_repository import InventoryRepository
-from character_service.schemas.schemas import (
-    InventoryItem,
+from character_service.api.v2.dependencies import get_inventory_service
+from character_service.api.v2.models import (
     InventoryItemCreate,
-    DirectEditRequest
+    InventoryItemUpdate,
+    InventoryItemResponse,
+    ErrorResponse,
 )
+from character_service.services.interfaces import InventoryService
 
 router = APIRouter()
 
-@router.get("", response_model=List[InventoryItem])
-async def list_inventory_items(
-    character_id: str = Query(..., description="ID of the character whose inventory to list."),
-    db: Session = Depends(get_db),
-    limit: int = Query(100, ge=1, le=500, description="Maximum number of items to return"),
-    offset: int = Query(0, ge=0, description="Number of items to skip")
-):
-    """List all inventory items for a character with pagination."""
-    char_repo = CharacterRepository(db)
-    character = await char_repo.get(character_id)
-    if not character:
-        raise HTTPException(status_code=404, detail="Character not found")
+@router.get(
+    "/{character_id}",
+    response_model=List[InventoryItemResponse],
+    responses={500: {"model": ErrorResponse}},
+)
+async def get_character_inventory(
+    character_id: UUID,
+    inventory_service: InventoryService = Depends(get_inventory_service),
+) -> List[InventoryItemResponse]:
+    """Get character inventory."""
+    try:
+        items = await inventory_service.get_character_items(character_id)
+        return [InventoryItemResponse.model_validate(i.model_dump()) for i in items]
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e),
+        )
 
-    inv_repo = InventoryRepository(db)
-    return await inv_repo.get_all_by_character(character_id, limit=limit, offset=offset)
-
-@router.get("/{item_id}", response_model=InventoryItem)
+@router.get(
+    "/items/{item_id}",
+    response_model=InventoryItemResponse,
+    responses={404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
 async def get_inventory_item(
-    character_id: str = Query(..., description="ID of the character."),
-    item_id: str = Path(..., description="ID of the inventory item to retrieve."),
-    db: Session = Depends(get_db)
-):
-    """Get a specific inventory item by ID."""
-    char_repo = CharacterRepository(db)
-    character = await char_repo.get(character_id)
-    if not character:
-        raise HTTPException(status_code=404, detail="Character not found")
+    item_id: UUID,
+    inventory_service: InventoryService = Depends(get_inventory_service),
+) -> InventoryItemResponse:
+    """Get inventory item by ID."""
+    item = await inventory_service.get_item(item_id)
+    if not item:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Item {item_id} not found",
+        )
+    return InventoryItemResponse.model_validate(item.model_dump())
 
-    inv_repo = InventoryRepository(db)
-    item = await inv_repo.get(item_id)
-    if not item or item.character_id != character_id:
-        raise HTTPException(status_code=404, detail="Inventory item not found")
-    return item
-
-@router.post("", response_model=InventoryItem)
-async def create_inventory_item(
+@router.post(
+    "/{character_id}/items",
+    response_model=InventoryItemResponse,
+    responses={500: {"model": ErrorResponse}},
+)
+async def add_inventory_item(
+    character_id: UUID,
     item: InventoryItemCreate,
-    db: Session = Depends(get_db)
-):
-    """Create a new inventory item."""
-    char_repo = CharacterRepository(db)
-    character = await char_repo.get(item.character_id)
-    if not character:
-        raise HTTPException(status_code=404, detail="Character not found")
+    inventory_service: InventoryService = Depends(get_inventory_service),
+) -> InventoryItemResponse:
+    """Add item to character inventory."""
+    try:
+        new_item = await inventory_service.add_item(
+            character_id=character_id,
+            item_data=item.item_data,
+            quantity=item.quantity,
+            equipped=item.equipped,
+            container=item.container,
+            notes=item.notes,
+        )
+        return InventoryItemResponse.model_validate(new_item.model_dump())
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e),
+        )
 
-    inv_repo = InventoryRepository(db)
-    return await inv_repo.create(item)
+@router.put(
+    "/items/{item_id}",
+    response_model=InventoryItemResponse,
+    responses={404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+async def update_inventory_item(
+    item_id: UUID,
+    item: InventoryItemUpdate,
+    inventory_service: InventoryService = Depends(get_inventory_service),
+) -> InventoryItemResponse:
+    """Update inventory item."""
+    updated_item = await inventory_service.update_item(
+        item_id=item_id,
+        quantity=item.quantity,
+        equipped=item.equipped,
+        container=item.container,
+        notes=item.notes,
+    )
+    if not updated_item:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Item {item_id} not found",
+        )
+    return InventoryItemResponse.model_validate(updated_item.model_dump())
 
-@router.post("/{item_id}/direct-edit", response_model=InventoryItem)
-async def direct_edit_inventory_item(
-    character_id: str = Query(..., description="ID of the character."),
-    item_id: str = Path(..., description="ID of the inventory item to edit directly."),
-    edit: DirectEditRequest = Body(..., description="Fields and values to update."),
-    db: Session = Depends(get_db)
-):
-    """Directly edit an inventory item's fields (DM/user override)."""
-    char_repo = CharacterRepository(db)
-    character = await char_repo.get(character_id)
-    if not character:
-        raise HTTPException(status_code=404, detail="Character not found")
-
-    inv_repo = InventoryRepository(db)
-    item = await inv_repo.get(item_id)
-    if not item or item.character_id != character_id:
-        raise HTTPException(status_code=404, detail="Inventory item not found")
-
-    # Apply updates and set user_modified flag
-    updates = edit.updates or {}
-    errors = []
-
-    # Only allow updating fields that exist on the item object
-    for field, value in updates.items():
-        if hasattr(item, field):
-            try:
-                setattr(item, field, value)
-            except Exception as e:
-                errors.append(f"Failed to update '{field}': {e}")
-        else:
-            errors.append(f"Field '{field}' does not exist on inventory item.")
-
-    if errors:
-        raise HTTPException(status_code=400, detail={"errors": errors})
-
-    # Set user_modified flag and audit trail
-    item.user_modified = True
-    if not hasattr(item, "audit_trail"):
-        item.audit_trail = []
-
-    item.audit_trail.append({
-        "timestamp": datetime.utcnow().isoformat() + "Z",
-        "fields_changed": list(updates.keys()),
-        "notes": edit.notes,
-        "username": "dev"  # TODO: Get from auth context
-    })
-
-    return await inv_repo.update(item_id, item)
-
-@router.delete("/{item_id}")
-async def delete_inventory_item(
-    character_id: str = Query(..., description="ID of the character."),
-    item_id: str = Path(..., description="ID of the inventory item to delete."),
-    db: Session = Depends(get_db)
-):
-    """Delete an inventory item."""
-    char_repo = CharacterRepository(db)
-    character = await char_repo.get(character_id)
-    if not character:
-        raise HTTPException(status_code=404, detail="Character not found")
-
-    inv_repo = InventoryRepository(db)
-    if not await inv_repo.delete(item_id):
-        raise HTTPException(status_code=404, detail="Inventory item not found")
-    return {"message": "Inventory item deleted successfully"}
+@router.delete(
+    "/items/{item_id}",
+    responses={404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+async def remove_inventory_item(
+    item_id: UUID,
+    inventory_service: InventoryService = Depends(get_inventory_service),
+) -> None:
+    """Remove item from inventory."""
+    deleted = await inventory_service.remove_item(item_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Item {item_id} not found",
+        )

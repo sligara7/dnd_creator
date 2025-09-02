@@ -1,13 +1,19 @@
-"""API V1 Router Configuration"""
+"""API V2 Router Configuration"""
 
 from fastapi import APIRouter
 
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi.routing import APIRoute
+
+from character_service.api.v2.dependencies import get_container
 from character_service.api.v2.endpoints import (
     characters,
-    journals,
-    inventory,
     health,
+    inventory_new as inventory,
+    journals_new as journals,
 )
+from character_service.api.v2.models import ErrorResponse
 
 router = APIRouter()
 

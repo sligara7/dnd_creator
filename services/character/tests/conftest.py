@@ -14,6 +14,19 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from rodi import Container
+
+from character_service.api.v2.dependencies import get_container
+from character_service.api.v2.models import (
+    CharacterCreate,
+    InventoryItemCreate,
+    JournalEntryCreate,
+)
+from character_service.di.container import setup_test_di
+from character_service.domain.models import CharacterData
+from character_service.infrastructure.database import (
+    get_session,
+)
 
 from character_service.config import Settings, get_settings
 from character_service.db.base import Base
@@ -21,11 +34,11 @@ from character_service.db.session import get_session
 from character_service.main import create_application
 
 # Test database URL - ensure we use asyncpg driver
-db_url = os.getenv(
-    "TEST_DATABASE_URL",
-    "postgresql://postgres:postgres@localhost:5432/character_test",
-)
-TEST_DB_URL = db_url.replace("postgresql://", "postgresql+asyncpg://", 1) if db_url.startswith("postgresql://") else db_url
+    db_url = os.getenv(
+        "TEST_DATABASE_URL",
+        "postgresql+asyncpg://postgres:postgres@localhost:5432/character_test",
+    )
+    TEST_DB_URL = db_url
 
 
 # Settings override for testing
@@ -99,13 +112,20 @@ async def db_session(
 
 # Application setup
 @pytest.fixture(scope="session")
-def app(settings: Settings, async_session_maker: async_sessionmaker[AsyncSession]) -> FastAPI:
+def di_container(settings: Settings, async_session_maker: async_sessionmaker[AsyncSession]) -> Container:
+    """Create dependency injection container for testing."""
+    container = setup_test_di()
+    return container
+
+@pytest.fixture(scope="session")
+def app(settings: Settings, di_container: Container) -> FastAPI:
     """Create FastAPI application for testing."""
     app = create_application()
 
     # Override dependencies
     app.dependency_overrides[get_settings] = lambda: settings
-    app.dependency_overrides[get_session] = lambda: async_session_maker
+    app.dependency_overrides[get_container] = lambda: di_container
+    app.dependency_overrides[get_session] = lambda: get_session(di_container)
 
     return app
 
@@ -123,6 +143,69 @@ def random_uuid() -> str:
     """Generate random UUID for testing."""
     return str(uuid4())
 
+@pytest.fixture
+def test_character_data() -> CharacterCreate:
+    """Create test character data."""
+    return CharacterCreate(
+        name="Test Character",
+        theme="traditional",
+        user_id=uuid4(),
+        campaign_id=uuid4(),
+        character_data=CharacterData.create_default(),
+    )
+
+@pytest.fixture
+def test_inventory_item_data() -> InventoryItemCreate:
+    """Create test inventory item data."""
+    return InventoryItemCreate(
+        item_data={
+            "name": "Test Item",
+            "type": "weapon",
+            "weight": 2,
+            "cost": {"gold": 1, "silver": 0, "copper": 0},
+            "damage": {
+                "type": "slashing",
+                "dice": {"count": 1, "size": 8},
+            },
+            "properties": ["versatile"],
+        },
+        quantity=1,
+        equipped=False,
+        container=None,
+        notes="Test notes",
+    )
+
+@pytest.fixture
+def test_journal_entry_data() -> JournalEntryCreate:
+    """Create test journal entry data."""
+    return JournalEntryCreate(
+        entry_type="session_log",
+        title="Test Entry",
+        content="Test content",
+        session_number=1,
+    )
+
+
+# Service fixtures
+@pytest.fixture
+def character_service(di_container: Container):
+    """Get character service."""
+    return di_container.resolve("CharacterService")
+
+@pytest.fixture
+def inventory_service(di_container: Container):
+    """Get inventory service."""
+    return di_container.resolve("InventoryService")
+
+@pytest.fixture
+def journal_service(di_container: Container):
+    """Get journal service."""
+    return di_container.resolve("JournalService")
+
+@pytest.fixture
+def theme_service(di_container: Container):
+    """Get theme service."""
+    return di_container.resolve("ThemeService")
 
 # Database fixtures for specific entities
 @pytest_asyncio.fixture(scope="function")

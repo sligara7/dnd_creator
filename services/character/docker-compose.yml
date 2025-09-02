@@ -27,11 +27,12 @@ services:
       
       # Metrics Configuration
       - METRICS_ENABLED=true
-      - PROMETHEUS_MULTIPROC_DIR=/tmp
+      - PROMETHEUS_MULTIPROC_DIR=/app/tmp
+      - TMPDIR=/app/tmp
       - SECRET_KEY=dev_secret_key_change_me
     volumes:
       - ./logs:/app/logs
-      - prometheus_data:/tmp
+      - prometheus_data:/app/tmp
     depends_on:
       - db
       - redis

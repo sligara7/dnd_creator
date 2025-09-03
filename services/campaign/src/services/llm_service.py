@@ -686,7 +686,7 @@ def create_llm_service(provider: str = "openai", **kwargs) -> LLMService:
         llm_service = create_llm_service("openai")
         
         # Explicit API key (example format only):
-        llm_service = create_llm_service("openai", api_key="-key-here")
+        llm_service = create_llm_service("openai", api_key="sk-your-key-here")
     """
     if provider.lower() == "ollama":
         return OllamaLLMService(**kwargs)

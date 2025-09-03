@@ -1,0 +1,74 @@
+[project]
+name = "campaign-service"
+version = "1.0.0"
+description = "D&D Campaign Creation and Management Service"
+authors = [
+    {name = "AJ Smith"}
+]
+readme = "README.md"
+requires-python = "^3.11"
+packages = [{include = "campaign_service", from = "src"}]
+dependencies = [
+    "fastapi>=0.103.0",
+    "uvicorn[standard]>=0.23.0",
+    "sqlalchemy>=2.0.20",
+    "asyncpg>=0.28.0",
+    "pydantic>=2.3.0",
+    "pydantic-settings>=2.2.0",
+    "structlog>=23.2.0",
+    "prometheus-client>=0.17.0",
+    "httpx>=0.25.0",
+    "ujson>=5.8.0",
+    "python-jose[cryptography]>=3.3.0",
+    "redis>=5.0.0",
+    "aiofiles>=23.2.1",
+    "alembic>=1.11.0",
+]
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+pytest-asyncio = "^0.21.1"
+pytest-cov = "^4.1.0"
+black = "^23.7.0"
+isort = "^5.12.0"
+ruff = "^0.0.286"
+mypy = "^1.5.1"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 100
+target-version = ['py311']
+include = '\\.pyi?$'
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 100
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = false
+no_implicit_optional = true
+strict_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = false
+warn_no_return = true
+warn_return_any = true
+strict_equality = true
+disallow_any_generics = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_classes = "Test*"
+python_functions = "test_*"
+asyncio_mode = "auto"

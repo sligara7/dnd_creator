@@ -19,7 +19,7 @@ This document outlines remaining implementation work needed to bring each servic
    - [x] Antitheticon identity network tracking
 
 3. **Character Evolution**
-   - [ ] Version control system for character changes
+   - [x] Version control system for character changes
    - [ ] Campaign event impact tracking
    - [ ] Experience and milestone management
 

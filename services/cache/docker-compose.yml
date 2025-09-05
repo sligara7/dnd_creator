@@ -1,0 +1,122 @@
+version: '3.8'
+
+services:
+  cache_service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dnd-cache-service:latest
+    container_name: dnd_cache_service
+    env_file: .env
+    environment:
+      - POSTGRES_HOST=cache_db
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=cache_db
+      - REDIS_PRIMARY_HOST=cache_primary
+      - REDIS_PRIMARY_PORT=6379
+      - REDIS_REPLICA_HOST=cache_replica
+      - REDIS_REPLICA_PORT=6379
+      - MESSAGE_HUB_URL=http://message-hub:8200
+      - CACHE_MEMORY_LIMIT=26GB  # 80% of 32GB
+      - CACHE_EVICTION_POLICY=volatile-lru
+    ports:
+      - "8500:8500"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8500/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      - cache_db
+      - cache_primary
+      - cache_replica
+      - cache_sentinel
+    networks:
+      - internal
+
+  cache_db:
+    image: postgres:15-alpine
+    container_name: dnd_cache_db
+    environment:
+      - POSTGRES_DB=cache_db
+      - POSTGRES_USER=cache_user
+      - POSTGRES_PASSWORD=cache_pass
+    volumes:
+      - cache_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cache_user -d cache_db"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - internal
+
+  cache_primary:
+    image: redis:7
+    container_name: dnd_cache_primary
+    command: redis-server /usr/local/etc/redis/redis.conf
+    volumes:
+      - ./config/redis-primary.conf:/usr/local/etc/redis/redis.conf
+      - cache_primary_data:/data
+    ports:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - internal
+
+  cache_replica:
+    image: redis:7
+    container_name: dnd_cache_replica
+    command: redis-server /usr/local/etc/redis/redis.conf
+    volumes:
+      - ./config/redis-replica.conf:/usr/local/etc/redis/redis.conf
+      - cache_replica_data:/data
+    ports:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      - cache_primary
+    networks:
+      - internal
+
+  cache_sentinel:
+    image: redis:7
+    container_name: dnd_cache_sentinel
+    command: redis-sentinel /usr/local/etc/redis/sentinel.conf
+    volumes:
+      - ./config/sentinel.conf:/usr/local/etc/redis/sentinel.conf
+    ports:
+      - "26379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "26379", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      - cache_primary
+      - cache_replica
+    networks:
+      - internal
+
+volumes:
+  cache_db_data:
+  cache_primary_data:
+  cache_replica_data:
+
+networks:
+  internal:
+    name: dnd_internal
+    external: true

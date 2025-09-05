@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  auth_service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dnd-auth-service:latest
+    container_name: dnd_auth_service
+    env_file: .env
+    environment:
+      - POSTGRES_HOST=auth_db
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=auth_db
+      - REDIS_HOST=auth_cache
+      - REDIS_PORT=6379
+      - MESSAGE_HUB_URL=http://message-hub:8200
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - JWT_ALGORITHM=RS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=30
+      - REFRESH_TOKEN_EXPIRE_DAYS=7
+      - ARGON2_TIME_COST=2
+      - ARGON2_MEMORY_COST=102400
+      - ARGON2_PARALLELISM=8
+      - MFA_ISSUER=dndcreator.com
+    volumes:
+      - auth_keys:/app/keys
+    ports:
+      - "8300:8300"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8300/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      - auth_db
+      - auth_cache
+    networks:
+      - internal
+
+  auth_db:
+    image: postgres:15-alpine
+    container_name: dnd_auth_db
+    environment:
+      - POSTGRES_DB=auth_db
+      - POSTGRES_USER=auth_user
+      - POSTGRES_PASSWORD=auth_pass
+    volumes:
+      - auth_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auth_user -d auth_db"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - internal
+
+  auth_cache:
+    image: redis:7-alpine
+    container_name: dnd_auth_cache
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - auth_cache_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - internal
+
+volumes:
+  auth_keys:
+  auth_db_data:
+  auth_cache_data:
+
+networks:
+  internal:
+    name: dnd_internal
+    external: true

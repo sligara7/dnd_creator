@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  image_service:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    image: dnd-image-service:latest
+    container_name: dnd_image_service
+    env_file: .env
+    environment:
+      - MESSAGE_HUB_URL=http://message-hub:8200
+      - POSTGRES_HOST=image_db
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=image_db
+      - MINIO_HOST=image_storage
+      - MINIO_PORT=9000
+      - REDIS_HOST=image_cache
+      - REDIS_PORT=6379
+      - GETIMG_API_URL=https://api.getimg.ai/v1
+    ports:
+      - "8002:8002"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      - image_db
+      - image_storage
+      - image_cache
+    networks:
+      - internal
+
+  image_db:
+    image: postgres:15-alpine
+    container_name: dnd_image_db
+    environment:
+      - POSTGRES_DB=image_db
+      - POSTGRES_USER=image_user
+      - POSTGRES_PASSWORD=image_pass
+    volumes:
+      - image_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U image_user -d image_db"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - internal
+
+  image_cache:
+    image: redis:7-alpine
+    container_name: dnd_image_cache
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - image_cache_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - internal
+
+  image_storage:
+    image: minio/minio:latest
+    container_name: dnd_image_storage
+    command: server /data
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    volumes:
+      - image_storage_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - internal
+
+volumes:
+  image_db_data:
+  image_cache_data:
+  image_storage_data:
+
+networks:
+  internal:
+    name: dnd_internal
+    external: true

@@ -1,0 +1,118 @@
+version: '3.8'
+
+services:
+  audit_service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dnd-audit-service:latest
+    container_name: dnd_audit_service
+    env_file: .env
+    environment:
+      - POSTGRES_HOST=audit_db
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=audit_db
+      - REDIS_HOST=audit_cache
+      - REDIS_PORT=6379
+      - ELASTICSEARCH_HOST=audit_search
+      - ELASTICSEARCH_PORT=9200
+      - MINIO_HOST=audit_storage
+      - MINIO_PORT=9000
+      - MESSAGE_HUB_URL=http://message-hub:8200
+      - ES_RETENTION_DAYS=365
+      - ARCHIVE_RETENTION_YEARS=7
+    ports:
+      - "8400:8400"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8400/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      - audit_db
+      - audit_cache
+      - audit_search
+      - audit_storage
+    networks:
+      - internal
+
+  audit_db:
+    image: postgres:15-alpine
+    container_name: dnd_audit_db
+    environment:
+      - POSTGRES_DB=audit_db
+      - POSTGRES_USER=audit_user
+      - POSTGRES_PASSWORD=audit_pass
+    volumes:
+      - audit_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U audit_user -d audit_db"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - internal
+
+  audit_cache:
+    image: redis:7-alpine
+    container_name: dnd_audit_cache
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - audit_cache_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - internal
+
+  audit_search:
+    image: elasticsearch:8.10.2
+    container_name: dnd_audit_search
+    environment:
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=-Xms4g -Xmx4g
+      - xpack.security.enabled=false
+    volumes:
+      - audit_search_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - internal
+
+  audit_storage:
+    image: minio/minio:latest
+    container_name: dnd_audit_storage
+    command: server /data
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    volumes:
+      - audit_storage_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - internal
+
+volumes:
+  audit_db_data:
+  audit_cache_data:
+  audit_search_data:
+  audit_storage_data:
+
+networks:
+  internal:
+    name: dnd_internal
+    external: true

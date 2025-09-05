@@ -1,0 +1,94 @@
+version: '3.8'
+
+services:
+  catalog_service:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    image: dnd-catalog-service:latest
+    container_name: dnd_catalog_service
+    env_file: .env
+    environment:
+      - MESSAGE_HUB_URL=http://message-hub:8200
+      - POSTGRES_HOST=catalog_db
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=catalog_db
+      - REDIS_HOST=catalog_cache
+      - REDIS_PORT=6379
+      - ELASTICSEARCH_HOST=catalog_search
+      - ELASTICSEARCH_PORT=9200
+    ports:
+      - "8003:8003"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      - catalog_db
+      - catalog_cache
+      - catalog_search
+    networks:
+      - internal
+
+  catalog_db:
+    image: postgres:15-alpine
+    container_name: dnd_catalog_db
+    environment:
+      - POSTGRES_DB=catalog_db
+      - POSTGRES_USER=catalog_user
+      - POSTGRES_PASSWORD=catalog_pass
+    volumes:
+      - catalog_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U catalog_user -d catalog_db"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - internal
+
+  catalog_cache:
+    image: redis:7-alpine
+    container_name: dnd_catalog_cache
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - catalog_cache_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - internal
+
+  catalog_search:
+    image: elasticsearch:8.10.2
+    container_name: dnd_catalog_search
+    environment:
+      - "discovery.type=single-node"
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - "xpack.security.enabled=false"
+    volumes:
+      - catalog_search_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - internal
+
+volumes:
+  catalog_db_data:
+  catalog_cache_data:
+  catalog_search_data:
+
+networks:
+  internal:
+    name: dnd_internal
+    external: true

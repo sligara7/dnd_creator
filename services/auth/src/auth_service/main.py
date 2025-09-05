@@ -1,19 +1,17 @@
-from typing import Dict
-
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from llm_service.core.config import settings
-from llm_service.api.routes import api_router
-from llm_service.core.exceptions import LLMServiceError
-from llm_service.core.monitoring import setup_monitoring
-from llm_service.providers.openai import OpenAIProvider
-from llm_service.providers.getimg import GetImgProvider
+from auth_service.core.config import settings
+from auth_service.api.routes import api_router
+from auth_service.core.exceptions import AuthServiceError
+from auth_service.core.monitoring import setup_monitoring
+from auth_service.security.key_manager import KeyManager
+from auth_service.security.token_service import TokenService
 
 app = FastAPI(
-    title="LLM Service",
-    description="LLM and Image Generation Service for D&D Character Creator",
+    title="Auth Service",
+    description="Authentication and Authorization Service for D&D Character Creator",
     version="0.1.0",
 )
 
@@ -27,25 +25,26 @@ app.add_middleware(
 )
 
 # Global dependencies
-openai_provider = OpenAIProvider(api_key=settings.OPENAI_API_KEY)
-getimg_provider = GetImgProvider(api_key=settings.GETIMG_API_KEY)
+key_manager = KeyManager(
+    private_key_path=settings.PRIVATE_KEY_PATH,
+    public_key_path=settings.PUBLIC_KEY_PATH,
+)
+token_service = TokenService(key_manager)
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on startup"""
     await setup_monitoring()
-    await openai_provider.setup()
-    await getimg_provider.setup()
+    await key_manager.setup()
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on shutdown"""
-    await openai_provider.cleanup()
-    await getimg_provider.cleanup()
+    await key_manager.cleanup()
 
-@app.exception_handler(LLMServiceError)
-async def llm_service_exception_handler(request: Request, exc: LLMServiceError):
-    """Handle LLM Service specific errors"""
+@app.exception_handler(AuthServiceError)
+async def auth_service_exception_handler(request: Request, exc: AuthServiceError):
+    """Handle Auth Service specific errors"""
     return JSONResponse(
         status_code=exc.status_code,
         content={
@@ -64,20 +63,21 @@ async def llm_service_exception_handler(request: Request, exc: LLMServiceError):
 app.include_router(api_router)
 
 @app.get("/health")
-async def health_check() -> Dict:
+async def health_check():
     """Service health check endpoint"""
-    openai_health = await openai_provider.health_check()
-    getimg_health = await getimg_provider.health_check()
+    # Check health of all dependencies
+    key_status = await key_manager.health_check()
+    token_status = await token_service.health_check()
     
     # Determine overall health
-    providers_healthy = all([openai_health, getimg_health])
+    all_healthy = all([key_status, token_status])
     
     return {
-        "status": "healthy" if providers_healthy else "degraded",
+        "status": "healthy" if all_healthy else "degraded",
         "version": settings.VERSION,
-        "providers": {
-            "openai": "healthy" if openai_health else "degraded",
-            "getimg": "healthy" if getimg_health else "degraded",
+        "components": {
+            "key_manager": "healthy" if key_status else "degraded",
+            "token_service": "healthy" if token_status else "degraded",
         },
     }
 
@@ -91,7 +91,7 @@ def start() -> None:
     """Entry point for running in production"""
     import uvicorn
     uvicorn.run(
-        "llm_service.main:app",
+        "auth_service.main:app",
         host=settings.HOST,
         port=settings.PORT,
         workers=settings.WORKERS,
@@ -102,7 +102,7 @@ def dev() -> None:
     """Entry point for running in development"""
     import uvicorn
     uvicorn.run(
-        "llm_service.main:app",
+        "auth_service.main:app",
         host=settings.HOST,
         port=settings.PORT,
         reload=True,

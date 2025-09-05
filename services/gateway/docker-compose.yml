@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  gateway:
+    image: traefik:v2.10
+    container_name: dnd_gateway
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - internal
+      - external
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"  # Dashboard (only in development)
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./dynamic:/etc/traefik/dynamic:ro
+      - ./acme:/etc/traefik/acme
+    environment:
+      - TZ=UTC
+    labels:
+      - "traefik.enable=true"
+      # Dashboard
+      - "traefik.http.routers.dashboard.rule=Host(`gateway.dndcreator.local`) && (PathPrefix(`/api`) || PathPrefix(`/dashboard`))"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.middlewares=secure-headers@file"
+      - "traefik.http.routers.dashboard.tls=true"
+      # Global middleware
+      - "traefik.http.middlewares.secure-headers.headers.frameDeny=true"
+      - "traefik.http.middlewares.secure-headers.headers.sslRedirect=true"
+      - "traefik.http.middlewares.secure-headers.headers.browserXssFilter=true"
+      - "traefik.http.middlewares.secure-headers.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.secure-headers.headers.referrerPolicy=strict-origin-when-cross-origin"
+      - "traefik.http.middlewares.secure-headers.headers.stsSeconds=31536000"
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # Redis for rate limiting state
+  gateway_cache:
+    image: redis:7-alpine
+    container_name: dnd_gateway_cache
+    restart: unless-stopped
+    networks:
+      - internal
+    volumes:
+      - gateway_cache:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  gateway_cache:
+
+networks:
+  internal:
+    name: dnd_internal
+    external: true
+  external:
+    name: dnd_external
+    external: true

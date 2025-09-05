@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+  message_hub:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    image: dnd-message-hub:latest
+    container_name: dnd_message_hub
+    env_file: .env
+    environment:
+      - POSTGRES_HOST=message_hub_db
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=message_hub
+      - REDIS_HOST=message_hub_cache
+      - REDIS_PORT=6379
+      - RABBITMQ_HOST=message_hub_queue
+      - RABBITMQ_PORT=5672
+    ports:
+      - "8200:8200"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8200/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      - message_hub_db
+      - message_hub_cache
+      - message_hub_queue
+    networks:
+      - internal
+
+  message_hub_db:
+    image: postgres:15-alpine
+    container_name: dnd_message_hub_db
+    environment:
+      - POSTGRES_DB=message_hub
+      - POSTGRES_USER=message_hub_user
+      - POSTGRES_PASSWORD=message_hub_pass
+    volumes:
+      - message_hub_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U message_hub_user -d message_hub"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - internal
+
+  message_hub_cache:
+    image: redis:7-alpine
+    container_name: dnd_message_hub_cache
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - message_hub_cache_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - internal
+
+  message_hub_queue:
+    image: rabbitmq:3-management-alpine
+    container_name: dnd_message_hub_queue
+    environment:
+      - RABBITMQ_DEFAULT_USER=message_hub_user
+      - RABBITMQ_DEFAULT_PASS=message_hub_pass
+    volumes:
+      - message_hub_queue_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - internal
+
+volumes:
+  message_hub_db_data:
+  message_hub_cache_data:
+  message_hub_queue_data:
+
+networks:
+  internal:
+    name: dnd_internal
+    external: true

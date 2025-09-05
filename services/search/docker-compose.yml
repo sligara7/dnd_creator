@@ -1,0 +1,110 @@
+version: '3.8'
+
+services:
+  search_service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dnd-search-service:latest
+    container_name: dnd_search_service
+    env_file: .env
+    environment:
+      - POSTGRES_HOST=search_db
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=search_db
+      - REDIS_HOST=search_cache
+      - REDIS_PORT=6379
+      - ELASTICSEARCH_HOST=search_cluster
+      - ELASTICSEARCH_PORT=9200
+      - MESSAGE_HUB_URL=http://message-hub:8200
+      - ES_CLUSTER_NAME=dnd-search
+      - ES_NUMBER_OF_SHARDS=5
+      - ES_NUMBER_OF_REPLICAS=1
+    ports:
+      - "8600:8600"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8600/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      - search_db
+      - search_cache
+      - search_cluster
+    networks:
+      - internal
+
+  search_db:
+    image: postgres:15-alpine
+    container_name: dnd_search_db
+    environment:
+      - POSTGRES_DB=search_db
+      - POSTGRES_USER=search_user
+      - POSTGRES_PASSWORD=search_pass
+    volumes:
+      - search_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U search_user -d search_db"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - internal
+
+  search_cache:
+    image: redis:7-alpine
+    container_name: dnd_search_cache
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - search_cache_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - internal
+
+  search_cluster:
+    image: elasticsearch:8.11.0
+    container_name: dnd_search_cluster
+    environment:
+      - cluster.name=dnd-search
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms4g -Xmx4g"
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - search_cluster_data:/usr/share/elasticsearch/data
+      - ./config/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml
+      - ./config/synonyms:/usr/share/elasticsearch/config/synonyms
+    ports:
+      - "9200"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - internal
+
+volumes:
+  search_db_data:
+  search_cache_data:
+  search_cluster_data:
+
+networks:
+  internal:
+    name: dnd_internal
+    external: true

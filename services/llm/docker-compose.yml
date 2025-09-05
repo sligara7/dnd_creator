@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  llm_service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dnd-llm-service:latest
+    container_name: dnd_llm_service
+    env_file: .env
+    environment:
+      - POSTGRES_HOST=llm_db
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=llm_db
+      - REDIS_HOST=llm_cache
+      - REDIS_PORT=6379
+      - MESSAGE_HUB_URL=http://message-hub:8200
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GETIMG_API_KEY=${GETIMG_API_KEY}
+    ports:
+      - "8100:8100"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8100/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      - llm_db
+      - llm_cache
+    networks:
+      - internal
+
+  llm_db:
+    image: postgres:15-alpine
+    container_name: dnd_llm_db
+    environment:
+      - POSTGRES_DB=llm_db
+      - POSTGRES_USER=llm_user
+      - POSTGRES_PASSWORD=llm_pass
+    volumes:
+      - llm_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U llm_user -d llm_db"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - internal
+
+  llm_cache:
+    image: redis:7-alpine
+    container_name: dnd_llm_cache
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - llm_cache_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - internal
+
+volumes:
+  llm_db_data:
+  llm_cache_data:
+
+networks:
+  internal:
+    name: dnd_internal
+    external: true

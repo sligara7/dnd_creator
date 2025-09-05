@@ -1,0 +1,62 @@
+# Cluster
+cluster.name: dnd-search
+network.host: 0.0.0.0
+http.port: 9200
+node.roles: [master, data, ingest]
+
+# Performance
+bootstrap.memory_lock: true
+discovery.type: single-node
+
+# Security
+xpack.security.enabled: false
+
+# Index Settings
+index.number_of_shards: 5
+index.number_of_replicas: 1
+index.refresh_interval: "1s"
+index.max_result_window: 10000
+
+# Memory
+indices.memory.index_buffer_size: "20%"
+indices.memory.min_index_buffer_size: "96mb"
+indices.memory.max_index_buffer_size: "512mb"
+
+# Cache
+index.store.type: "fs"
+indices.queries.cache.size: "10%"
+indices.requests.cache.size: "2%"
+indices.fielddata.cache.size: "20%"
+
+# Search
+search.max_buckets: 10000
+search.allow_expensive_queries: true
+search.highlight.max_analyzed_offset: 1000000
+
+# Analysis
+analysis:
+  analyzer:
+    dnd_analyzer:
+      type: custom
+      tokenizer: standard
+      char_filter:
+        - html_strip
+      filter:
+        - lowercase
+        - stop
+        - snowball
+        - synonym
+        - asciifolding
+  filter:
+    synonym:
+      type: synonym
+      synonyms_path: synonyms/dnd_synonyms.txt
+
+# Paths
+path:
+  data: /usr/share/elasticsearch/data
+  logs: /usr/share/elasticsearch/logs
+
+# Monitoring
+xpack.monitoring.enabled: true
+xpack.monitoring.collection.enabled: true

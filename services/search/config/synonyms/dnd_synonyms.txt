@@ -1,0 +1,97 @@
+# Character classes and common variants
+fighter, warrior, swordsman, combatant, man-at-arms
+wizard, mage, sorcerer, spellcaster, magic-user
+cleric, priest, healer, divine caster
+rogue, thief, burglar, scout, assassin
+paladin, holy warrior, holy knight
+barbarian, berserker, savage
+druid, nature priest, shapeshifter
+monk, martial artist, hand-to-hand expert
+ranger, hunter, woodsman, tracker
+warlock, occultist, witch, mystic
+
+# Race synonyms
+dwarf, dwarven, dwarvish
+elf, elven, elvish, fey
+halfling, hobbit, hin
+gnome, gnomish
+orc, orcish, half-orc
+tiefling, fiendborn
+dragonborn, dragon-born, draconic
+
+# Weapons
+sword, blade, saber, cutlass
+axe, hatchet, chopper
+mace, club, bludgeon
+bow, longbow, shortbow, composite bow
+spear, lance, pike
+dagger, knife, shiv
+shield, buckler, kite shield, tower shield
+staff, quarterstaff, rod
+
+# Spells and magic
+fireball, firebolt, flame
+lightning bolt, thunderbolt, shock
+heal, cure, restore, mend
+charm, enchant, beguile
+polymorph, shapechange, transform
+summon, conjure, call forth
+banish, dismiss, dispel
+resurrection, revive, raise dead
+teleport, blink, dimension door
+
+# Armor types
+light armor, leather armor, padded armor
+medium armor, chain shirt, scale mail
+heavy armor, plate armor, full plate
+shield, buckler, tower shield
+magical armor, enchanted armor
+
+# Alignments
+lawful good, righteous, noble
+chaotic good, free spirit, rebel with a cause
+neutral good, balanced good
+lawful evil, tyrannical, oppressive
+chaotic evil, destructive, malevolent
+true neutral, balanced, undecided
+neutral evil, selfish evil
+
+# Status effects
+poisoned, venomed, toxic
+charmed, enchanted, bewitched
+paralyzed, frozen, immobilized
+stunned, dazed, incapacitated
+unconscious, knocked out, fainted
+frightened, afraid, terrified
+blinded, sightless, unseeing
+deafened, unhearing
+
+# Combat terms
+attack, strike, hit, assault
+defend, block, parry, guard
+dodge, evade, avoid, sidestep
+damage, harm, hurt, wound
+heal, cure, restore, mend
+initiative, reaction, response
+critical hit, critical strike, crit
+saving throw, save, resistance check
+
+# Magic items
+potion, elixir, brew, draught
+scroll, parchment, spell scroll
+wand, rod, scepter
+ring, band, loop
+amulet, pendant, necklace
+staff, quarterstaff, magical staff
+orb, sphere, crystal ball
+bracers, gauntlets, handwear
+
+# Dungeon features
+door, portal, entrance, gateway
+trap, snare, hazard
+treasure, loot, riches, valuables
+chest, coffer, strongbox
+lock, padlock, locking mechanism
+secret door, hidden entrance
+corridor, hallway, passage
+chamber, room, hall

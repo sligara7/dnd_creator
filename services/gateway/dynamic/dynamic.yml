@@ -1,0 +1,129 @@
+http:
+  middlewares:
+    # Security headers middleware
+    secure-headers:
+      headers:
+        frameDeny: true
+        sslRedirect: true
+        browserXssFilter: true
+        contentTypeNosniff: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        stsSeconds: 31536000
+    
+    # Authentication middleware
+    auth:
+      forwardAuth:
+        address: "http://auth-service:8300/validate"
+        trustForwardHeader: true
+        authResponseHeaders:
+          - "X-User-ID"
+          - "X-User-Role"
+          - "X-Request-ID"
+    
+    # Rate limiting middleware
+    rate-limit:
+      rateLimit:
+        average: 100
+        burst: 50
+    
+    # Circuit breaker middleware
+    circuit-breaker:
+      circuitBreaker:
+        expression: "NetworkErrorRatio() > 0.10"
+    
+    # CORS middleware
+    cors:
+      cors:
+        allowedOrigins:
+          - "https://dndcreator.com"
+          - "https://*.dndcreator.com"
+        allowedMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+        allowedHeaders: ["Authorization", "Content-Type", "X-Request-ID"]
+        exposedHeaders: ["X-Rate-Limit-*"]
+        maxAge: 86400
+
+  routers:
+    # Character Service
+    character-service:
+      rule: "PathPrefix(`/api/v2/characters`)"
+      service: character-service
+      middlewares:
+        - auth
+        - rate-limit
+        - secure-headers
+        - cors
+      tls: {}
+
+    # Campaign Service
+    campaign-service:
+      rule: "PathPrefix(`/api/v2/campaigns`)"
+      service: campaign-service
+      middlewares:
+        - auth
+        - rate-limit
+        - secure-headers
+        - cors
+      tls: {}
+
+    # Image Service
+    image-service:
+      rule: "PathPrefix(`/api/v2/images`)"
+      service: image-service
+      middlewares:
+        - auth
+        - rate-limit
+        - secure-headers
+        - cors
+      tls: {}
+
+    # Catalog Service
+    catalog-service:
+      rule: "PathPrefix(`/api/v2/catalog`)"
+      service: catalog-service
+      middlewares:
+        - auth
+        - rate-limit
+        - secure-headers
+        - cors
+      tls: {}
+
+  services:
+    character-service:
+      loadBalancer:
+        servers:
+          - url: "http://character-service:8000"
+        healthCheck:
+          path: "/health"
+          interval: "10s"
+          timeout: "5s"
+          retries: 3
+    
+    campaign-service:
+      loadBalancer:
+        servers:
+          - url: "http://campaign-service:8001"
+        healthCheck:
+          path: "/health"
+          interval: "10s"
+          timeout: "5s"
+          retries: 3
+    
+    image-service:
+      loadBalancer:
+        servers:
+          - url: "http://image-service:8002"
+        healthCheck:
+          path: "/health"
+          interval: "10s"
+          timeout: "5s"
+          retries: 3
+    
+    catalog-service:
+      loadBalancer:
+        servers:
+          - url: "http://catalog-service:8003"
+        healthCheck:
+          path: "/health"
+          interval: "10s"
+          timeout: "5s"
+          retries: 3

@@ -1,302 +1,123 @@
-# D&D Service Architecture Gap Analysis
+# Service Architecture Gap Analysis
 
 ## Overview
-This document outlines remaining implementation work needed to bring each service into full compliance with its SRD (System Requirements Document) and ICD (Interface Control Document) specifications.
+This document serves as a high-level index of remaining work needed for each service. Detailed completion tasks and progress tracking are maintained in service-specific COMPLETION_TASKS.md files.
+
+Process Reminders:
+
+Pre-Task:
+- Review service's SRD (System Requirements Document) and ICD (Interface Control Document) to ensure requirements and interfaces are considered in context. See the index at: /dnd_char_creator/DOC_INDEX.md
+
+Post-Task:
+- Update the service's COMPLETION_TASKS.md with task completion details
+- Reflect high-level progress in this SERVICE_GAPS.md
+- Update GitHub (commit and push) with the completion
+
+Major Changes & Milestones:
+- For significant functionality changes or milestone completions:
+  * Update the service's README.md with new capabilities or architectural changes
+  * Update /dnd_char_creator/WARP.md to reflect system-level changes or milestone achievements
+  * Examples of major changes:
+    - New core features or capabilities
+    - Architectural changes affecting other services
+    - Performance or security improvements
+    - API or interface changes
+    - Completion of planned phases
 
 ## Core Services
 
 ### Character Service
-#### High Priority
-1. **Missing API Endpoints**
-   - [x] PUT /api/v2/characters/{id}/theme/transition
-   - [x] POST /api/v2/characters/bulk/create
-   - [x] POST /api/v2/characters/bulk/validate
-   - [x] GET /api/v2/characters/{id}/versions
+Status: IN PROGRESS
+Completion Tasks: [/services/character/COMPLETION_TASKS.md](/home/ajs7/dnd_tools/dnd_char_creator/services/character/COMPLETION_TASKS.md)
 
-2. **Theme System**
-   - [x] Theme transition validation
-   - [x] Theme-based ability score adjustments
-   - [x] Antitheticon identity network tracking
-
-3. **Character Evolution**
-   - [x] Version control system for character changes
-   - [x] Campaign event impact tracking
-   - [x] Experience and milestone management
-
-#### Medium Priority
-1. **Validation System**
-   - [x] Complete rule validation framework
-   - [x] Theme compatibility checks
-   - [x] Campaign integration validation
-
-2. **Inventory System**
-   - [x] Full equipment tracking
-   - [x] Magic item attunement
-   - [x] Container and capacity tracking
-
-3. **Campaign Integration**
-   - [x] Real-time state synchronization
-   - [x] Campaign event handlers
-   - [x] Story impact tracking
+Remaining High Priority:
+- Load Testing & Performance Profiling
+- API Documentation (OpenAPI/Swagger)
+- Implementation & Operational Guides
 
 ### Campaign Service
-#### High Priority
-1. **Story Management**
-   - [ ] Chapter organization system
-   - [x] Plot tracking and evolution
-   - [x] NPC relationship tracking
+Status: IN PROGRESS
+Completion Tasks: [/services/campaign/COMPLETION_TASKS.md](/home/ajs7/dnd_tools/dnd_char_creator/services/campaign/COMPLETION_TASKS.md)
 
-2. **Theme System**
-   - [x] Theme definition framework
-   - [x] Theme transition mechanics
-   - [ ] World effect system
-
-3. **Missing API Endpoints**
-   - [ ] POST /api/v2/campaigns/{id}/chapters
-   - [x] PUT /api/v2/campaigns/{id}/theme
-   - [ ] GET /api/v2/campaigns/{id}/timeline
-
-#### Medium Priority
-1. **World Building**
-   - [ ] Location management
-   - [ ] Faction system
-   - [ ] Timeline tracking
-
-2. **Game Session Support**
-   - [ ] Session note taking
-   - [ ] Player action tracking
-   - [ ] XP and reward management
+Remaining High Priority:
+- Story Management System
+- Theme System Implementation
+- API Endpoint Completion
 
 ### Image Service
-#### High Priority
-1. **Generation Pipeline**
-   - [x] Generation queue model
-   - [x] Queue processing system
-   - [x] Style consistency system
+Status: IN PROGRESS
+Completion Tasks: [/services/image/COMPLETION_TASKS.md](/home/ajs7/dnd_tools/dnd_char_creator/services/image/COMPLETION_TASKS.md)
 
-2. **Storage Integration**
-   - [x] Asset model and structure
-   - [ ] Efficient retrieval system
-   - [x] Cache infrastructure
-   - [ ] CDN integration
-
-3. **Missing API Endpoints**
-   - [ ] POST /api/v2/images/generate/map
-   - [x] POST /api/v2/images/modify
-   - [x] GET /api/v2/images/styles
-
-#### Medium Priority
-1. **Performance Optimization**
-   - [ ] Image optimization pipeline
-   - [x] Cache strategy implementation
-   - [ ] Batch processing system
-
-2. **Quality Control**
-   - [x] Image validation system
-   - [x] Style compliance checks
-   - [x] Content moderation
+Remaining High Priority:
+- Style Consistency System
+- Storage & Retrieval Optimization
+- API Endpoint Completion
 
 ### LLM Service
-#### High Priority
-1. **Content Generation**
-   - [x] Theme-aware generation pipeline
-   - [x] Context management system
-   - [x] GPT-5-nano optimized system
+Status: IN PROGRESS
+Completion Tasks: [/services/llm/COMPLETION_TASKS.md](/home/ajs7/dnd_tools/dnd_char_creator/services/llm/COMPLETION_TASKS.md)
 
-2. **Missing API Endpoints**
-   - [x] POST /api/v2/generate/story
-   - [x] POST /api/v2/analyze/theme
-   - [x] POST /api/v2/modify/content
-   - [x] POST /api/v2/chapters (LLM-managed chapter organization)
-   - [x] PUT /api/v2/chapters/{id}
-   - [x] DELETE /api/v2/chapters/{id}
-   - [x] POST /api/v2/chapters/{id}/sections
-   - [x] POST /api/v2/chapters/{id}/sections/{section_id}/beats
-   - [x] POST /api/v2/chapters/reorder
-
-3. **Integration Features**
-   - [x] Character service hooks
-   - [~] Campaign service integration (LLM-side chapter organization implemented; event-driven sync via Message Hub pending)
-   - [ ] Content validation system (rules and balance checks)
-
-4. **Chapter Organization Interfaces (Implemented in LLM Service)**
-   - [x] CRUD for Chapters, Sections, Story Beats
-   - [x] Reordering for chapters/sections/beats
-   - [x] Theme-context propagation and validation hooks
-   - [x] Content generation trigger endpoints
-   - [x] Error handling and request validation
-
-#### Medium Priority
-1. **Performance Optimization**
-   - [x] Response caching system
-   - [x] Request batching
-   - [x] Token usage optimization
-
-2. **Content Management**
-   - [x] Version tracking
-   - [x] Style consistency
-   - [x] Theme compliance
-
-3. **Service Gaps (LLM Chapter System)**
-   - [ ] Event-driven updates via Message Hub (synchronize with Campaign Service)
-   - [ ] Conflict resolution for concurrent edits
-   - [ ] Advanced theme analysis and evolution tracking
-   - [ ] Comprehensive balance and rules validation
-   - [ ] Monitoring, tracing, and SLIs for generation flows
+Remaining High Priority:
+- Service Integration Features
+- Content Validation System
 
 ## Infrastructure Services
 
 ### API Gateway
-#### High Priority
-1. **Security**
-   - [ ] Complete JWT validation
-   - [ ] Rate limiting implementation
-   - [ ] Service authentication
+Status: NOT STARTED
+Completion Tasks: No file yet
 
-2. **Routing**
-   - [ ] Dynamic route configuration
-   - [ ] Service discovery integration
-   - [ ] Error handling standardization
-
-3. **Monitoring**
-   - [ ] Detailed request logging
-   - [ ] Performance metrics
-   - [ ] Error tracking
+Remaining High Priority:
+- Security Implementation
+- Routing & Service Discovery
+- Monitoring & Logging
 
 ### Message Hub
-#### High Priority
-1. **Event Management**
-   - [ ] Event persistence system
-   - [ ] Retry mechanism
-   - [ ] Dead letter handling
+Status: NOT STARTED
+Completion Tasks: No file yet
 
-2. **Service Discovery**
-   - [ ] Health check system
-   - [ ] Service registry
-   - [ ] Load balancing
-
-3. **Missing Features**
-   - [ ] Event replay capability
-   - [ ] Message prioritization
-   - [ ] Circuit breaker implementation
+Remaining High Priority:
+- Event Management System
+- Service Discovery
+- Core Feature Implementation
 
 ### Auth Service
-#### High Priority
-1. **Authentication**
-   - [ ] Multi-factor authentication
-   - [ ] Session management
-   - [ ] Token refresh system
+Status: NOT STARTED
+Completion Tasks: No file yet
 
-2. **Authorization**
-   - [ ] Role-based access control
-   - [ ] Permission management
-   - [ ] Access level system
-
-3. **Integration**
-   - [ ] Service-to-service auth
-   - [ ] External identity provider support
-   - [ ] Audit logging
+Remaining High Priority:
+- Authentication Features
+- Authorization System
+- Service Integration
 
 ### Cache Service
-#### High Priority
-1. **Cache Management**
-   - [ ] Invalidation strategies
-   - [ ] Cache warming system
-   - [ ] Memory optimization
+Status: NOT STARTED
+Completion Tasks: No file yet
 
-2. **Missing Features**
-   - [ ] Distributed locking
-   - [ ] Cache statistics
-   - [ ] Cache preloading
+Remaining High Priority:
+- Cache Management
+- Feature Implementation
 
 ### Storage Service
-#### High Priority
-1. **Asset Management**
-   - [ ] Version control system
-   - [ ] Metadata management
-   - [ ] Content deduplication
+Status: NOT STARTED
+Completion Tasks: No file yet
 
-2. **Missing Features**
-   - [ ] Backup system
-   - [ ] Recovery procedures
-   - [ ] Space management
+Remaining High Priority:
+- Asset Management
+- Core Feature Implementation
 
-### Search Service (Remaining Items)
-#### High Priority
-1. **Search Features**
-   - [ ] Semantic search pipeline
-   - [ ] Regular expression search
-   - [ ] Boolean query support
-   - [ ] Phrase matching
+### Search Service
+Status: NOT STARTED
+Completion Tasks: No file yet
 
-2. **Index Management**
-   - [ ] Snapshot system
-   - [ ] Recovery procedures
-   - [ ] Index optimization
+Remaining High Priority:
+- Search Features
+- Index Management
+- Security Integration
 
-3. **Security Integration**
-   - [ ] Document-level security
-   - [ ] Access control implementation
-   - [ ] Audit logging
+## Implementation Phases
 
-## Cross-Cutting Concerns
-
-### Testing
-#### High Priority
-1. **Unit Tests**
-   - [x] Core service logic coverage
-   - [x] Edge case handling
-   - [x] Error scenarios
-
-2. **Integration Tests**
-   - [x] Service interaction tests
-   - [x] End-to-end workflows
-   - [x] Performance benchmarks
-
-3. **Load Testing**
-   - [ ] Service stress tests
-   - [ ] Scaling validation
-   - [ ] Performance profiling
-
-### Documentation
-#### High Priority
-1. **API Documentation**
-   - [x] OpenAPI/Swagger updates
-   - [x] Example request/response
-   - [x] Error documentation
-
-2. **Operational Guides**
-   - [ ] Deployment procedures
-   - [ ] Monitoring setup
-   - [ ] Troubleshooting guides
-
-### Security
-#### High Priority
-1. **Authentication & Authorization**
-   - [ ] Complete auth flow implementation
-   - [ ] Permission enforcement
-   - [ ] Access control validation
-
-2. **Data Protection**
-   - [ ] Encryption at rest
-   - [ ] Secure communication
-   - [ ] Secret management
-
-### Deployment
-#### High Priority
-1. **Infrastructure**
-   - [ ] Production configuration
-   - [ ] Scaling setup
-   - [ ] Monitoring implementation
-
-2. **CI/CD**
-   - [ ] Build pipelines
-   - [ ] Test automation
-   - [ ] Deployment automation
-
-## Priority Order
-
-### Phase 1: Core Functionality
+### Current Phase: Core Functionality
 1. ✓ Character Service - Theme System
 2. ✓ Campaign Service - Version Control
 3. Campaign Service - Story Management
@@ -305,66 +126,71 @@ This document outlines remaining implementation work needed to bring each servic
 6. Message Hub - Event Management
 7. API Gateway - Security & Routing
 
-### Phase 2: Security & Integration
-1. Auth Service - Complete Implementation
-2. API Gateway - Security Features
-3. Character/Campaign Integration
-4. Search Service - Security Integration
-5. Service-to-Service Authentication
+### Upcoming Phases
+1. Security & Integration
+2. Data Management
+3. Monitoring & Operations
+4. Testing & Documentation
 
-### Phase 3: Data Management
-1. Storage Service - Asset Management
-2. Cache Service - Cache Management
-3. Search Service - Index Management
-4. Database Optimization
+## Service Status Key
+- NOT STARTED: Initial planning only
+- PLANNED: Requirements complete, ready for development
+- IN PROGRESS: Active development
+- FEATURE COMPLETE: All features implemented, testing/docs remaining
+- COMPLETE: Ready for production
+### Upcoming Phases
+1. Security & Integration
+2. Data Management
+3. Monitoring & Operations
+4. Testing & Documentation
 
-### Phase 4: Monitoring & Ops
-1. Metrics Collection
-2. Logging Implementation
-3. Alert System
-4. Operational Tools
+### Next Steps
 
-### Phase 5: Testing & Documentation
-1. Unit Test Coverage
-2. Integration Tests
-3. API Documentation
-4. Operational Documentation
+1. Character Service: Complete load testing implementation
+   - See service COMPLETION_TASKS.md for details on Locust-based approach
+   - Update documentation after testing completed
 
-## Next Steps
+2. Core Services Phase
+   - Complete Campaign Service story management
+   - Finish Image Service generation pipeline
+   - Integrate all services with Message Hub
 
-1. Assign owners to each major component
-2. Break down tasks into 2-week sprints
-3. Set up tracking in project management system
-4. Establish regular progress reviews
+3. Infrastructure Services
+   - Begin API Gateway implementation
+   - Start Message Hub core features
+   - Plan Auth Service development
 
-## Progress Notes
+4. Testing & Documentation
+   - OpenAPI/Swagger documentation for all services
+   - Operational guides and deployment procedures
+   - Performance benchmarks and monitoring
 
-### 2025-09-06 (Late Night)
-LLM Service Updates:
-- Completed theme-aware generation pipeline implementation:
-  - Implemented core pipeline models for theme context and generation
-  - Created nano-optimized prompt engineering system
-  - Developed GPT-5-nano specific optimizations
-  - Added comprehensive request validation
-  - Implemented token analytics and monitoring
-  - Added performance tracking and metrics
-  - Created Prometheus integration for metrics
-  - Implemented structured logging
-  - Added token usage optimization
-  - Created theme compatibility validation
+## Service Status Key
+- NOT STARTED: Initial planning only
+- PLANNED: Requirements complete, ready for development
+- IN PROGRESS: Active development
+- FEATURE COMPLETE: All features implemented, testing/docs remaining
+- COMPLETE: Ready for production
 
-### 2025-09-06 (Night)
-LLM Service Updates:
-- Migrating to GPT-5-nano as primary model:
-  - Updated model configuration for nano-architecture
-  - Adapting token streaming for nano model characteristics
-  - Updating rate limits and performance targets
-  - Planning prompt engineering optimizations
-  - Configuring context window management
-  - Implementing nano-specific token analytics
+## Progress Tracking
+See individual service COMPLETION_TASKS.md files for detailed progress notes.
+
+Key milestones completed:
+- Character Service: Theme system, validation, inventory
+- Campaign Service: Version control system, story management
+- Image Service: Core infrastructure, generation pipeline
+- LLM Service: GPT-5-nano integration, theme system
+
+Next immediate focus: Load testing implementation for Character Service
 
 ### 2025-09-06 (Late Night)
 Character Service Milestones:
+- Load/Performance Testing Plan:
+  - Shift to standalone Locust-based load testing focused on stable endpoints (health, sheet retrieval)
+  - Add Makefile/Poetry tasks for running load tests in CI and locally
+  - Define performance thresholds per SRD (<100ms basic, <500ms transitions, <2s bulk) and report
+  - Defer flaky unit/integration harness imports to separate stabilization task
+
 - Completed core validation rules implementation:
   - Added comprehensive spell system validation
   - Added multiclass rules and validation

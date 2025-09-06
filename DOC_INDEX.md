@@ -48,8 +48,8 @@ Each service maintains its own SRD and ICD within its service directory. The ful
 
 #### Communication Layer
 - Message Hub
-  * SRD: `/services/message_hub/SRD_message_hub.md`
-  * ICD: `/services/message_hub/ICD_message_hub.md`
+  * SRD: `/services/message/SRD_message_hub.md`
+  * ICD: `/services/message/ICD_message_hub.md`
 - Cache Service
   * SRD: `/services/cache/SRD_cache_service.md`
   * ICD: `/services/cache/ICD_cache_service.md`

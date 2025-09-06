@@ -160,9 +160,15 @@ def create_app() -> FastAPI:
         title="LLM Service",
         description="AI-powered text and image generation for D&D Character Creator",
         version="1.0.0",
-        docs_url="/docs" if settings.debug else None,
-        redoc_url="/redoc" if settings.debug else None,
+        docs_url="/docs",
+        redoc_url="/redoc",
         lifespan=lifespan,
+        openapi_url="/api/v2/openapi.json",
+        swagger_ui_parameters={
+            "docExpansion": "none",
+            "persistAuthorization": True,
+            "defaultModelsExpandDepth": 3,
+        },
     )
 
     # Add middleware

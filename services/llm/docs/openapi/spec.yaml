@@ -1,0 +1,471 @@
+openapi: 3.0.3
+info:
+  title: LLM Service API
+  description: |
+    AI-powered text and image generation service for the D&D Character Creator system.
+    Provides content generation, theme analysis, and validation capabilities.
+  version: 1.0.0
+  contact:
+    name: DnD Character Creator Team
+    email: support@dndcreator.com
+
+servers:
+  - url: http://localhost:8100
+    description: Local development
+  - url: https://llm.dndcreator.com
+    description: Production environment
+
+tags:
+  - name: text
+    description: Text generation endpoints
+  - name: campaign
+    description: Campaign content generation
+  - name: theme
+    description: Theme analysis and management
+  - name: validation
+    description: Content validation
+
+components:
+  schemas:
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: Error code
+        message:
+          type: string
+          description: Error message
+        details:
+          type: object
+          description: Additional error details
+
+    TextGenerationRequest:
+      type: object
+      required:
+        - type
+        - theme
+      properties:
+        type:
+          type: string
+          enum:
+            - backstory
+            - personality
+            - combat
+            - equipment
+            - plot
+            - location
+            - quest
+            - dialogue
+            - event
+        character_context:
+          type: object
+          properties:
+            character_class:
+              type: string
+            character_race:
+              type: string
+            character_level:
+              type: integer
+              minimum: 1
+              maximum: 20
+            alignment:
+              type: string
+            background:
+              type: string
+        campaign_context:
+          type: object
+          properties:
+            campaign_theme:
+              type: string
+            party_level:
+              type: integer
+              minimum: 1
+              maximum: 20
+            party_size:
+              type: integer
+              minimum: 1
+            duration:
+              type: string
+        theme:
+          type: object
+          properties:
+            genre:
+              type: string
+            tone:
+              type: string
+            style:
+              type: string
+        model:
+          type: object
+          properties:
+            name:
+              type: string
+              default: gpt-4-turbo
+            temperature:
+              type: number
+              minimum: 0.0
+              maximum: 2.0
+              default: 0.7
+            max_tokens:
+              type: integer
+              minimum: 1
+              default: 1000
+
+    TextGenerationResponse:
+      type: object
+      required:
+        - content
+        - content_id
+        - metadata
+      properties:
+        content:
+          type: string
+        content_id:
+          type: string
+          format: uuid
+        metadata:
+          type: object
+        parent_content_id:
+          type: string
+          format: uuid
+
+    StoryRequest:
+      type: object
+      required:
+        - element_type
+        - context
+      properties:
+        element_type:
+          type: string
+          enum:
+            - plot
+            - quest
+            - scene
+            - dialogue
+            - description
+            - event
+        context:
+          $ref: '#/components/schemas/CampaignContext'
+        parameters:
+          type: object
+
+    NPCRequest:
+      type: object
+      required:
+        - role
+        - context
+      properties:
+        role:
+          type: string
+          enum:
+            - ally
+            - antagonist
+            - merchant
+            - quest_giver
+            - lore_keeper
+            - mentor
+            - neutral
+        context:
+          $ref: '#/components/schemas/CampaignContext'
+        traits:
+          type: object
+        relationships:
+          type: object
+
+    LocationRequest:
+      type: object
+      required:
+        - location_type
+        - context
+        - size
+        - purpose
+      properties:
+        location_type:
+          type: string
+          enum:
+            - town
+            - dungeon
+            - wilderness
+            - landmark
+            - building
+            - shop
+            - tavern
+        context:
+          $ref: '#/components/schemas/CampaignContext'
+        size:
+          type: string
+        purpose:
+          type: string
+        occupants:
+          type: array
+          items:
+            type: string
+        features:
+          type: array
+          items:
+            type: string
+
+    CampaignContext:
+      type: object
+      required:
+        - campaign_theme
+        - party_level
+        - party_size
+        - campaign_type
+        - setting
+        - length
+      properties:
+        campaign_theme:
+          type: string
+        party_level:
+          type: integer
+          minimum: 1
+          maximum: 20
+        party_size:
+          type: integer
+          minimum: 1
+        campaign_type:
+          type: string
+        setting:
+          type: string
+        length:
+          type: string
+
+    ThemeAnalysisRequest:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+        current_theme:
+          type: object
+        target_theme:
+          type: object
+        elements:
+          type: array
+          items:
+            type: string
+            enum:
+              - tone
+              - mood
+              - setting
+              - conflict
+              - symbolism
+              - character_focus
+              - story_structure
+              - world_building
+        category_filter:
+          type: array
+          items:
+            type: string
+
+    ValidationRequest:
+      type: object
+      required:
+        - content
+        - content_type
+        - rules
+      properties:
+        content:
+          type: string
+        content_type:
+          type: string
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationRule'
+        theme:
+          type: object
+        context:
+          type: object
+
+    ValidationRule:
+      type: object
+      required:
+        - category
+        - name
+      properties:
+        category:
+          type: string
+          enum:
+            - theme
+            - quality
+            - consistency
+            - rules
+            - custom
+        name:
+          type: string
+        parameters:
+          type: object
+        is_required:
+          type: boolean
+          default: true
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+paths:
+  /api/v2/text/character:
+    post:
+      tags:
+        - text
+      summary: Generate character content
+      description: Generate text content for a character (backstory, personality, etc.)
+      operationId: generateCharacterContent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TextGenerationRequest'
+      responses:
+        '200':
+          description: Content generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextGenerationResponse'
+        '429':
+          description: Rate limit exceeded
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v2/campaign/story:
+    post:
+      tags:
+        - campaign
+      summary: Generate story content
+      description: Generate story elements for a campaign
+      operationId: generateStory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoryRequest'
+      responses:
+        '200':
+          description: Story content generated successfully
+        '429':
+          description: Rate limit exceeded
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v2/campaign/npc:
+    post:
+      tags:
+        - campaign
+      summary: Generate NPC content
+      description: Generate an NPC for a campaign
+      operationId: generateNPC
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NPCRequest'
+      responses:
+        '200':
+          description: NPC generated successfully
+        '429':
+          description: Rate limit exceeded
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v2/campaign/location:
+    post:
+      tags:
+        - campaign
+      summary: Generate location content
+      description: Generate a location for a campaign
+      operationId: generateLocation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LocationRequest'
+      responses:
+        '200':
+          description: Location generated successfully
+        '429':
+          description: Rate limit exceeded
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v2/theme/analyze:
+    post:
+      tags:
+        - theme
+      summary: Analyze content themes
+      description: Analyze content for theme elements and compatibility
+      operationId: analyzeTheme
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ThemeAnalysisRequest'
+      responses:
+        '200':
+          description: Theme analysis completed successfully
+        '429':
+          description: Rate limit exceeded
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v2/validation/content:
+    post:
+      tags:
+        - validation
+      summary: Validate content
+      description: Validate content against specified rules
+      operationId: validateContent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidationRequest'
+      responses:
+        '200':
+          description: Content validation completed successfully
+        '429':
+          description: Rate limit exceeded
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+security:
+  - bearerAuth: []

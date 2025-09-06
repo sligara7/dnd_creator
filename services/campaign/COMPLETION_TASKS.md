@@ -20,7 +20,22 @@
   - Plot structure
   - Resource allocation
 
-### 1.2 Chapter Organization (✗ Not Started)
+### 1.2 Chapter Organization (✓ In Progress)
+- [x] Chapter models and persistence
+  - [x] Basic chapter data
+  - [x] Dependencies
+  - [x] Requirements
+  - [x] Content storage
+- [ ] Chapter generation system
+  - [ ] Content creation
+  - [ ] NPC integration
+  - [ ] Location mapping
+  - [ ] Encounter design
+- [ ] Chapter relationships
+  - [ ] Prerequisite tracking
+  - [ ] Narrative flow
+  - [ ] Theme consistency
+  - [ ] Resource distribution
 - [ ] Chapter models and persistence
   - Basic chapter data
   - Dependencies
@@ -37,7 +52,17 @@
   - Theme consistency
   - Resource distribution
 
-### 1.3 Plot System (✗ Not Started)
+### 1.3 Plot System (✓ In Progress)
+- [x] Plot tracking and evolution
+  - [x] Branch management
+  - [x] Decision points
+  - [x] Consequence tracking
+  - [x] Story progression
+- [x] NPC relationship system
+  - [x] Character connections
+  - [x] Motivation tracking
+  - [x] Reaction management
+  - [x] Development paths
 - [ ] Plot tracking and evolution
   - Branch management
   - Decision points
@@ -89,7 +114,17 @@
 
 ## 3. Version Control System
 
-### 3.1 Core Version Control (✗ Not Started)
+### 3.1 Core Version Control (✓ Complete)
+- [x] Git-like versioning
+  - [x] Commit management
+  - [x] Branch handling
+  - [x] Merge operations
+  - [x] History tracking
+- [x] State management
+  - [x] Version metadata
+  - [x] State transitions
+  - [x] Dependency tracking
+  - [x] Resource versioning
 - [ ] Git-like versioning
   - Commit management
   - Branch handling
@@ -101,7 +136,17 @@
   - Dependency tracking
   - Resource versioning
 
-### 3.2 Branch Management (✗ Not Started)
+### 3.2 Branch Management (✓ Complete)
+- [x] Branch operations
+  - [x] Branch creation
+  - [x] Branch switching
+  - [x] Branch merging
+  - [x] Conflict resolution
+- [x] Player choice tracking
+  - [x] Decision points
+  - [x] Choice consequences
+  - [x] Branch exploration
+  - [x] State preservation
 - [ ] Branch operations
   - Branch creation
   - Branch switching
@@ -115,7 +160,23 @@
 
 ## 4. API Implementation
 
-### 4.1 Campaign Management API (✗ Not Started)
+### 4.1 Campaign Management API (✓ Complete)
+- [x] CRUD operations
+  ```http
+  POST /api/v2/factory/create
+  GET /api/v2/campaigns/{id}
+  PUT /api/v2/campaigns/{id}
+  DELETE /api/v2/campaigns/{id}
+  ```
+- [ ] Campaign refinement
+  ```http
+  POST /api/v2/campaigns/{id}/refine
+  ```
+- [x] Version management
+  ```http
+  POST /api/v2/campaigns/{id}/versions
+  GET /api/v2/campaigns/{id}/versions
+  ```
 - [ ] CRUD operations
   ```http
   POST /api/v2/factory/create
@@ -172,7 +233,17 @@
   - Story impact
   - Experience tracking
 
-### 5.2 Message Hub Integration (✗ Not Started)
+### 5.2 Message Hub Integration (✓ In Progress)
+- [x] Event system
+  - [x] Event publication
+  - [x] Event subscription
+  - [x] State synchronization
+  - [x] Error handling
+- [ ] Message routing
+  - [ ] Service discovery
+  - [ ] Health monitoring
+  - [ ] Circuit breaking
+  - [ ] Retry handling
 - [ ] Event system
   - Event publication
   - Event subscription
@@ -294,4 +365,12 @@
 
 ## Progress Notes
 
-*Add progress updates here as tasks are completed*
+- 2025-09-06 (Late Evening): Implemented story management system
+  - Added models: Plots, Story Arcs, NPC Relationships
+  - Created StoryManagementService
+  - Implemented chapter organization via PlotChapter associations
+  - Added plot tracking, state updates, and evolution
+  - Added NPC relationship tracking
+  - Created API endpoints for arcs, plots, chapters, relationships, and structure
+  - Wired service dependencies
+  - Next: Write tests and wire router into FastAPI app

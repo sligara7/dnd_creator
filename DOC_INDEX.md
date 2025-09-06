@@ -87,7 +87,7 @@ Each service maintains its own SRD and ICD within its service directory. The ful
 | Character Service | ✓     | ✓          | [Core Services] | Character management |
 | Campaign Service | ✓      | ✓          | [Core Services] | Campaign management |
 | Image Service | ✓         | ✓          | [Core Services] | Image generation and processing |
-| LLM Service  | ✓         | ✓          | [Core Services] | AI text generation |
+| LLM Service  | ✓         | ✓          | [Core Services] | AI text/image generation (Feature Complete) |
 | Catalog Service | ✓       | ✓          | [Core Services] | Game content management |
 
 ### Support Services

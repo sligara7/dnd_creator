@@ -10,11 +10,48 @@ Pre-Task:
 - Index the files within a service to know exactly what the service already performs
 
 Post-Task:
-- Update service tests (using pytest) to test any new functionality
-- Update the service's COMPLETION_TASKS.md with task completion details
-- Reflect high-level progress in this SERVICE_GAPS.md
-- Update any Major Changes & Milestones if appropriate (see Major Changes & Milestones section)
-- Update GitHub (commit and push) with the completion
+
+AFTER completing ANY task, perform these steps IN ORDER:
+
+1. Documentation Updates:
+   a. Update the service's COMPLETION_TASKS.md:
+      - Add completion timestamp
+      - Document key changes made
+      - Note any technical details worth preserving
+   
+   b. Update this SERVICE_GAPS.md:
+      - Mark completed items with ✓
+      - Add completion date in parentheses
+      - Update status sections if needed
+   
+   c. If major changes were made:
+      - Update the service's README.md with new capabilities
+      - Update WARP.md if architectural changes affect the system
+
+2. Git Updates (REQUIRED):
+   a. Stage changes:
+      ```bash
+      git add .
+      ```
+   
+   b. Create detailed commit:
+      ```bash
+      git commit -m "[Service Name] Brief description of changes
+      
+      - Detailed bullet point of major change 1
+      - Detailed bullet point of major change 2
+      - References task/issue number if applicable"
+      ```
+   
+   c. Push to remote:
+      ```bash
+      git push origin main  # or appropriate branch
+      ```
+
+3. Testing Updates:
+   - Run existing tests: `poetry run pytest`
+   - Add new tests for added functionality in appropriate test files
+   - Verify all tests pass
 
 Major Changes & Milestones:
 - For significant functionality changes or milestone completions:
@@ -83,12 +120,24 @@ Next steps:
 - Production deployment preparation
 
 ### LLM Service
-Status: IN PROGRESS
+Status: FEATURE COMPLETE
 Completion Tasks: [/services/llm/COMPLETION_TASKS.md](/dnd_tools/dnd_char_creator/services/llm/COMPLETION_TASKS.md)
 
-Remaining High Priority:
-- Service Integration Features
-- Content Validation System
+✓ Service Integration Features (Completed 2025-09-06)
+✓ Content Validation System (Completed 2025-09-06)
+
+Milestones Completed:
+- Core content generation implementation
+- Character and campaign content generation
+- Image generation and enhancement pipeline
+- Theme management system
+- Content validation framework
+- OpenAPI documentation
+- Implementation guides
+
+Next steps:
+1. Integration with Message Hub
+2. End-to-end testing with other services
 
 ## Infrastructure Services
 
@@ -180,6 +229,20 @@ Remaining High Priority:
 2. Data Management
 3. Monitoring & Operations
 4. Testing & Documentation
+
+### 2025-09-06 (Night - I)
+LLM Service Milestones:
+- Completed feature implementation:
+  * Text generation (character, campaign)
+  * Image generation pipeline
+  * Theme management
+  * Content validation
+  * Service integration
+  * Performance testing
+  * API documentation
+  * Implementation guides
+- LLM service is now feature complete
+- Next steps: integration and testing
 
 ### Next Steps
 

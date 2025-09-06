@@ -185,12 +185,26 @@ The system comprises several layers of services:
    - Tactical overlays
    - Image processing
 
-7. **LLM Service**
-   - Text generation
-   - Story narration
-   - Content refinement
-   - Theme adaptation
-   - Context management
+7. **LLM Service (Feature Complete)**
+   - AI content generation:
+     * GPT-5-nano integration (primary)
+       - 8k context window optimization
+       - Enhanced token streaming
+       - Dynamic allocation
+       - Resource management
+     * Text and image generation:
+       - Character backstories and traits
+       - Campaign narratives and plots
+       - Character portraits and scenes
+       - Location visualizations
+       - Equipment illustrations
+       - Theme-aware style transfer
+   - Advanced optimization:
+     * Redis-based caching
+     * Smart rate limiting
+     * Resource quotas
+     * Content validation
+     * Theme consistency checks
 
 8. **Catalog Service**
    - Content management

@@ -1,0 +1,680 @@
+openapi: 3.0.3
+info:
+  title: LLM Service API
+  description: API for content generation and validation using LLMs and image models.
+  version: '1.0'
+  contact:
+    name: D&D Character Creator Team
+    email: support@dndcreator.com
+
+servers:
+  - url: https://llm.dndcreator.com/api/v2
+    description: Production API server
+  - url: http://localhost:8100/api/v2
+    description: Local development server
+
+security:
+  - ApiKeyAuth: []
+
+tags:
+  - name: text
+    description: Text generation endpoints
+  - name: image
+    description: Image generation endpoints
+  - name: theme
+    description: Theme management endpoints
+  - name: validation
+    description: Content validation endpoints
+  - name: health
+    description: Health check endpoints
+
+paths:
+  /text/character:
+    post:
+      tags: [text]
+      summary: Generate character content
+      description: |
+        Generate character-related content like backstories, personalities,
+        and combat descriptions.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CharacterGenerationRequest'
+      responses:
+        '200':
+          description: Content generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /text/campaign:
+    post:
+      tags: [text]
+      summary: Generate campaign content
+      description: |
+        Generate campaign content like plots, NPCs, locations, and events.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CampaignGenerationRequest'
+      responses:
+        '200':
+          description: Content generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /image/generate:
+    post:
+      tags: [image]
+      summary: Generate image from text
+      description: |
+        Generate images using text-to-image models with optional theme
+        and style specifications.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TextToImageRequest'
+      responses:
+        '200':
+          description: Image generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageGenerationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /image/transform:
+    post:
+      tags: [image]
+      summary: Transform existing image
+      description: |
+        Apply transformations like style transfer, theme adaptation,
+        and visual enhancements to existing images.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImageToImageRequest'
+      responses:
+        '200':
+          description: Image transformed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageGenerationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /image/enhance:
+    post:
+      tags: [image]
+      summary: Enhance image quality
+      description: |
+        Apply quality enhancements like upscaling, face improvement,
+        and detail enhancement.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImageEnhancementRequest'
+      responses:
+        '200':
+          description: Image enhanced successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageGenerationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /theme/text:
+    post:
+      tags: [theme]
+      summary: Apply theme to text
+      description: |
+        Apply thematic elements and style adaptations to text content.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TextThemeRequest'
+      responses:
+        '200':
+          description: Theme applied successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /theme/validate:
+    post:
+      tags: [validation]
+      summary: Validate theme consistency
+      description: |
+        Check if content matches the specified theme and style guidelines.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ThemeValidationRequest'
+      responses:
+        '200':
+          description: Theme validation completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /text/validate:
+    post:
+      tags: [validation]
+      summary: Validate content quality
+      description: |
+        Check content quality, coherence, and D&D rule compliance.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContentValidationRequest'
+      responses:
+        '200':
+          description: Content validation completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /metrics/detailed:
+    get:
+      tags: [health]
+      summary: Get detailed metrics
+      description: |
+        Retrieve detailed metrics about service usage, performance,
+        and resource consumption.
+      responses:
+        '200':
+          description: Metrics retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetailedMetrics'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  schemas:
+    RequestBase:
+      type: object
+      required: [request_id]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+          description: Unique request identifier
+
+    CharacterGenerationRequest:
+      allOf:
+        - $ref: '#/components/schemas/RequestBase'
+        - type: object
+          required: [content_type, parameters]
+          properties:
+            content_type:
+              type: string
+              enum:
+                - backstory
+                - personality
+                - combat
+                - equipment
+            parameters:
+              type: object
+              required: [character_class, level]
+              properties:
+                character_class:
+                  type: string
+                  description: Character's class
+                character_race:
+                  type: string
+                  description: Character's race
+                level:
+                  type: integer
+                  minimum: 1
+                  maximum: 20
+                background:
+                  type: string
+                theme:
+                  $ref: '#/components/schemas/ThemeContext'
+
+    CampaignGenerationRequest:
+      allOf:
+        - $ref: '#/components/schemas/RequestBase'
+        - type: object
+          required: [element_type, context]
+          properties:
+            element_type:
+              type: string
+              enum:
+                - plot
+                - location
+                - quest
+                - dialogue
+                - event
+            context:
+              type: object
+              required: [campaign_theme, party_level]
+              properties:
+                campaign_theme:
+                  type: string
+                party_level:
+                  type: integer
+                  minimum: 1
+                  maximum: 20
+                party_size:
+                  type: integer
+                  minimum: 1
+                duration:
+                  type: string
+                  enum:
+                    - short
+                    - medium
+                    - long
+
+    TextToImageRequest:
+      allOf:
+        - $ref: '#/components/schemas/RequestBase'
+        - type: object
+          required: [prompt, model, size]
+          properties:
+            prompt:
+              type: string
+              maxLength: 1000
+            model:
+              $ref: '#/components/schemas/ImageModelConfig'
+            size:
+              $ref: '#/components/schemas/ImageSize'
+            parameters:
+              $ref: '#/components/schemas/ImageParameters'
+
+    ImageToImageRequest:
+      allOf:
+        - $ref: '#/components/schemas/TextToImageRequest'
+        - type: object
+          required: [source_image]
+          properties:
+            source_image:
+              type: string
+              format: byte
+              description: Base64 encoded source image
+            strength:
+              type: number
+              minimum: 0
+              maximum: 1
+              default: 0.8
+
+    ImageEnhancementRequest:
+      allOf:
+        - $ref: '#/components/schemas/RequestBase'
+        - type: object
+          required: [image, enhancements]
+          properties:
+            image:
+              type: string
+              format: byte
+              description: Base64 encoded image
+            enhancements:
+              type: array
+              items:
+                type: string
+                enum:
+                  - face_fix
+                  - upscale
+                  - style_transfer
+            parameters:
+              type: object
+              properties:
+                upscale_factor:
+                  type: number
+                  default: 2.0
+                face_restore_model:
+                  type: string
+                quality:
+                  type: string
+
+    TextThemeRequest:
+      allOf:
+        - $ref: '#/components/schemas/RequestBase'
+        - type: object
+          required: [content, theme]
+          properties:
+            content:
+              type: string
+            theme:
+              $ref: '#/components/schemas/ThemeContext'
+            parameters:
+              type: object
+              properties:
+                strength:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                  default: 0.8
+                preserve_key_elements:
+                  type: boolean
+                  default: true
+
+    ThemeValidationRequest:
+      allOf:
+        - $ref: '#/components/schemas/RequestBase'
+        - type: object
+          required: [content, theme]
+          properties:
+            content:
+              type: string
+            theme:
+              $ref: '#/components/schemas/ThemeContext'
+
+    ContentValidationRequest:
+      allOf:
+        - $ref: '#/components/schemas/RequestBase'
+        - type: object
+          required: [content, content_type]
+          properties:
+            content:
+              type: string
+            content_type:
+              type: string
+            parameters:
+              type: object
+
+    ImageModelConfig:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          enum:
+            - stable-diffusion-v1-5
+            - stable-diffusion-v2-1
+        steps:
+          type: integer
+          minimum: 20
+          maximum: 50
+          default: 30
+        cfg_scale:
+          type: number
+          minimum: 1
+          maximum: 20
+          default: 7.5
+
+    ImageSize:
+      type: object
+      required: [width, height]
+      properties:
+        width:
+          type: integer
+          minimum: 256
+          maximum: 1024
+          default: 512
+        height:
+          type: integer
+          minimum: 256
+          maximum: 1024
+          default: 512
+
+    ImageParameters:
+      type: object
+      properties:
+        style_preset:
+          type: string
+        negative_prompt:
+          type: string
+        seed:
+          type: integer
+
+    ThemeContext:
+      type: object
+      properties:
+        style:
+          type: string
+        tone:
+          type: string
+        details:
+          type: string
+
+    GenerationResponse:
+      type: object
+      required: [request_id, result, metadata]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        result:
+          oneOf:
+            - type: string  # For text content
+            - type: string  # For base64 encoded images
+        metadata:
+          type: object
+          properties:
+            source_service:
+              type: string
+            model_used:
+              type: string
+            token_usage:
+              type: object
+            settings_used:
+              type: object
+
+    ImageGenerationResponse:
+      type: object
+      required: [request_id, result, metadata]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        result:
+          type: string
+          format: byte
+          description: Base64 encoded image
+        metadata:
+          type: object
+          properties:
+            source_service:
+              type: string
+            model_used:
+              type: string
+            settings_used:
+              type: object
+
+    ValidationResponse:
+      type: object
+      required: [request_id, is_valid, score, issues]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        is_valid:
+          type: boolean
+        score:
+          type: number
+          minimum: 0
+          maximum: 1
+        issues:
+          type: array
+          items:
+            type: object
+            required: [category, severity, description]
+            properties:
+              category:
+                type: string
+              severity:
+                type: string
+                enum:
+                  - error
+                  - warning
+                  - info
+              description:
+                type: string
+              impact:
+                type: string
+                enum:
+                  - high
+                  - medium
+                  - low
+        suggestions:
+          type: array
+          items:
+            type: string
+
+    DetailedMetrics:
+      type: object
+      properties:
+        generation_metrics:
+          type: object
+          properties:
+            text:
+              type: object
+              properties:
+                total_requests:
+                  type: integer
+                successful_requests:
+                  type: integer
+                failed_requests:
+                  type: integer
+                token_usage:
+                  type: object
+            image:
+              type: object
+              properties:
+                total_requests:
+                  type: integer
+                successful_requests:
+                  type: integer
+                failed_requests:
+                  type: integer
+                resource_usage:
+                  type: object
+        cache_metrics:
+          type: object
+          properties:
+            hit_rate:
+              type: number
+            miss_rate:
+              type: number
+            eviction_rate:
+              type: number
+        rate_limiting:
+          type: object
+          properties:
+            text:
+              type: object
+              properties:
+                current_rate:
+                  type: number
+                limit_remaining:
+                  type: integer
+            image:
+              type: object
+              properties:
+                current_rate:
+                  type: number
+                limit_remaining:
+                  type: integer
+
+  responses:
+    BadRequest:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    RateLimitExceeded:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    ServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object

@@ -37,8 +37,8 @@ Each service maintains its own SRD and ICD within its service directory. The ful
 
 #### Edge Services
 - API Gateway
-  * SRD: `/services/api_gateway/SRD_api_gateway.md`
-  * ICD: `/services/api_gateway/ICD_api_gateway.md`
+  * SRD: `/services/gateway/SRD_api_gateway.md`
+  * ICD: `/services/gateway/ICD_api_gateway.md`
 - Auth Service
   * SRD: `/services/auth/SRD_auth_service.md`
   * ICD: `/services/auth/ICD_auth_service.md`
@@ -57,7 +57,7 @@ Each service maintains its own SRD and ICD within its service directory. The ful
   * SRD: `/services/storage/SRD_storage_service.md`
   * ICD: `/services/storage/ICD_storage_service.md`
 
-#### Support Services
+#### Support Services/main/services/image
 - Search Service
   * SRD: `/services/search/SRD_search_service.md`
   * ICD: `/services/search/ICD_search_service.md`

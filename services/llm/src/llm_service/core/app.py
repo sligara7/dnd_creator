@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from prometheus_client import make_asgi_app
 import structlog
 
-from llm_service.api import health, text, image, theme
+from llm_service.api import health, text, image, theme, validation, campaign
 from llm_service.core.cache import RedisCache, RateLimiter
 from llm_service.core.events import MessageHubClient
 from llm_service.core.exceptions import LLMServiceError
@@ -19,6 +19,8 @@ from llm_service.services.getimg_ai import GetImgAIClient
 from llm_service.services.text import TextGenerationService
 from llm_service.services.image import ImageGenerationService
 from llm_service.services.theme import ThemeAnalysisService
+from llm_service.services.validation import ValidationService
+from llm_service.services.campaign import CampaignContentService
 
 # Configure structured logging
 logging.config.dictConfig({
@@ -108,6 +110,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         db=app.state.db,
         logger=app.state.logger,
     )
+    app.state.validation_service = ValidationService(
+        openai=app.state.openai,
+        rate_limiter=app.state.rate_limiter,
+        db=app.state.db,
+        logger=app.state.logger,
+    )
+    app.state.campaign_service = CampaignContentService(
+        openai=app.state.openai,
+        rate_limiter=app.state.rate_limiter,
+        message_hub=app.state.message_hub,
+        validation_service=app.state.validation_service,
+        db=app.state.db,
+        logger=app.state.logger,
+    )
 
     # Initialize services
     await app.state.text_service.initialize()
@@ -184,6 +200,8 @@ def create_app() -> FastAPI:
     api_v2_app.include_router(text.router)
     api_v2_app.include_router(image.router)
     api_v2_app.include_router(theme.router)
+    api_v2_app.include_router(validation.router)
+    api_v2_app.include_router(campaign.router)
     app.mount(settings.api_prefix, api_v2_app)
 
     return app

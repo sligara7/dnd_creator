@@ -70,14 +70,14 @@ This document outlines remaining implementation work needed to bring each servic
 ### Image Service
 #### High Priority
 1. **Generation Pipeline**
-   - [ ] Portrait generation queue
+   - [x] Generation queue model
+   - [ ] Queue processing system
    - [ ] Style consistency system
-   - [ ] Theme-aware modifications
 
 2. **Storage Integration**
-   - [ ] Asset versioning
+   - [x] Asset model and structure
    - [ ] Efficient retrieval system
-   - [ ] Cache management
+   - [x] Cache infrastructure
 
 3. **Missing API Endpoints**
    - [ ] POST /api/v2/images/generate/map
@@ -422,6 +422,21 @@ Campaign Service Milestones:
   - All inter-service communication properly routed through Message Hub
   - Full validation and error handling
   - Progress tracking through transitions
+
+### 2025-09-06 (Late Afternoon)
+Image Service Milestones:
+- Completed core infrastructure implementation:
+  - Added FastAPI application structure
+  - Implemented async database models
+  - Created initial migrations
+  - Added Message Hub integration
+  - Set up health monitoring
+  - Implemented core utilities
+  - Added configuration system
+  - Created service integrations
+  - Added exception framework
+  - Added logging system
+  - Added dependency injection
 
 ### 2025-09-06
 Character Service Milestones:

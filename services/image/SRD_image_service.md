@@ -9,12 +9,19 @@ Last Updated: 2025-08-30
 ### 1.1 Purpose
 The Image Service provides AI-powered image generation for the D&D Character Creator system, supporting creation of maps, character portraits, monster images, and item visuals with theme-aware generation and tactical overlay support.
 
-### 1.2 Core Mission
-- **Map Generation**: Create tactical and campaign-level maps
-- **Character Visualization**: Generate character and NPC portraits
-- **Item Illustration**: Create weapon, armor, and item images
-- **Tactical Support**: Provide overlay capabilities for gameplay
-- **Theme Integration**: Support campaign themes in visual content
+### 1.2 Core Principles
+- Provide service-specific functionality
+- All inter-service communication MUST go through Message Hub
+- No direct service-to-service communication allowed
+- Service isolation and independence
+- Event-driven architecture
+
+### 1.3 Core Principles
+- All inter-service communication MUST go through Message Hub
+- No direct service-to-service communication allowed
+- Service isolation and independence
+- Event-driven architecture
+- Focused on visual content generation and management
 
 ### 1.3 Scope
 - Map generation and management

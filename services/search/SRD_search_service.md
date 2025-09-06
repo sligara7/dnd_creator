@@ -9,12 +9,12 @@ Last Updated: 2025-08-30
 ### 1.1 Purpose
 The Search Service provides centralized search capabilities for the D&D Character Creator system, offering full-text, semantic, and faceted search across all game content and assets.
 
-### 1.2 Core Mission
-- **Content Discovery**: Powerful search across all game content
-- **Semantic Search**: Natural language understanding
-- **Performance**: Fast and relevant search results
-- **Scalability**: Handle large content volumes
-- **Analytics**: Search insights and trends
+### 1.2 Core Principles
+- Provide service-specific functionality
+- All inter-service communication MUST go through Message Hub
+- No direct service-to-service communication allowed
+- Service isolation and independence
+- Event-driven architecture
 
 ### 1.3 Scope
 - Full-text search

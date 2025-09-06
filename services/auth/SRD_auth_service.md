@@ -9,12 +9,12 @@ Last Updated: 2025-08-30
 ### 1.1 Purpose
 The Auth Service provides centralized authentication and authorization for the D&D Character Creator system, ensuring secure access control and identity management across all services.
 
-### 1.2 Core Mission
-- **Unified Authentication**: Single source of truth for user identity
-- **Access Control**: Role-based access management
-- **Token Management**: JWT issuance and validation
-- **Session Handling**: Secure session management
-- **Audit Support**: Security event logging
+### 1.2 Core Principles
+- Provide service-specific functionality
+- All inter-service communication MUST go through Message Hub
+- No direct service-to-service communication allowed
+- Service isolation and independence
+- Event-driven architecture
 
 ### 1.3 Scope
 - User authentication

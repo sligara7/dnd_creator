@@ -15,11 +15,55 @@ This document serves as the master index for all service documentation, providin
   * Service organization
   * Development guidelines
 
-### Service Requirements Documents (SRDs)
-Located in `/requirements/srd/`, these documents define the requirements, capabilities, and responsibilities of each service.
+### Service Requirements Documents (SRDs) & Interface Control Documents (ICDs)
+Each service maintains its own SRD and ICD within its service directory. The full paths to these documents are listed below:
 
-### Interface Control Documents (ICDs)
-Located in `/requirements/icd/`, these documents define the interfaces, APIs, and integration patterns for each service.
+#### Core Services
+- Character Service
+  * SRD: `/services/character/SRD_character_service.md`
+  * ICD: `/services/character/ICD_character_service.md`
+- Campaign Service
+  * SRD: `/services/campaign/SRD_campaign_service.md`
+  * ICD: `/services/campaign/ICD_campaign_service.md`
+- Image Service
+  * SRD: `/services/image/SRD_image_service.md`
+  * ICD: `/services/image/ICD_image_service.md`
+- LLM Service
+  * SRD: `/services/llm/SRD_llm_service.md`
+  * ICD: `/services/llm/ICD_llm_service.md`
+- Catalog Service
+  * SRD: `/services/catalog/SRD_catalog_service.md`
+  * ICD: `/services/catalog/ICD_catalog_service.md`
+
+#### Edge Services
+- API Gateway
+  * SRD: `/services/api_gateway/SRD_api_gateway.md`
+  * ICD: `/services/api_gateway/ICD_api_gateway.md`
+- Auth Service
+  * SRD: `/services/auth/SRD_auth_service.md`
+  * ICD: `/services/auth/ICD_auth_service.md`
+- Metrics Service
+  * SRD: `/services/metrics/SRD_metrics_service.md`
+  * ICD: `/services/metrics/ICD_metrics_service.md`
+
+#### Communication Layer
+- Message Hub
+  * SRD: `/services/message_hub/SRD_message_hub.md`
+  * ICD: `/services/message_hub/ICD_message_hub.md`
+- Cache Service
+  * SRD: `/services/cache/SRD_cache_service.md`
+  * ICD: `/services/cache/ICD_cache_service.md`
+- Storage Service
+  * SRD: `/services/storage/SRD_storage_service.md`
+  * ICD: `/services/storage/ICD_storage_service.md`
+
+#### Support Services
+- Search Service
+  * SRD: `/services/search/SRD_search_service.md`
+  * ICD: `/services/search/ICD_search_service.md`
+- Audit Service
+  * SRD: `/services/audit/SRD_audit_service.md`
+  * ICD: `/services/audit/ICD_audit_service.md`
 
 ## Service Documentation Matrix
 

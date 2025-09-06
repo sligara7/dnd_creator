@@ -1,0 +1,3 @@
+please review /home/ajs7/dnd_tools/dnd_char_creator/SERVICE_GAPS.md and create a completion tasks document within the LLM service, similar to the /home/ajs7/dnd_tools/dnd_char_creator/services/character/COMPLETION_TASKS.md document. Do a review of the /home/ajs7/dnd_tools/dnd_char_creator/requirements/icd/ICD_llm_service.md and /home/ajs7/dnd_tools/dnd_char_creator/requirements/srd/SRD_llm_service.md documents to make sure all requirements are satisfied. Then index the llm service folder to see what's already been implemented.  Then let's start implementing the llm service tasks.  remember to update progress in the appropriate documents as we go.  the LLM service can be found at: /home/ajs7/dnd_tools/dnd_char_creator/services/llm
+
+Change as appropriate for each service

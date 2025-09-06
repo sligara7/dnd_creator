@@ -10,11 +10,11 @@ Last Updated: 2025-08-30
 The Message Hub Service is the mandatory central communication backbone of the D&D Character Creator system. It acts as the sole intermediary for all inter-service communication, ensuring complete service isolation, reliable message delivery, and system-wide event propagation. No direct service-to-service communication is permitted - the Message Hub is the authoritative message broker for the entire system.
 
 ### 1.2 Core Principles
-- Single source of truth for service communication
-- Complete service isolation through message brokering
-- Centralized event propagation and state tracking
-- Unified service discovery and health monitoring
-- Guaranteed message delivery with proper error handling
+- Provide service-specific functionality
+- All inter-service communication MUST go through Message Hub
+- No direct service-to-service communication allowed
+- Service isolation and independence
+- Event-driven architecture
 
 ### 1.3 Scope
 - All inter-service communication (mandatory)

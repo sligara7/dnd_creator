@@ -9,12 +9,12 @@ Last Updated: 2025-08-30
 ### 1.1 Purpose
 The Catalog Service provides a unified, centralized catalog system for all D&D content in the system, including items, spells, monsters, and custom content. It ensures consistent access, validation, and discovery of content across all services.
 
-### 1.2 Core Mission
-- **Unified Content Management**: Central source for all game content
-- **Content Discovery**: Advanced search and filtering capabilities
-- **Content Validation**: Ensure consistency and balance
-- **Custom Content**: Support user-generated content
-- **Theme Integration**: Theme-aware content discovery
+### 1.2 Core Principles
+- Provide service-specific functionality
+- All inter-service communication MUST go through Message Hub
+- No direct service-to-service communication allowed
+- Service isolation and independence
+- Event-driven architecture
 
 ### 1.3 Scope
 - Item and equipment catalog

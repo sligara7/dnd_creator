@@ -4,14 +4,42 @@ Version: 1.0
 Status: Active
 Last Updated: 2025-08-30
 
-## 1. Service Interface
+## 1. Communication Architecture
 
-### 1.1 Base URL
-```
-http://campaign-service:8001
+### 1.1 Service Communication Pattern
+- All service-to-service communication MUST be routed through the Message Hub service
+- No direct HTTP calls between services are permitted
+- All integrations must use asynchronous messaging patterns
+- All events and requests must include proper correlation IDs
+
+### 1.2 Base URL (API Gateway Access Only)
+```http
+http://campaign-service:8000  # Only accessible via API Gateway
 ```
 
-### 1.2 Common Headers
+### 1.3 Message Hub Protocol
+- Every request/event must include:
+  * Correlation ID (for tracing)
+  * Source service identifier
+  * Request/event type and version
+  * Timestamp
+  * TTL (time-to-live)
+
+### 1.4 Common Headers
+## 1. Service Architecture
+
+### 1.1 Communication Pattern
+- All service-to-service communication MUST be routed through the Message Hub service
+- No direct HTTP calls between services are permitted
+- All integrations must use asynchronous messaging patterns
+- All events and requests must include proper correlation IDs
+
+### 1.2 Base URL (HTTP API Gateway Access Only)
+```
+http://campaign-service:8001  # Only accessible via API Gateway
+```
+
+### 1.3 Common Headers
 ```
 X-Request-ID: <uuid>
 Content-Type: application/json
@@ -338,45 +366,98 @@ POST /api/v2/campaigns/{id}/maps
 }
 ```
 
-## 7. Message Hub Integration
+## 7. Message Hub Integration (Required)
 
-### 7.1 Events Published
+### 7.1 Message Hub Communication Protocol
+- ALL service-to-service communication must use Message Hub
+- Every request must include:
+  * Correlation ID (for tracing)
+  * Source service identifier
+  * Request type and version
+  * Timestamp
+  * TTL (time-to-live)
+
+### 7.2 Events Published
 ```json
 {
-  "campaign_created": {
-    "campaign_id": "uuid",
-    "theme": "string",
-    "timestamp": "string"
+  "metadata": {
+    "correlation_id": "uuid",
+    "source_service": "campaign-service",
+    "event_type": "string",
+    "event_version": "string",
+    "timestamp": "string",
+    "ttl": "integer"
   },
-  "chapter_completed": {
-    "campaign_id": "uuid",
-    "chapter_id": "uuid",
-    "outcomes": []
-  },
-  "theme_updated": {
-    "campaign_id": "uuid",
-    "old_theme": "string",
-    "new_theme": "string"
+  "events": {
+    "campaign_created": {
+      "campaign_id": "uuid",
+      "theme": "string",
+      "timestamp": "string"
+    },
+    "chapter_completed": {
+      "campaign_id": "uuid",
+      "chapter_id": "uuid",
+      "outcomes": []
+    },
+    "theme_updated": {
+      "campaign_id": "uuid",
+      "old_theme": "string",
+      "new_theme": "string"
+    }
   }
 }
 ```
 
-### 7.2 Events Subscribed
+### 7.3 Events Subscribed
 ```json
 {
-  "character_created": {
-    "character_id": "uuid",
-    "campaign_id": "uuid"
+  "metadata": {
+    "correlation_id": "uuid",
+    "source_service": "string",
+    "event_type": "string",
+    "event_version": "string",
+    "timestamp": "string",
+    "ttl": "integer"
   },
-  "character_leveled": {
-    "character_id": "uuid",
-    "new_level": "integer"
-  },
-  "journal_updated": {
-    "character_id": "uuid",
-    "entry_id": "uuid"
+  "events": {
+    "character_created": {
+      "character_id": "uuid",
+      "campaign_id": "uuid"
+    },
+    "character_leveled": {
+      "character_id": "uuid",
+      "new_level": "integer"
+    },
+    "journal_updated": {
+      "character_id": "uuid",
+      "entry_id": "uuid"
+    }
   }
 }
+```
+
+### 7.4 Service Integration Routes
+All service integration MUST go through Message Hub using these routes:
+
+#### Character Service Integration
+```
+message_hub.request("character.get_party", {...})
+message_hub.request("character.get_progress", {...})
+message_hub.request("character.get_journal", {...})
+```
+
+#### LLM Service Integration
+```
+message_hub.request("llm.generate_campaign", {...})
+message_hub.request("llm.refine_content", {...})
+message_hub.request("llm.validate_theme", {...})
+```
+
+#### Image Service Integration
+```
+message_hub.request("image.generate_map", {...})
+message_hub.request("image.generate_portrait", {...})
+message_hub.request("image.create_illustration", {...})
 ```
 
 ## 8. Integration Endpoints

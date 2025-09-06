@@ -11,10 +11,10 @@ The API Gateway Service acts as the unified entry point for all client requests,
 
 ### 1.2 Core Principles
 - Single public entry point for the entire system
-- All inter-service communication routed through Message Hub
+- All inter-service communication MUST go through Message Hub
 - No direct service-to-service communication allowed
-- Authentication and authorization at edge only
-- All services isolated in private network
+- Service isolation and independence
+- Event-driven architecture
 
 ### 1.3 Scope
 - Request routing and load balancing

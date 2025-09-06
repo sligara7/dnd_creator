@@ -8,8 +8,28 @@ Last Updated: 2025-08-30
 
 The Message Hub is the central communication backbone of the D&D Character Creator system. It facilitates all inter-service communication, ensuring service isolation and reliable message delivery. No direct service-to-service communication is permitted - all interactions MUST flow through the Message Hub.
 
-## 1. Service Interface
+## 1. Communication Architecture
 
+### 1.1 Service Communication Pattern
+- All service-to-service communication MUST be routed through the Message Hub service
+- No direct HTTP calls between services are permitted
+- All integrations must use asynchronous messaging patterns
+- All events and requests must include proper correlation IDs
+
+### 1.2 Base URL (API Gateway Access Only)
+```http
+http://message-hub:8000  # Only accessible via API Gateway
+```
+
+### 1.3 Message Hub Protocol
+- Every request/event must include:
+  * Correlation ID (for tracing)
+  * Source service identifier
+  * Request/event type and version
+  * Timestamp
+  * TTL (time-to-live)
+
+### 1.4 Common Headers
 ### 1.1 Base URL
 ```
 http://message-hub:8200

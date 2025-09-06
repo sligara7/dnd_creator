@@ -9,7 +9,12 @@ Last Updated: 2025-08-30
 ### 1.1 Purpose
 The Character Service provides AI-powered D&D 5e 2024 character creation and management, enabling users to create, evolve, and manage ANY character concept through a combination of official D&D content and AI-generated custom content.
 
-### 1.2 Core Mission
+### 1.2 Core Principles
+- Provide service-specific functionality
+- All inter-service communication MUST go through Message Hub
+- No direct service-to-service communication allowed
+- Service isolation and independence
+- Event-driven architecture
 
 #### Primary Mission
 - **Concept to Character**: Transform ANY character concept into a valid D&D character

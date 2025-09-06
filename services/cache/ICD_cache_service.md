@@ -4,6 +4,28 @@ Version: 1.0
 Status: Draft
 Last Updated: 2025-08-30
 
+## 1. Communication Architecture
+
+### 1.1 Service Communication Pattern
+- All service-to-service communication MUST be routed through the Message Hub service
+- No direct HTTP calls between services are permitted
+- All integrations must use asynchronous messaging patterns
+- All events and requests must include proper correlation IDs
+
+### 1.2 Base URL (API Gateway Access Only)
+```http
+http://cache-service:8000  # Only accessible via API Gateway
+```
+
+### 1.3 Message Hub Protocol
+- Every request/event must include:
+  * Correlation ID (for tracing)
+  * Source service identifier
+  * Request/event type and version
+  * Timestamp
+  * TTL (time-to-live)
+
+### 1.4 Common Headers
 ## 1. Interface Overview
 
 ### 1.1 Purpose

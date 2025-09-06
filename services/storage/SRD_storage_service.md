@@ -9,6 +9,12 @@ Last Updated: 2025-08-30
 ### 1.1 Purpose
 The Storage Service provides centralized, scalable object storage specifically for binary assets in the D&D Character Creator system. It complements (but does not replace) the core services' databases by managing shared binary assets like images, maps, documents, and other files that benefit from centralized storage, versioning, and transformation capabilities.
 
+### 1.2 Core Principles
+- Provide service-specific functionality
+- All inter-service communication MUST go through Message Hub
+- No direct service-to-service communication allowed
+- Service isolation and independence
+- Event-driven architecture
 ### 1.1.1 Service Database Separation
 This service is explicitly NOT a replacement for core service databases:
 - Character Service retains its PostgreSQL database for character data

@@ -9,12 +9,18 @@ Last Updated: 2025-08-30
 ### 1.1 Purpose
 The Campaign Service provides AI-powered D&D 5e 2024 campaign creation and management, enabling DMs to create and run dynamic campaigns with branching storylines, theme-aware content, and deep narrative integration.
 
-### 1.2 Core Mission
-- **Creative Campaign Generation**: LLM-powered campaign creation from concepts
-- **Dynamic Storytelling**: Branching narratives and plot evolution
-- **Theme Integration**: Consistent theme application across all content
-- **Character Integration**: Deep integration with player characters
-- **Real-Time Adaptation**: Story evolution based on player choices
+### 1.2 Core Principles
+- Provide service-specific functionality
+- All inter-service communication MUST go through Message Hub
+- No direct service-to-service communication allowed
+- Service isolation and independence
+- Event-driven architecture
+
+### 1.3 Communication Requirements
+- **Service Isolation**: Campaign Service MUST NOT communicate directly with other services
+- **Message Hub**: ALL inter-service communication MUST be routed through the Message Hub service
+- **Asynchronous Communication**: Service must handle asynchronous message-based interactions
+- **Event-Driven Architecture**: Service must publish and subscribe to events via Message Hub
 
 ### 1.3 Scope
 - Campaign creation and management
@@ -141,24 +147,39 @@ The Campaign Service provides AI-powered D&D 5e 2024 campaign creation and manag
 - 1000+ saved campaigns per user
 
 ### 3.2 Integration Requirements
-#### Character Service
+
+#### Message Hub (Required Gateway)
+- ALL service-to-service communication MUST go through Message Hub
+- NO direct service-to-service calls are permitted
+- Event publication/subscription for all integrations
+- Service discovery and health monitoring
+- State synchronization and transaction management
+
+#### Character Service Integration (via Message Hub)
 - Party composition import
 - Character progression tracking
 - Real-time updates
 - Journal integration
 - Experience tracking
 
-#### Message Hub
-- Event publication/subscription
-- Service discovery
-- Health check reporting
-- State synchronization
-
-#### LLM Service
+#### LLM Service Integration (via Message Hub)
 - Content generation
 - Story refinement
 - Theme adaptation
 - NPC personality generation
+
+#### Image Service Integration (via Message Hub)
+- Map generation
+- Location visualization
+- NPC portraits
+- Item illustrations
+
+### 3.3 Message Hub Protocol Compliance
+- Must implement standard message formats
+- Must handle message delivery guarantees
+- Must implement proper error handling and retries
+- Must maintain message ordering where required
+- Must support distributed tracing
 
 ## 4. Content Generation
 

@@ -51,6 +51,8 @@ The container is optimized for rootless Podman deployment with:
 - **FastAPI**: Modern async web framework
 - **SQLAlchemy**: Database ORM with async support
 - **Pydantic**: Data validation and serialization
+- **Story Management**: Plot and story arc management
+- **Version Control**: Git-like version management
 
 ### Service Integration
 - **Message Hub Client**: Communication with other services
@@ -69,10 +71,34 @@ The container is optimized for rootless Podman deployment with:
 - Campaign content generation requests to LLM Service
 - Map and token requests to Image Service
 - Character data requests to Character Service
+- Story state transitions to Message Hub
+- Version control events to Message Hub
 
 ### Inbound Messages
 - Character updates from Character Service
 - Map and token generation status from Image Service
+- Theme-related events from Message Hub
+- Resource updates from Message Hub
+
+## Story Management System
+
+### Story Arcs
+- Major campaign storylines
+- Theme-aware arc management
+- Arc sequencing and organization
+- Arc-level NPC relationships
+
+### Plot System
+- Plot and subplot management
+- State tracking (Planned → Active → Resolved)
+- NPC relationship tracking
+- Plot-chapter associations
+
+### Chapter Organization
+- Plot-driven chapter structure
+- Chapter dependency management
+- Resource and theme tracking
+- Campaign state integration
 
 ## Git-like Campaign Version Control
 
@@ -80,6 +106,8 @@ The container is optimized for rootless Podman deployment with:
 - Branch support for alternate storylines
 - Merge capability for storyline integration
 - Revert support for undoing changes
+- Full state transition tracking
+- Branch-specific resources
 
 ## Health and Monitoring
 

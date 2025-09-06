@@ -1,8 +1,35 @@
+from enum import Enum
 from uuid import UUID
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from llm_service.schemas.common import Theme
+from llm_service.schemas.common import Theme, ContentMetadata
+
+
+class ThemeCategory(str, Enum):
+    """High-level theme categories."""
+    FANTASY = "fantasy"
+    HORROR = "horror"
+    MYSTERY = "mystery"
+    ADVENTURE = "adventure"
+    DRAMA = "drama"
+    COMEDY = "comedy"
+    HEROIC = "heroic"
+    DARK = "dark"
+    EPIC = "epic"
+
+
+class ThemeElement(str, Enum):
+    """Specific theme elements that can be analyzed."""
+    TONE = "tone"
+    MOOD = "mood"
+    SETTING = "setting"
+    CONFLICT = "conflict"
+    SYMBOLISM = "symbolism"
+    CHARACTER_FOCUS = "character_focus"
+    STORY_STRUCTURE = "story_structure"
+    WORLD_BUILDING = "world_building"
 
 
 class TextThemeRequest(BaseModel):
@@ -75,3 +102,65 @@ class ThemeStatistics(BaseModel):
     average_text_score: float = Field(description="Average text similarity score")
     average_visual_score: float = Field(description="Average visual similarity score")
     popular_genres: list[str] = Field(description="Most common genres used with")
+
+
+class ThemeAnalysisRequest(BaseModel):
+    """Request for theme analysis."""
+    content: str = Field(description="Content to analyze")
+    current_theme: Optional[Dict[str, str]] = Field(
+        None,
+        description="Current theme parameters if analyzing a theme transition"
+    )
+    target_theme: Optional[Dict[str, str]] = Field(
+        None,
+        description="Target theme parameters if analyzing compatibility"
+    )
+    elements: List[ThemeElement] = Field(
+        default_factory=lambda: list(ThemeElement),
+        description="Theme elements to analyze"
+    )
+    category_filter: Optional[List[ThemeCategory]] = Field(
+        None,
+        description="Filter analysis to specific theme categories"
+    )
+
+
+class ThemeElementAnalysis(BaseModel):
+    """Analysis of a single theme element."""
+    element: ThemeElement
+    score: float = Field(ge=0.0, le=1.0, description="Presence strength of this element")
+    description: str = Field(description="Detailed analysis of the element")
+    suggestions: List[str] = Field(description="Suggestions for enhancement/improvement")
+
+
+class ThemeCompatibility(BaseModel):
+    """Theme compatibility analysis result."""
+    score: float = Field(ge=0.0, le=1.0, description="Overall compatibility score")
+    conflicts: List[str] = Field(description="Potential theme conflicts")
+    enhancements: List[str] = Field(description="Suggested enhancements")
+    transition_steps: Optional[List[str]] = Field(
+        None,
+        description="Steps needed for theme transition"
+    )
+
+
+class ThemeAnalysisResponse(BaseModel):
+    """Response containing theme analysis results."""
+    content_id: UUID = Field(description="Unique identifier for this analysis")
+    metadata: ContentMetadata = Field(description="Analysis metadata")
+    
+    # Primary theme categorization
+    primary_category: ThemeCategory
+    secondary_categories: List[ThemeCategory]
+    category_confidence: float = Field(ge=0.0, le=1.0)
+    
+    # Detailed element analysis
+    elements: List[ThemeElementAnalysis]
+    
+    # Theme compatibility if requested
+    compatibility: Optional[ThemeCompatibility] = None
+    
+    # Generated theme parameters
+    suggested_parameters: Dict[str, str] = Field(
+        description="Suggested theme parameters based on analysis"
+    )

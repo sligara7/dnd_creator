@@ -360,6 +360,15 @@ Completed version control system integration:
   * Failure recovery mechanisms
 - Added integration tests for version management
 
+### 2025-09-06 (Evening)
+Planned approach for load testing:
+- Refactoring into Locust-based standalone load test suite
+- Focus on testing stable endpoints (health check, character sheet)
+- Adding Makefile/Poetry scripts for test runs
+- Scope reduced to avoid test harness import chains
+
+Rationale: Current test scaffolding has import cycle and syntax issues that need to be resolved separately. A standalone load test suite will allow us to complete this task cleanly and independently.
+
 ### 2025-09-06 (continued)
 Completed bulk operations implementation:
 - Added bulk creation and validation endpoints

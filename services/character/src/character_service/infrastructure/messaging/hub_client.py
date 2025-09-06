@@ -7,7 +7,8 @@ from typing import Any, Callable, Dict, List, Optional
 from uuid import UUID, uuid4
 
 import aiohttp
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings
+from pydantic import Field
 
 from character_service.core.config import Settings
 from character_service.core.exceptions import MessageHubError
@@ -36,7 +37,7 @@ class MessageHubConfig(BaseSettings):
 
     hub_url: str = "http://message-hub:8200"
     service_name: str = "character-service"
-    service_id: UUID = field(default_factory=uuid4)
+    service_id: UUID = Field(default_factory=uuid4)
     connect_timeout: float = 5.0
     request_timeout: float = 10.0
     health_check_interval: float = 30.0

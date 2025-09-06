@@ -20,33 +20,33 @@ from character_service.infrastructure.models.models import (
 from character_service.infrastructure.repositories.base import BaseRepository
 
 
-class JournalEntryRepository(BaseRepository[JournalEntry]):
+class JournalEntryRepository(BaseRepository[JournalEntryDomain, JournalEntry]):
     """Journal entry repository implementation."""
 
     def __init__(self, session: AsyncSession):
         """Initialize repository."""
-        super().__init__(session, JournalEntry)
+        super().__init__(session, JournalEntry, JournalEntryDomain)
 
     async def get_by_character_id(self, character_id: UUID) -> List[JournalEntry]:
         """Get all active journal entries for a character."""
-        query = select(self._model_class).where(
-            self._model_class.character_id == character_id,
-            self._model_class.is_deleted == False,  # noqa: E712
-        ).order_by(self._model_class.timestamp.desc())
+        query = select(self._persistence_class).where(
+            self._persistence_class.character_id == character_id,
+            self._persistence_class.is_deleted == False,  # noqa: E712
+        ).order_by(self._persistence_class.timestamp.desc())
         result = await self._session.execute(query)
         return list(result.scalars().all())
 
     async def get_by_session_number(self, character_id: UUID, session_number: int) -> List[JournalEntry]:
         """Get all active journal entries for a character in a specific session."""
-        query = select(self._model_class).where(
-            self._model_class.character_id == character_id,
-            self._model_class.session_number == session_number,
-            self._model_class.is_deleted == False,  # noqa: E712
-        ).order_by(self._model_class.timestamp.desc())
+        query = select(self._persistence_class).where(
+            self._persistence_class.character_id == character_id,
+            self._persistence_class.session_number == session_number,
+            self._persistence_class.is_deleted == False,  # noqa: E712
+        ).order_by(self._persistence_class.timestamp.desc())
         result = await self._session.execute(query)
         return list(result.scalars().all())
 
-    def to_domain(self, model: JournalEntry) -> JournalEntryDomain:
+    def _to_domain(self, model: JournalEntry) -> JournalEntryDomain:
         """Convert database model to domain model."""
         return JournalEntryDomain(
             id=model.id,
@@ -68,7 +68,7 @@ class JournalEntryRepository(BaseRepository[JournalEntry]):
             updated_at=model.updated_at,
         )
 
-    def to_db_model(self, domain: JournalEntryDomain) -> JournalEntry:
+    def _to_persistence(self, domain: JournalEntryDomain) -> JournalEntry:
         """Convert domain model to database model."""
         return JournalEntry(
             id=domain.id,
@@ -91,32 +91,32 @@ class JournalEntryRepository(BaseRepository[JournalEntry]):
         )
 
 
-class ExperienceEntryRepository(BaseRepository[ExperienceEntry]):
+class ExperienceEntryRepository(BaseRepository[ExperienceEntryDomain, ExperienceEntry]):
     """Experience entry repository implementation."""
 
     def __init__(self, session: AsyncSession):
         """Initialize repository."""
-        super().__init__(session, ExperienceEntry)
+        super().__init__(session, ExperienceEntry, ExperienceEntryDomain)
 
     async def get_by_journal_entry_id(self, journal_entry_id: UUID) -> List[ExperienceEntry]:
         """Get all active experience entries for a journal entry."""
-        query = select(self._model_class).where(
-            self._model_class.journal_entry_id == journal_entry_id,
-            self._model_class.is_deleted == False,  # noqa: E712
-        ).order_by(self._model_class.timestamp.desc())
+        query = select(self._persistence_class).where(
+            self._persistence_class.journal_entry_id == journal_entry_id,
+            self._persistence_class.is_deleted == False,  # noqa: E712
+        ).order_by(self._persistence_class.timestamp.desc())
         result = await self._session.execute(query)
         return list(result.scalars().all())
 
     async def get_by_session_id(self, session_id: UUID) -> List[ExperienceEntry]:
         """Get all active experience entries for a session."""
-        query = select(self._model_class).where(
-            self._model_class.session_id == session_id,
-            self._model_class.is_deleted == False,  # noqa: E712
-        ).order_by(self._model_class.timestamp.desc())
+        query = select(self._persistence_class).where(
+            self._persistence_class.session_id == session_id,
+            self._persistence_class.is_deleted == False,  # noqa: E712
+        ).order_by(self._persistence_class.timestamp.desc())
         result = await self._session.execute(query)
         return list(result.scalars().all())
 
-    def to_domain(self, model: ExperienceEntry) -> ExperienceEntryDomain:
+    def _to_domain(self, model: ExperienceEntry) -> ExperienceEntryDomain:
         """Convert database model to domain model."""
         return ExperienceEntryDomain(
             id=model.id,
@@ -131,7 +131,7 @@ class ExperienceEntryRepository(BaseRepository[ExperienceEntry]):
             deleted_at=model.deleted_at,
         )
 
-    def to_db_model(self, domain: ExperienceEntryDomain) -> ExperienceEntry:
+    def _to_persistence(self, domain: ExperienceEntryDomain) -> ExperienceEntry:
         """Convert domain model to database model."""
         return ExperienceEntry(
             id=domain.id,
@@ -147,32 +147,32 @@ class ExperienceEntryRepository(BaseRepository[ExperienceEntry]):
         )
 
 
-class QuestRepository(BaseRepository[Quest]):
+class QuestRepository(BaseRepository[QuestDomain, Quest]):
     """Quest repository implementation."""
 
     def __init__(self, session: AsyncSession):
         """Initialize repository."""
-        super().__init__(session, Quest)
+        super().__init__(session, Quest, QuestDomain)
 
     async def get_by_journal_entry_id(self, journal_entry_id: UUID) -> List[Quest]:
         """Get all active quests for a journal entry."""
-        query = select(self._model_class).where(
-            self._model_class.journal_entry_id == journal_entry_id,
-            self._model_class.is_deleted == False,  # noqa: E712
+        query = select(self._persistence_class).where(
+            self._persistence_class.journal_entry_id == journal_entry_id,
+            self._persistence_class.is_deleted == False,  # noqa: E712
         )
         result = await self._session.execute(query)
         return list(result.scalars().all())
 
     async def get_by_status(self, status: str) -> List[Quest]:
         """Get all active quests with a specific status."""
-        query = select(self._model_class).where(
-            self._model_class.status == status,
-            self._model_class.is_deleted == False,  # noqa: E712
+        query = select(self._persistence_class).where(
+            self._persistence_class.status == status,
+            self._persistence_class.is_deleted == False,  # noqa: E712
         )
         result = await self._session.execute(query)
         return list(result.scalars().all())
 
-    def to_domain(self, model: Quest) -> QuestDomain:
+    def _to_domain(self, model: Quest) -> QuestDomain:
         """Convert database model to domain model."""
         return QuestDomain(
             id=model.id,
@@ -189,7 +189,7 @@ class QuestRepository(BaseRepository[Quest]):
             deleted_at=model.deleted_at,
         )
 
-    def to_db_model(self, domain: QuestDomain) -> Quest:
+    def _to_persistence(self, domain: QuestDomain) -> Quest:
         """Convert domain model to database model."""
         return Quest(
             id=domain.id,
@@ -207,32 +207,32 @@ class QuestRepository(BaseRepository[Quest]):
         )
 
 
-class NPCRelationshipRepository(BaseRepository[NPCRelationship]):
+class NPCRelationshipRepository(BaseRepository[NPCRelationshipDomain, NPCRelationship]):
     """NPC relationship repository implementation."""
 
     def __init__(self, session: AsyncSession):
         """Initialize repository."""
-        super().__init__(session, NPCRelationship)
+        super().__init__(session, NPCRelationship, NPCRelationshipDomain)
 
     async def get_by_journal_entry_id(self, journal_entry_id: UUID) -> List[NPCRelationship]:
         """Get all active NPC relationships for a journal entry."""
-        query = select(self._model_class).where(
-            self._model_class.journal_entry_id == journal_entry_id,
-            self._model_class.is_deleted == False,  # noqa: E712
+        query = select(self._persistence_class).where(
+            self._persistence_class.journal_entry_id == journal_entry_id,
+            self._persistence_class.is_deleted == False,  # noqa: E712
         )
         result = await self._session.execute(query)
         return list(result.scalars().all())
 
     async def get_by_npc_id(self, npc_id: UUID) -> List[NPCRelationship]:
         """Get all active NPC relationships for an NPC."""
-        query = select(self._model_class).where(
-            self._model_class.npc_id == npc_id,
-            self._model_class.is_deleted == False,  # noqa: E712
+        query = select(self._persistence_class).where(
+            self._persistence_class.npc_id == npc_id,
+            self._persistence_class.is_deleted == False,  # noqa: E712
         )
         result = await self._session.execute(query)
         return list(result.scalars().all())
 
-    def to_domain(self, model: NPCRelationship) -> NPCRelationshipDomain:
+    def _to_domain(self, model: NPCRelationship) -> NPCRelationshipDomain:
         """Convert database model to domain model."""
         return NPCRelationshipDomain(
             id=model.id,
@@ -248,7 +248,7 @@ class NPCRelationshipRepository(BaseRepository[NPCRelationship]):
             deleted_at=model.deleted_at,
         )
 
-    def to_db_model(self, domain: NPCRelationshipDomain) -> NPCRelationship:
+    def _to_persistence(self, domain: NPCRelationshipDomain) -> NPCRelationship:
         """Convert domain model to database model."""
         return NPCRelationship(
             id=domain.id,

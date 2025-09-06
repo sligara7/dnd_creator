@@ -3,11 +3,7 @@ from fastapi import Depends
 from rodi import Container
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from character_service.services.interfaces import (
-    CharacterService,
-    InventoryService,
-    JournalService,
-)
+from character_service.services.interfaces import CharacterService, InventoryService, JournalService
 from character_service.services.character import CharacterServiceImpl
 from character_service.services.inventory import InventoryServiceImpl
 from character_service.services.journal import JournalServiceImpl
@@ -17,7 +13,7 @@ from character_service.domain.event_publisher import EventPublicationManager
 from character_service.domain.progress import ProgressTrackingService
 from character_service.domain.state_publisher import StatePublisher
 from character_service.infrastructure.messaging.hub_client import MessageHubClient
-from character_service.main import event_publisher
+from character_service.api.v2.lifecycle import event_publisher
 
 
 def get_container() -> Container:

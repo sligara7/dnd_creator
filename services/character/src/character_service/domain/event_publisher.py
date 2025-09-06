@@ -221,7 +221,7 @@ class EventPublicationManager:
 
         return batch
 
-        async def _publish_batch(self, batch: List[Message]) -> None:
+    async def _publish_batch(self, batch: List[Message]) -> None:
         """Publish a batch of messages with retry."""
         retry_batch = []
         error_messages = []
@@ -230,10 +230,10 @@ class EventPublicationManager:
         track_batch_size(len(batch))
 
         for message in batch:
+            retry_count = self._retry_schedules.get(message.id, 0)
             with track_message_publish(message.type.name):
                 try:
                     # Check if message has exceeded retry attempts
-                    retry_count = self._retry_schedules.get(message.id, 0)
                     if retry_count >= self.config.retry_max_attempts:
                         error_messages.append(
                             self._create_error_message(
@@ -264,22 +264,19 @@ class EventPublicationManager:
                         f"Error publishing message {message.id}: {str(e)}",
                         exc_info=True,
                     )
-                    error_messages.append(
-                        self._create_error_message(
-                            message,
-                            str(e),
-                            retry_count,
-                            should_retry=False,
+                    # Add to retry batch or error messages
+                    if retry_count < self.config.retry_max_attempts:
+                        retry_batch.append(message)
+                        self._retry_schedules[message.id] = retry_count + 1
+                    else:
+                        error_messages.append(
+                            self._create_error_message(
+                                message,
+                                str(e),
+                                retry_count,
+                                should_retry=False,
+                            )
                         )
-                    )
-                error_messages.append(
-                    self._create_error_message(
-                        message,
-                        str(e),
-                        retry_count,
-                        should_retry=False,
-                    )
-                )
 
         # Re-queue messages for retry
         for message in retry_batch:

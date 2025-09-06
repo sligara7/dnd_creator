@@ -7,6 +7,7 @@ from character_service.domain.event import EventImpactService
 from character_service.domain.messages import (
     CharacterStateMessage,
     CampaignEventMessage,
+    Message,
     MessageType,
     ProgressEventMessage,
 )
@@ -45,10 +46,13 @@ class StatePublisher:
             id=uuid4(),
             type=MessageType.CHARACTER_UPDATED,
             timestamp=datetime.utcnow(),
+            version="1.0",
+            metadata={},
             character_id=character.id,
             state_version=self._get_state_version(character),
             state_data=character.character_data,
-            state_changes=state_changes,
+            previous_version=self._get_state_version(character) - 1 if self._get_state_version(character) > 1 else 0,
+            state_changes=state_changes or {},
         )
 
     def _setup_handlers(self) -> None:
@@ -71,9 +75,13 @@ class StatePublisher:
             id=uuid4(),
             type=MessageType.CHARACTER_CREATED,
             timestamp=datetime.utcnow(),
+            version="1.0",
+            metadata={},
             character_id=character.id,
             state_version=1,
             state_data=character.character_data,
+            previous_version=0,
+            state_changes={},
         )
         await self._message_hub.publish(message)
 
@@ -95,10 +103,13 @@ class StatePublisher:
             id=uuid4(),
             type=MessageType.CHARACTER_UPDATED,
             timestamp=datetime.utcnow(),
+            version="1.0",
+            metadata={},
             character_id=character.id,
             state_version=self._get_state_version(character),
             state_data=character.character_data,
-            state_changes=state_changes,
+            previous_version=self._get_state_version(character) - 1 if self._get_state_version(character) > 1 else 0,
+            state_changes=state_changes or {},
         )
         await self._message_hub.publish(message)
 
@@ -114,6 +125,8 @@ class StatePublisher:
             id=uuid4(),
             type=MessageType.EXPERIENCE_GAINED,
             timestamp=datetime.utcnow(),
+            version="1.0",
+            metadata={},
             character_id=character.id,
             progress_type="experience",
             progress_data={
@@ -137,6 +150,8 @@ class StatePublisher:
             id=uuid4(),
             type=MessageType.LEVEL_CHANGED,
             timestamp=datetime.utcnow(),
+            version="1.0",
+            metadata={},
             character_id=character.id,
             progress_type="level",
             progress_data={
@@ -144,6 +159,7 @@ class StatePublisher:
                 "new_level": new_level,
                 "class": character.character_data.get("character_class", ""),
             },
+            experience_points=character.character_data.get("experience_points", 0),
             current_level=new_level,
         )
         await self._message_hub.publish(message)
@@ -160,6 +176,8 @@ class StatePublisher:
             id=uuid4(),
             type=MessageType.MILESTONE_ACHIEVED,
             timestamp=datetime.utcnow(),
+            version="1.0",
+            metadata={},
             character_id=character.id,
             progress_type="milestone",
             progress_data={
@@ -167,6 +185,8 @@ class StatePublisher:
                 "title": title,
                 "type": milestone_type,
             },
+            experience_points=character.character_data.get("experience_points", 0),
+            current_level=character.character_data.get("level", 1),
         )
         await self._message_hub.publish(message)
 
@@ -182,6 +202,8 @@ class StatePublisher:
             id=uuid4(),
             type=MessageType.ACHIEVEMENT_UNLOCKED,
             timestamp=datetime.utcnow(),
+            version="1.0",
+            metadata={},
             character_id=character.id,
             progress_type="achievement",
             progress_data={
@@ -189,6 +211,8 @@ class StatePublisher:
                 "title": title,
                 "type": achievement_type,
             },
+            experience_points=character.character_data.get("experience_points", 0),
+            current_level=character.character_data.get("level", 1),
         )
         await self._message_hub.publish(message)
 

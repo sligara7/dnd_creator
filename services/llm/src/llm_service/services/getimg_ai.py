@@ -10,6 +10,7 @@ import structlog
 
 from llm_service.core.exceptions import ImageGenerationError
 from llm_service.core.settings import Settings
+from llm_service.core.cache import RateLimiter
 from llm_service.schemas.image import (
     ImageEnhancementRequest,
     ImageModelConfig,
@@ -32,8 +33,14 @@ class GetImgAIClient:
         "style_transfer": "/style-transfer",
     }
 
-    def __init__(self, settings: Settings, logger: Optional[structlog.BoundLogger] = None) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        rate_limiter: RateLimiter,
+        logger: Optional[structlog.BoundLogger] = None
+    ) -> None:
         self.settings = settings
+        self.rate_limiter = rate_limiter
         self.logger = logger or structlog.get_logger()
 
         # Create HTTP client
@@ -121,6 +128,9 @@ class GetImgAIClient:
 
     async def generate_image(self, request: TextToImageRequest) -> str:
         """Generate image from text prompt."""
+        # Check rate limit
+        await self.rate_limiter.check_image_limit("text_to_image")
+
         payload = {
             "prompt": request.prompt,
             "model": request.model.model_dump(),
@@ -144,6 +154,9 @@ class GetImgAIClient:
 
     async def transform_image(self, request: ImageToImageRequest) -> str:
         """Transform existing image."""
+        # Check rate limit
+        await self.rate_limiter.check_image_limit("image_to_image")
+
         # Validate source image
         self._validate_base64_image(request.source_image)
 

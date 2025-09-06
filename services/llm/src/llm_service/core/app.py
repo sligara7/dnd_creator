@@ -14,6 +14,10 @@ from llm_service.core.middleware import error_handler, setup_middleware
 from llm_service.core.rate_limit import RateLimitMiddleware
 from llm_service.core.token_tracking import TokenTrackingMiddleware
 from llm_service.core.settings import Settings, get_settings
+from llm_service.services.openai import OpenAIClient
+from llm_service.services.getimg_ai import GetImgAIClient
+from llm_service.services.text import TextGenerationService
+from llm_service.services.image import ImageGenerationService
 
 # Configure structured logging
 logging.config.dictConfig({
@@ -77,12 +81,30 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await app.state.redis.initialize()
     app.state.rate_limiter = RateLimiter(app.state.redis)
     
-    # Initialize clients and connections here
-    # TODO: Initialize OpenAI client
-    # TODO: Initialize GetImg.AI client
-    # TODO: Initialize database connection
-    # Initialize Message Hub client
+    # Initialize service clients
+    app.state.openai = OpenAIClient(settings, app.state.rate_limiter, app.state.logger)
+    app.state.getimg_ai = GetImgAIClient(settings, app.state.rate_limiter, app.state.logger)
     app.state.message_hub = MessageHubClient(settings)
+
+    # Initialize business logic services
+    app.state.text_service = TextGenerationService(
+        settings=settings,
+        openai=app.state.openai,
+        rate_limiter=app.state.rate_limiter,
+        message_hub=app.state.message_hub,
+        logger=app.state.logger,
+    )
+    app.state.image_service = ImageGenerationService(
+        settings=settings,
+        getimg_ai=app.state.getimg_ai,
+        rate_limiter=app.state.rate_limiter,
+        message_hub=app.state.message_hub,
+        logger=app.state.logger,
+    )
+
+    # Initialize services
+    await app.state.text_service.initialize()
+    await app.state.image_service.initialize()
 
     yield
 
@@ -96,6 +118,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Close Redis connection
     app.state.logger.info("closing_redis_connection")
     await app.state.redis.close()
+
+    # Close services
+    app.state.logger.info("closing_services")
+    await app.state.text_service.cleanup()
+    await app.state.image_service.cleanup()
 
     # Close Message Hub client
     app.state.logger.info("closing_message_hub_client")

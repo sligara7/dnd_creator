@@ -1,7 +1,10 @@
 from functools import lru_cache
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Field, PostgresDsn, RedisDsn, SecretStr
+from typing import Dict
+from pydantic import BaseModel, Field
+
+from llm_service.schemas.text import ModelType
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -42,7 +45,24 @@ class MessageHubConfig(BaseModel):
     max_retries: int = 3
 
 
-class RateLimitConfig(BaseModel):
+class RateLimits(BaseModel):
+    """Rate limit configuration."""
+    # Model-specific limits (requests per minute)
+    model_rpm: Dict[ModelType, int] = Field(
+        default={
+            ModelType.GPT_4_TURBO: 200,
+            ModelType.GPT_4: 200,
+            ModelType.GPT_35_TURBO: 500,
+        }
+    )
+
+    # GetImg.AI limits
+    text_to_image_rpm: int = Field(50, description="Text-to-image requests per minute")
+    image_to_image_rpm: int = Field(50, description="Image-to-image requests per minute")
+
+    # General limits
+    global_rpm: int = Field(1000, description="Global requests per minute")
+    user_rpm: int = Field(100, description="Per-user requests per minute")
     text_generation_rpm: int = Field(default=100, gt=0)
     image_generation_rpm: int = Field(default=10, gt=0)
     user_rpm: int = Field(default=50, gt=0)

@@ -1,20 +1,23 @@
 from datetime import datetime
-import uuid
-from typing import Dict, Optional
+from uuid import UUID
+from typing import Dict, Optional, Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
+import structlog
 
-from llm_service.core.cache import AsyncCacheService
+from llm_service.core.cache import AsyncCacheService, RateLimiter
 from llm_service.core.events import MessageHubClient, TextGeneratedEvent
 from llm_service.core.settings import Settings
 from llm_service.models.content import TextContent
-from llm_service.schemas.text import
+from llm_service.schemas.text import (
     TextGenerationRequest,
     TextType,
     GeneratedText,
     ContentMetadata,
+    ModelProvider,
 )
-from llm_service.services.openai import OpenAIClient, Usage
+from llm_service.services.openai import OpenAIClient
+from llm_service.services.anthropic import AnthropicClient
 from llm_service.services.prompts import (
     PROMPT_TEMPLATES,
     create_chat_prompt,
@@ -23,16 +26,45 @@ from llm_service.services.prompts import (
 )
 
 
+class ProviderFactory:
+    """Factory for creating appropriate model provider clients."""
+
+    def __init__(self, settings: Settings, logger: Optional[structlog.BoundLogger] = None):
+        self.settings = settings
+        self.logger = logger or structlog.get_logger()
+        self._clients = {}
+
+    def get_client(self, provider: ModelProvider):
+        """Get or create appropriate client for the given provider."""
+        if provider not in self._clients:
+            if provider == ModelProvider.OPENAI:
+                self._clients[provider] = OpenAIClient(self.settings, self.logger)
+            elif provider == ModelProvider.ANTHROPIC:
+                self._clients[provider] = AnthropicClient(self.settings, self.logger)
+            else:
+                raise ValueError(f"Unsupported provider: {provider}")
+
+        return self._clients[provider]
+
+
 class TextGenerationService(AsyncCacheService):
     """Service for generating text content."""
 
 def __init__(
-        self, settings: Settings, openai: OpenAIClient, db: AsyncSession, message_hub: MessageHubClient, *args: Any, **kwargs: Any
+        self,
+        settings: Settings,
+        openai: OpenAIClient,
+        db: AsyncSession,
+        message_hub: MessageHubClient,
+        rate_limiter: RateLimiter,
+        *args: Any,
+        **kwargs: Any
     ) -> None:
         super().__init__(settings, *args, **kwargs)
         self.openai = openai
         self.db = db
         self.message_hub = message_hub
+        self.rate_limiter = rate_limiter
 
     async def initialize(self) -> None:
         """Initialize service resources."""
@@ -85,12 +117,15 @@ def __init__(
 
         # Generate text
         try:
-            text, usage = await self.openai.generate_text(messages, request.model)
+            client = self.provider_factory.get_client(request.model.provider)
+            text, usage = await client.generate_text(messages, request.model)
         except Exception as e:
             self.logger.error(
                 "text_generation_failed",
                 error=str(e),
                 request_id=str(request_id),
+                provider=request.model.provider,
+                model=request.model.name,
             )
             raise
 

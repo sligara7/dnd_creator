@@ -1,10 +1,17 @@
 from enum import Enum
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
 from llm_service.schemas.common import ContentMetadata, JobResult, Theme
+
+
+class ModelType(str, Enum):
+    """Available OpenAI models."""
+    GPT_4_TURBO = "gpt-4-turbo"
+    GPT_4 = "gpt-4"
+    GPT_35_TURBO = "gpt-3.5-turbo"
 
 
 class TextType(str, Enum):
@@ -22,9 +29,16 @@ class TextType(str, Enum):
 
 class ModelConfig(BaseModel):
     """Configuration for text generation model."""
-    name: str = Field("gpt-4-turbo", description="Model to use for generation")
+    name: ModelType = Field(ModelType.GPT_4_TURBO, description="Model to use for generation")
     temperature: float = Field(0.7, ge=0.0, le=2.0, description="Sampling temperature")
     max_tokens: int = Field(1000, gt=0, description="Maximum tokens to generate")
+    fallback_model: Optional[ModelType] = Field(
+        ModelType.GPT_35_TURBO,
+        description="Fallback model to use if primary model fails"
+    )
+    top_p: Optional[float] = Field(None, ge=0.0, le=1.0, description="Top-p sampling parameter")
+    presence_penalty: Optional[float] = Field(None, ge=-2.0, le=2.0, description="Presence penalty")
+    frequency_penalty: Optional[float] = Field(None, ge=-2.0, le=2.0, description="Frequency penalty")
 
 
 class CharacterContext(BaseModel):

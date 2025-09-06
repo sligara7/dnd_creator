@@ -8,7 +8,8 @@ from pydantic import BaseModel, Field
 
 from llm_service.core.exceptions import TextGenerationError
 from llm_service.core.settings import Settings
-from llm_service.schemas.text import ModelConfig
+from llm_service.core.cache import RateLimiter
+from llm_service.schemas.text import ModelConfig, ModelType
 
 
 class Usage(BaseModel):
@@ -21,8 +22,14 @@ class Usage(BaseModel):
 class OpenAIClient:
     """OpenAI client with retries and fallback."""
 
-    def __init__(self, settings: Settings, logger: Optional[structlog.BoundLogger] = None) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        rate_limiter: RateLimiter,
+        logger: Optional[structlog.BoundLogger] = None
+    ) -> None:
         self.settings = settings
+        self.rate_limiter = rate_limiter
         self.logger = logger or structlog.get_logger()
 
         # Create OpenAI client
@@ -37,6 +44,9 @@ class OpenAIClient:
     ) -> ChatCompletion:
         """Create a chat completion with the specified model."""
         try:
+            # Check rate limit before making request
+            await self.rate_limiter.check_model_limit(model_config.name)
+            
             return await self.client.chat.completions.create(
                 messages=messages,
                 model=model_config.name,
@@ -64,6 +74,9 @@ class OpenAIClient:
     ) -> Completion:
         """Create a text completion with the specified model."""
         try:
+            # Check rate limit before making request
+            await self.rate_limiter.check_model_limit(model_config.name)
+            
             return await self.client.completions.create(
                 prompt=prompt,
                 model=model_config.name,

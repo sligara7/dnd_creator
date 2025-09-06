@@ -65,19 +65,39 @@ The container is optimized for rootless Podman deployment with:
 - **SQLAlchemy**: Database ORM with async support
 - **Pydantic**: Data validation and serialization
 - **aio-pika**: Async AMQP client for Message Hub
-- **Redis**: Caching and queue management
+- **Redis**: Advanced caching and queue management
+- **S3**: Content storage with multipart support
+- **CDN**: Global content delivery network
 
 ### Service Integration
 - **GetImg.AI Client**: AI image generation
 - **Message Hub Client**: Service communication
 - **Storage Service**: Asset management
-- **Redis Cache**: Performance optimization
+- **Queue System**: Redis-based task management with:
+  - Priority-based task scheduling
+  - Batch processing support
+  - Async worker system
+  - Progress tracking
+  - Retry mechanism
+  - Prometheus metrics
+- Redis Cache: Performance optimization with cache warming
+- CDN Integration: Multi-region content delivery
+- Storage Integration:
+  - S3 content storage
+  - Content deduplication
+  - Versioning support
+  - Multipart upload/download
 
 ### Database
 - Independent PostgreSQL database for image metadata
 - Version control for image assets
-- Queue management for generation tasks
+- Task state and event tracking
 - Theme and style configuration storage
+- Queue management with:
+  - Task status history
+  - Event logging
+  - Progress tracking
+  - Batch operation support
 
 ## Image Generation Features
 
@@ -141,9 +161,20 @@ The container is optimized for rootless Podman deployment with:
   - Service status
   - Dependency checks
   - Queue metrics
+- Queue monitoring:
+  - Task status tracking
+  - Processing metrics
+  - Queue size by priority
+  - Worker status
+  - Batch processing stats
+- Prometheus metrics:
+  - Generation throughput
+  - Queue latency
+  - Worker utilization
+  - Cache performance
+  - Error rates
 - Structured JSON logging
 - Generation pipeline metrics
-- Cache performance tracking
 
 ## Performance Targets
 

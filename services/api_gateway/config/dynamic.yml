@@ -1,0 +1,39 @@
+http:
+  middlewares:
+    # Security headers
+    secure-headers:
+      headers:
+        frameDeny: true
+        sslRedirect: true
+        browserXssFilter: true
+        contentTypeNosniff: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        stsSeconds: 31536000
+    
+    # Authentication
+    auth:
+      forwardAuth:
+        address: "http://auth-service:8300/validate"
+        trustForwardHeader: true
+    
+    # Rate limiting
+    rate-limit:
+      rateLimit:
+        average: 100
+        burst: 50
+    
+    # Circuit breaker
+    circuit-breaker:
+      circuitBreaker:
+        expression: "NetworkErrorRatio() > 0.10"
+
+    # CORS
+    cors:
+      cors:
+        allowedOrigins:
+          - "https://dndcreator.com"
+          - "https://*.dndcreator.com"
+        allowedMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+        allowedHeaders: ["Authorization", "Content-Type", "X-Request-ID"]
+        exposedHeaders: ["X-Rate-Limit-*"]
+        maxAge: 86400

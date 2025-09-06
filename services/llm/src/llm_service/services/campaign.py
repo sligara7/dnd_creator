@@ -121,7 +121,78 @@ Campaign Context:
         prompt += "\n\nProvide:\n1. Name and description\n2. Points of interest\n3. Current occupants\n4. Secrets and mysteries\n5. Story hooks"
         return prompt
 
-    async def generate_story(self, request: StoryRequest) -> StoryContent:
+async def generate_story(self, request: StoryRequest) -> StoryContent:
+        """Generate story content."""
+        try:
+            # Generate story content
+            prompt = self._create_story_prompt(request)
+            text, usage = await self.openai.generate_text(prompt)
+
+            # Parse generated content
+            from .campaign_parser import parse_story_content
+            parsed = parse_story_content(text, request.element_type)
+
+            # Create database model
+            from ..models.campaign import StoryContent as StoryModel
+            story = StoryModel(
+                content_type=request.element_type.value,
+                campaign_id=request.context.campaign_id,
+                parent_id=request.parent_element_id,
+                title=parsed.title,
+                description=parsed.description,
+                summary=parsed.summary,
+                plot_points=parsed.plot_points,
+                npc_references=parsed.npcs,
+                location_references=parsed.locations,
+                hooks=parsed.hooks,
+                theme_context=request.context.dict(),
+                metadata={
+                    "model_used": "gpt-4",
+                    "token_usage": usage.model_dump(),
+                    "campaign_type": request.context.campaign_type,
+                },
+            )
+
+            # Save to database
+            self.db.add(story)
+            await self.db.commit()
+            await self.db.refresh(story)
+
+            # Publish event
+            await self.message_hub.publish_event({
+                "type": "story_content_generated",
+                "content_id": str(story.id),
+                "element_type": story.content_type,
+                "campaign_id": str(story.campaign_id),
+            })
+
+            # Convert to response model
+            return StoryContent(
+                content_id=story.id,
+                element_type=request.element_type,
+                content=parsed.description,
+                metadata=story.metadata,
+                parent_element_id=story.parent_id,
+                summary=story.summary,
+                plot_points=story.plot_points,
+                npcs=[{"name": npc["name"], "description": npc["description"]} for npc in story.npc_references],
+                locations=[{"name": loc["name"], "description": loc["description"]} for loc in story.location_references],
+                hooks=story.hooks
+            )
+
+        except Exception as e:
+            self.logger.error(
+                "story_generation_failed",
+                error=str(e),
+                element_type=request.element_type.value,
+            )
+            raise ContentGenerationError(
+                message=f"Story generation failed: {str(e)}",
+                details={
+                    "element_type": request.element_type.value,
+                    "campaign_type": request.context.campaign_type,
+                },
+            )
         """Generate story content."""
         try:
             # Generate story content
@@ -168,7 +239,78 @@ Campaign Context:
                 },
             )
 
-    async def generate_npc(self, request: NPCRequest) -> NPCContent:
+async def generate_npc(self, request: NPCRequest) -> NPCContent:
+        """Generate NPC content."""
+        try:
+            # Generate NPC content
+            prompt = self._create_npc_prompt(request)
+            text, usage = await self.openai.generate_text(prompt)
+
+            # Parse generated content
+            from .campaign_parser import parse_npc_content
+            parsed = parse_npc_content(text)
+
+            # Create database model
+            from ..models.campaign import NPCContent as NPCModel
+            npc = NPCModel(
+                content_type='npc',
+                campaign_id=request.context.campaign_id,
+                parent_id=request.parent_element_id if hasattr(request, 'parent_element_id') else None,
+                title=parsed.title or parsed.name,
+                name=parsed.name,
+                title=parsed.title,
+                description=parsed.description,
+                personality=parsed.personality,
+                motivations=parsed.motivations,
+                secrets=parsed.secrets,
+                relationships=parsed.relationships,
+                summary=parsed.summary,
+                theme_context=request.context.dict(),
+                metadata={
+                    "model_used": "gpt-4",
+                    "token_usage": usage.model_dump(),
+                    "campaign_type": request.context.campaign_type,
+                    "npc_role": request.role.value,
+                },
+            )
+
+            # Save to database
+            self.db.add(npc)
+            await self.db.commit()
+            await self.db.refresh(npc)
+
+            # Publish event
+            await self.message_hub.publish_event({
+                "type": "npc_generated",
+                "npc_id": str(npc.id),
+                "campaign_id": str(npc.campaign_id),
+                "role": request.role.value,
+            })
+
+            # Convert to response model
+            return NPCContent(
+                content_id=npc.id,
+                name=npc.name,
+                title=npc.title,
+                role=request.role,
+                description=npc.description,
+                personality=npc.personality,
+                motivations=npc.motivations,
+                secrets=npc.secrets,
+                relationships=npc.relationships,
+                metadata=npc.metadata,
+            )
+
+        except Exception as e:
+            self.logger.error(
+                "npc_generation_failed",
+                error=str(e),
+                role=request.role.value,
+            )
+            raise ContentGenerationError(
+                message=f"NPC generation failed: {str(e)}",
+                details={"role": request.role.value},
+            )
         """Generate NPC content."""
         try:
             # Generate NPC content
@@ -216,7 +358,78 @@ Campaign Context:
                 details={"role": request.role.value},
             )
 
-    async def generate_location(self, request: LocationRequest) -> LocationContent:
+async def generate_location(self, request: LocationRequest) -> LocationContent:
+        """Generate location content."""
+        try:
+            # Generate location content
+            prompt = self._create_location_prompt(request)
+            text, usage = await self.openai.generate_text(prompt)
+
+            # Parse generated content
+            from .campaign_parser import parse_location_content
+            parsed = parse_location_content(text)
+
+            # Create database model
+            from ..models.campaign import LocationContent as LocationModel
+            location = LocationModel(
+                content_type='location',
+                campaign_id=request.context.campaign_id,
+                parent_id=request.parent_element_id if hasattr(request, 'parent_element_id') else None,
+                title=parsed.name,
+                name=parsed.name,
+                description=parsed.description,
+                points_of_interest=parsed.points_of_interest,
+                occupants=parsed.occupants,
+                secrets=parsed.secrets,
+                hooks=parsed.hooks,
+                summary=parsed.summary,
+                theme_context=request.context.dict(),
+                metadata={
+                    "model_used": "gpt-4",
+                    "token_usage": usage.model_dump(),
+                    "campaign_type": request.context.campaign_type,
+                    "location_type": request.location_type.value,
+                    "size": request.size,
+                    "purpose": request.purpose,
+                },
+            )
+
+            # Save to database
+            self.db.add(location)
+            await self.db.commit()
+            await self.db.refresh(location)
+
+            # Publish event
+            await self.message_hub.publish_event({
+                "type": "location_generated",
+                "location_id": str(location.id),
+                "campaign_id": str(location.campaign_id),
+                "location_type": location.metadata["location_type"],
+            })
+
+            # Convert to response model
+            return LocationContent(
+                content_id=location.id,
+                name=location.name,
+                location_type=request.location_type,
+                description=location.description,
+                points_of_interest=location.points_of_interest,
+                occupants=location.occupants,
+                secrets=location.secrets,
+                hooks=location.hooks,
+                metadata=location.metadata,
+            )
+
+        except Exception as e:
+            self.logger.error(
+                "location_generation_failed",
+                error=str(e),
+                location_type=request.location_type.value,
+            )
+            raise ContentGenerationError(
+                message=f"Location generation failed: {str(e)}",
+                details={"location_type": request.location_type.value},
+            )
         """Generate location content."""
         try:
             # Generate location content

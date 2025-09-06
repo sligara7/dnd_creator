@@ -72,6 +72,14 @@ class ThemeContext(BaseModel):
 
 
 class ContentType(str, Enum):
+    """Types of content for generation."""
+    # Character content types
+    CHARACTER_BACKSTORY = "character_backstory"
+    CHARACTER_PERSONALITY = "character_personality"
+    CHARACTER_COMBAT = "character_combat"
+    CHARACTER_EQUIPMENT = "character_equipment"
+    CHARACTER_DEVELOPMENT = "character_development"
+    CHARACTER_INTERACTION = "character_interaction"
     """Types of content that can be generated."""
     CHARACTER_BACKSTORY = "character_backstory"
     NPC_DIALOGUE = "npc_dialogue"

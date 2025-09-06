@@ -52,6 +52,110 @@ class CharacterEvent(BaseModel):
 
 class CharacterService:
     """Service for interacting with Character service."""
+    
+    def __init__(
+        self,
+        settings: Settings,
+        logger: Optional[structlog.BoundLogger] = None
+    ):
+        """Initialize the service."""
+        self.settings = settings
+        self.logger = logger or structlog.get_logger()
+        self.base_url = settings.CHARACTER_SERVICE_URL
+        self.client = httpx.AsyncClient(
+            base_url=self.base_url,
+            timeout=settings.CHARACTER_SERVICE_TIMEOUT
+        )
+        self.openai = OpenAIService(settings)
+
+    async def generate_character_content(
+        self,
+        character_id: UUID,
+        content_type: ContentType,
+        theme_context: Optional[ThemeContext] = None
+    ) -> str:
+        """Generate content for a character."""
+        try:
+            # Get character details and content requirements
+            content = await self.get_character_content(
+                character_id,
+                content_type
+            )
+
+            # Prepare generation context
+            generation_context = {
+                'class_name': content.requirements.get('class_name'),
+                'race_name': content.requirements.get('race_name'),
+                'background_name': content.requirements.get('background_name'),
+                'alignment': content.requirements.get('alignment'),
+                'level': content.requirements.get('level'),
+                'combat_role': content.requirements.get('combat_role'),
+                'equipment_type': content.requirements.get('equipment_type'),
+                'theme_details': theme_context.details if theme_context else '',
+                'theme_tone': theme_context.tone if theme_context else '',
+                'additional_context': content.existing_content or ''
+            }
+
+            # Format prompt from template
+            from .prompts.character import format_template
+            prompt = format_template(
+                content_type.value,
+                generation_context
+            )
+
+            # Generate content using OpenAI
+            completion = await self.openai.generate_text(
+                prompt=prompt,
+                max_tokens=self.settings.OPENAI_MAX_TOKENS,
+                temperature=self.settings.OPENAI_TEMPERATURE
+            )
+
+            return completion.choices[0].text.strip()
+
+        except Exception as e:
+            self.logger.error(
+                'character_content_generation_failed',
+                character_id=str(character_id),
+                content_type=content_type.value,
+                error=str(e)
+            )
+            raise IntegrationError(f'Failed to generate character content: {str(e)}')
+
+    async def validate_content(
+        self,
+        character_id: UUID,
+        content_type: ContentType,
+        content: str,
+        theme_context: Optional[ThemeContext] = None
+    ) -> bool:
+        """Validate generated content."""
+        try:
+            from .validation import validate_character_content
+            is_valid = await validate_character_content(
+                content=content,
+                content_type=content_type,
+                theme_context=theme_context,
+                settings=self.settings
+            )
+
+            self.logger.info(
+                'content_validation_complete',
+                character_id=str(character_id),
+                content_type=content_type.value,
+                is_valid=is_valid
+            )
+
+            return is_valid
+
+        except Exception as e:
+            self.logger.error(
+                'content_validation_failed',
+                character_id=str(character_id),
+                content_type=content_type.value,
+                error=str(e)
+            )
+            # Non-critical error, log but don't fail generation
+            return True
 
     def __init__(
         self,

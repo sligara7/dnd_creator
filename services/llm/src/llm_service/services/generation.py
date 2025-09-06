@@ -18,6 +18,93 @@ from .prompts import PromptEngine, create_chat_prompt
 
 
 class GenerationPipeline:
+    """Content generation pipeline."""
+
+    def __init__(
+        self,
+        settings: Settings,
+        rate_limiter: RateLimiter,
+        logger: Optional[structlog.BoundLogger] = None
+    ):
+        """Initialize the pipeline."""
+        self.settings = settings
+        self.rate_limiter = rate_limiter
+        self.logger = logger or structlog.get_logger()
+        self.openai = OpenAIService(settings)
+        self.character_service = CharacterService(settings)
+
+    async def generate_content(
+        self,
+        content_type: ContentType,
+        theme_context: Optional[ThemeContext] = None,
+        existing_content: Optional[Dict[str, Any]] = None
+    ) -> GenerationResult:
+        """Generate content based on type and context."""
+        try:
+            # Check rate limits
+            await self.rate_limiter.check_rate_limit(
+                'text_generation',
+                self.settings.RATE_LIMIT_REQUESTS,
+                self.settings.RATE_LIMIT_PERIOD
+            )
+
+            # Get character-specific generation function
+            generation_func = self._get_generation_function(content_type)
+
+            # Generate content
+            content = await generation_func(
+                content_type=content_type,
+                theme_context=theme_context,
+                existing_content=existing_content
+            )
+
+            # Validate content if applicable
+            if content_type.value.startswith('character_'):
+                is_valid = await self.character_service.validate_content(
+                    content=content,
+                    content_type=content_type,
+                    theme_context=theme_context
+                )
+                if not is_valid:
+                    self.logger.warning(
+                        'content_validation_failed',
+                        content_type=content_type.value
+                    )
+                    # Try one more time
+                    content = await generation_func(
+                        content_type=content_type,
+                        theme_context=theme_context,
+                        existing_content=existing_content
+                    )
+
+            return GenerationResult(
+                content=content,
+                content_type=content_type,
+                theme_context=theme_context
+            )
+
+        except RateLimitExceeded as e:
+            self.logger.error(
+                'generation_rate_limit_exceeded',
+                content_type=content_type.value,
+                error=str(e)
+            )
+            raise
+
+        except Exception as e:
+            self.logger.error(
+                'content_generation_failed',
+                content_type=content_type.value,
+                error=str(e)
+            )
+            raise ContentGenerationError(f'Failed to generate content: {str(e)}')
+
+    def _get_generation_function(self, content_type: ContentType):
+        """Get appropriate generation function based on content type."""
+        if content_type.value.startswith('character_'):
+            return self.character_service.generate_character_content
+        else:
+            return self.openai.generate_text
     """Pipeline for theme-aware content generation."""
 
     def __init__(

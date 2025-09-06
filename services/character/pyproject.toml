@@ -28,6 +28,7 @@ prometheus-client = "^0.17.1"
 psycopg = "^3.2.9"
 rodi = "^2.0.8"
 aiohttp = "^3.12.15"
+pyyaml = "^6.0.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"
@@ -43,6 +44,7 @@ coverage = {extras = ["toml"], version = "^7.3.0"}
 ipython = "^8.14.0"
 pytest-mock = "^3.11.1"
 aiosqlite = "^0.19.0"  # For testing
+locust = "^2.17.0"  # For load testing
 
 [tool.poetry.scripts]
 start = "character_service.main:start"

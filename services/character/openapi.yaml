@@ -1,0 +1,1908 @@
+openapi: 3.0.3
+info:
+  title: D&D Character Service API
+  description: |
+    API for the D&D Character Service, providing endpoints for character creation,
+    management, theme transitions, version control, and inventory management.
+    
+    This service is part of the D&D Character Creator system and follows the 2024
+    D&D 5e ruleset while enabling creative freedom through LLM-assisted content
+    generation.
+  version: 2.0.0
+  contact:
+    name: D&D Character Creator Team
+    email: support@dndcreator.com
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+  - url: https://api.dndcreator.com
+    description: Production server
+
+tags:
+  - name: Character
+    description: Core character management operations
+  - name: Theme
+    description: Character theme and transition management
+  - name: Version
+    description: Character version control and history
+  - name: Bulk
+    description: Bulk character operations
+  - name: Inventory
+    description: Character inventory and equipment management
+  - name: Health
+    description: Service health and monitoring
+
+paths:
+  /api/v2/inventory/{character_id}:
+    get:
+      tags: [Inventory]
+      summary: Get character inventory
+      x-codeSamples:
+        - lang: bash
+          label: curl
+          source: |
+            curl -s -H "Authorization: Bearer {{JWT}}" \
+              http://localhost:8000/api/v2/inventory/123e4567-e89b-12d3-a456-426614174333
+      description: Get all items in a character's inventory
+      operationId: getCharacterInventory
+      parameters:
+        - name: character_id
+          in: path
+          required: true
+          description: Character ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Inventory items successfully retrieved
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/InventoryItemResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v2/inventory/items/{item_id}:
+    get:
+      tags: [Inventory]
+      summary: Get inventory item
+      description: Get a specific inventory item by ID
+      operationId: getInventoryItem
+      parameters:
+        - name: item_id
+          in: path
+          required: true
+          description: Item ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Inventory item successfully retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryItemResponse'
+        '404':
+          description: Item not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v2/inventory/{character_id}/items:
+    post:
+      tags: [Inventory]
+      summary: Add inventory item
+      description: Add an item to a character's inventory
+      operationId: addInventoryItem
+      parameters:
+        - name: character_id
+          in: path
+          required: true
+          description: Character ID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryItemCreate'
+      responses:
+        '200':
+          description: Inventory item successfully added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryItemResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v2/inventory/items/{item_id}:
+    put:
+      tags: [Inventory]
+      summary: Update inventory item
+      description: Update an inventory item by ID
+      operationId: updateInventoryItem
+      parameters:
+        - name: item_id
+          in: path
+          required: true
+          description: Item ID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryItemUpdate'
+      responses:
+        '200':
+          description: Inventory item successfully updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryItemResponse'
+        '404':
+          description: Item not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v2/inventory/items/{item_id}:
+    delete:
+      tags: [Inventory]
+      summary: Remove inventory item
+      description: Remove an inventory item by ID
+      operationId: removeInventoryItem
+      parameters:
+        - name: item_id
+          in: path
+          required: true
+          description: Item ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Inventory item removed
+        '404':
+          description: Item not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v2/themes/transition/{character_id}:
+    post:
+      tags: [Theme]
+      summary: Transition character theme
+      x-codeSamples:
+        - lang: bash
+          label: curl
+          source: |
+            curl -s -H "Authorization: Bearer {{JWT}}" -H "Content-Type: application/json" \
+              -d '{
+                    "from_theme_id": null,
+                    "to_theme_id": "123e4567-e89b-12d3-a456-426614174222",
+                    "transition_type": "story",
+                    "triggered_by": "user:123e4567-e89b-12d3-a456-426614174000"
+                  }' \
+              http://localhost:8000/api/v2/themes/transition/123e4567-e89b-12d3-a456-426614174333
+      description: Apply a theme transition to a character
+      operationId: transitionTheme
+      parameters:
+        - name: character_id
+          in: path
+          required: true
+          description: Character ID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ThemeTransitionRequest'
+      responses:
+        '200':
+          description: Theme transition successfully applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThemeHistoryResponse'
+        '400':
+          description: Invalid transition request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Character or theme not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v2/themes/history/{character_id}:
+    get:
+      tags: [Theme]
+      summary: Get theme history
+      description: Get a character's theme history
+      operationId: getThemeHistory
+      parameters:
+        - name: character_id
+          in: path
+          required: true
+          description: Character ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Theme history successfully retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThemeHistoryResponse'
+        '404':
+          description: Character not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v2/themes/validate:
+    post:
+      tags: [Theme]
+      summary: Validate theme
+      description: Validate a theme for a character
+      operationId: validateTheme
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ThemeValidationRequest'
+      responses:
+        '200':
+          description: Theme validation completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThemeValidationResponse'
+        '404':
+          description: Character or theme not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v2/versions/character/{character_id}/graph:
+    get:
+      tags: [Version]
+      summary: Get character version graph
+      description: Get the complete version graph for a character, including all versions, equipment relationships, and theme transitions
+      operationId: getCharacterVersionGraph
+      parameters:
+        - name: character_id
+          in: path
+          required: true
+          description: Character ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Version graph successfully retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionGraphResponse'
+        '404':
+          description: Character not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v2/versions/character/{character_id}/chain:
+    get:
+      tags: [Version]
+      summary: Get character version chain
+      description: Get the ordered list of character versions showing the progression through different themes
+      operationId: getCharacterVersionChain
+      parameters:
+        - name: character_id
+          in: path
+          required: true
+          description: Character ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Version chain successfully retrieved
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VersionNodeResponse'
+        '404':
+          description: Character not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v2/characters/bulk/create:
+    post:
+      tags: [Bulk]
+      summary: Create characters in bulk
+      x-codeSamples:
+        - lang: bash
+          label: curl
+          source: |
+            curl -s -H "Authorization: Bearer {{JWT}}" -H "Content-Type: application/json" \
+              -d '{
+                    "batch_label": "Playtest Party",
+                    "created_by": "user:123e4567-e89b-12d3-a456-426614174000",
+                    "characters": [
+                      {"name": "Aria", "theme": "traditional", "user_id": "123e4567-e89b-12d3-a456-426614174000", "campaign_id": "123e4567-e89b-12d3-a456-426614174111"},
+                      {"name": "Borin", "theme": "traditional", "user_id": "123e4567-e89b-12d3-a456-426614174000", "campaign_id": "123e4567-e89b-12d3-a456-426614174111"}
+                    ]
+                  }' \
+              http://localhost:8000/api/v2/characters/bulk/create
+      description: Create multiple characters in a single request
+      operationId: bulkCreateCharacters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkCharacterCreate'
+      responses:
+        '202':
+          description: Bulk operation started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkOperationResult'
+        '422':
+          description: Validation error (e.g., too many characters)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v2/characters/bulk/status/{batch_id}:
+    get:
+      tags: [Bulk]
+      summary: Get bulk operation status
+      description: Get the current status of a bulk operation
+      operationId: getBulkOperationStatus
+      parameters:
+        - name: batch_id
+          in: path
+          required: true
+          description: Batch ID to check
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Operation status details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkOperationStatus'
+        '404':
+          description: Batch not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v2/characters/bulk/validate:
+    post:
+      tags: [Bulk]
+      summary: Validate characters in bulk
+      description: Validate multiple characters without creating them
+      operationId: bulkValidateCharacters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkValidateRequest'
+      responses:
+        '200':
+          description: Validation results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkValidationResponse'
+
+  /api/v2/versions/equipment/{character_id}/{item_id}:
+    get:
+      tags: [Version]
+      summary: Get equipment versions
+      description: Get all theme versions of a piece of equipment, including root version, theme adaptations, and usage relationships
+      operationId: getEquipmentVersions
+      parameters:
+        - name: character_id
+          in: path
+          required: true
+          description: Character ID
+          schema:
+            type: string
+            format: uuid
+        - name: item_id
+          in: path
+          required: true
+          description: Item ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Equipment versions successfully retrieved
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VersionNodeResponse'
+        '404':
+          description: Character or item not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v2/themes/suggest:
+    post:
+      tags: [Theme]
+      summary: Get theme suggestions
+      description: Get theme suggestions for a character
+      operationId: suggestThemes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ThemeSuggestionRequest'
+      responses:
+        '200':
+          description: Theme suggestions generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThemeSuggestionResponse'
+        '404':
+          description: Character not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v2/characters:
+    get:
+      tags: [Character]
+      summary: List characters
+      x-codeSamples:
+        - lang: bash
+          label: curl
+          source: |
+            curl -s -H "Authorization: Bearer {{JWT}}" \
+              "http://localhost:8000/api/v2/characters?user_id=123e4567-e89b-12d3-a456-426614174000"
+        - lang: python
+          label: requests
+          source: |
+            import requests
+            r = requests.get(
+              "http://localhost:8000/api/v2/characters",
+              params={"user_id": "123e4567-e89b-12d3-a456-426614174000"},
+              headers={"Authorization": "Bearer {{JWT}}"}
+            )
+            print(r.json())
+      description: List all characters for a user
+      operationId: listCharacters
+      parameters:
+        - name: user_id
+          in: query
+          required: true
+          description: User ID to filter characters by
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of characters successfully retrieved
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CharacterResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    
+    post:
+      tags: [Character]
+      summary: Create character
+      x-codeSamples:
+        - lang: bash
+          label: curl
+          source: |
+            curl -s -H "Authorization: Bearer {{JWT}}" -H "Content-Type: application/json" \
+              -d '{
+                    "name": "Thorin Stormforge",
+                    "theme": "traditional",
+                    "user_id": "123e4567-e89b-12d3-a456-426614174000",
+                    "campaign_id": "123e4567-e89b-12d3-a456-426614174111",
+                    "character_data": {"race": "Dwarf", "class": "Fighter"}
+                  }' \
+              http://localhost:8000/api/v2/characters
+        - lang: python
+          label: requests
+          source: |
+            import requests
+            payload = {
+              "name": "Thorin Stormforge",
+              "theme": "traditional",
+              "user_id": "123e4567-e89b-12d3-a456-426614174000",
+              "campaign_id": "123e4567-e89b-12d3-a456-426614174111",
+              "character_data": {"race": "Dwarf", "class": "Fighter"}
+            }
+            r = requests.post(
+              "http://localhost:8000/api/v2/characters",
+              json=payload,
+              headers={"Authorization": "Bearer {{JWT}}"}
+            )
+            print(r.json())
+      description: Create a new character
+      operationId: createCharacter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CharacterCreate'
+      responses:
+        '200':
+          description: Character successfully created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CharacterResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v2/characters/{character_id}:
+    get:
+      tags: [Character]
+      summary: Get character
+      description: Get character by ID
+      operationId: getCharacter
+      parameters:
+        - name: character_id
+          in: path
+          required: true
+          description: Character ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Character successfully retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CharacterResponse'
+        '404':
+          description: Character not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    
+    delete:
+      tags: [Character]
+      summary: Delete character
+      description: Delete character by ID
+      operationId: deleteCharacter
+      parameters:
+        - name: character_id
+          in: path
+          required: true
+          description: Character ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Character successfully deleted
+        '404':
+          description: Character not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /health:
+    get:
+      tags: [Health]
+      summary: Check service health
+      description: Returns the health status of the service
+      operationId: checkHealth
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy]
+                  timestamp:
+                    type: string
+                    format: date-time
+                  version:
+                    type: string
+                required: [status, timestamp, version]
+        '503':
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [unhealthy]
+                  timestamp:
+                    type: string
+                    format: date-time
+                  error:
+                    type: string
+                required: [status, timestamp, error]
+
+components:
+  schemas:
+    # Common Types and Formats
+    UUID:
+      type: string
+      format: uuid
+      description: Unique identifier in UUID format
+      example: "123e4567-e89b-12d3-a456-426614174000"
+
+    Timestamp:
+      type: string
+      format: date-time
+      description: ISO 8601 formatted timestamp
+      example: "2025-09-06T20:15:44Z"
+
+    SoftDelete:
+      type: object
+      properties:
+        is_deleted:
+          type: boolean
+          description: Whether this entity has been soft deleted
+          default: false
+        deleted_at:
+          $ref: '#/components/schemas/Timestamp'
+          nullable: true
+          description: When this entity was soft deleted, if applicable
+
+    Auditable:
+      type: object
+      required:
+        - created_at
+        - updated_at
+      properties:
+        created_at:
+          $ref: '#/components/schemas/Timestamp'
+        updated_at:
+          $ref: '#/components/schemas/Timestamp'
+
+    Metadata:
+      type: object
+      additionalProperties: true
+      nullable: true
+      description: Additional metadata key-value pairs
+
+    Pagination:
+      type: object
+      properties:
+        total:
+          type: integer
+          description: Total number of items
+          example: 100
+        page:
+          type: integer
+          description: Current page number (1-based)
+          minimum: 1
+          default: 1
+          example: 1
+        page_size:
+          type: integer
+          description: Number of items per page
+          minimum: 1
+          maximum: 100
+          default: 20
+          example: 20
+
+    EntityResponse:
+      type: object
+      required:
+        - id
+        - created_at
+        - updated_at
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        created_at:
+          $ref: '#/components/schemas/Timestamp'
+        updated_at:
+          $ref: '#/components/schemas/Timestamp'
+
+    ValidationError:
+      type: object
+      required:
+        - error_type
+        - message
+      properties:
+        error_type:
+          type: string
+          description: Type of validation error
+          example: "required_field"
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Name is required"
+        field:
+          type: string
+          description: Field that failed validation, if applicable
+          nullable: true
+          example: "name"
+        code:
+          type: string
+          description: Machine-readable error code
+          nullable: true
+          example: "FIELD_REQUIRED"
+        details:
+          $ref: '#/components/schemas/Metadata'
+
+    ValidationResponse:
+      type: object
+      required:
+        - is_valid
+      properties:
+        is_valid:
+          type: boolean
+          description: Whether validation passed
+          example: false
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          description: List of validation errors, if any
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          description: List of validation warnings (non-blocking issues)
+        details:
+          $ref: '#/components/schemas/Metadata'
+
+    # D&D Specific Common Types
+    AbilityScores:
+      type: object
+      required:
+        - strength
+        - dexterity
+        - constitution
+        - intelligence
+        - wisdom
+        - charisma
+      properties:
+        strength:
+          type: integer
+          minimum: 1
+          maximum: 30
+          example: 15
+        dexterity:
+          type: integer
+          minimum: 1
+          maximum: 30
+          example: 14
+        constitution:
+          type: integer
+          minimum: 1
+          maximum: 30
+          example: 13
+        intelligence:
+          type: integer
+          minimum: 1
+          maximum: 30
+          example: 12
+        wisdom:
+          type: integer
+          minimum: 1
+          maximum: 30
+          example: 10
+        charisma:
+          type: integer
+          minimum: 1
+          maximum: 30
+          example: 8
+
+    CharacterLevel:
+      type: object
+      required:
+        - total_level
+        - class_levels
+      properties:
+        total_level:
+          type: integer
+          minimum: 1
+          maximum: 20
+          example: 5
+        class_levels:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 1
+            maximum: 20
+          example:
+            Fighter: 3
+            Wizard: 2
+
+    ProficiencyType:
+      type: string
+      enum: [none, proficient, expert]
+      default: none
+      example: "proficient"
+
+    SpellSlots:
+      type: object
+      properties:
+        1:
+          type: integer
+          minimum: 0
+          example: 4
+        2:
+          type: integer
+          minimum: 0
+          example: 3
+        3:
+          type: integer
+          minimum: 0
+          example: 2
+        4:
+          type: integer
+          minimum: 0
+          example: 0
+        5:
+          type: integer
+          minimum: 0
+          example: 0
+        6:
+          type: integer
+          minimum: 0
+          example: 0
+        7:
+          type: integer
+          minimum: 0
+          example: 0
+        8:
+          type: integer
+          minimum: 0
+          example: 0
+        9:
+          type: integer
+          minimum: 0
+          example: 0
+
+    ResourceCount:
+      type: object
+      required:
+        - maximum
+        - current
+      properties:
+        maximum:
+          type: integer
+          minimum: 0
+          example: 4
+        current:
+          type: integer
+          minimum: 0
+          example: 2
+
+    # Service Error Response
+    Error:
+    CharacterBase:
+      type: object
+      required:
+        - name
+        - theme
+      properties:
+        name:
+          type: string
+          description: Character name
+          example: "Thorin Stormforge"
+        theme:
+          type: string
+          description: Character theme
+          default: traditional
+          example: "traditional"
+        ability_scores:
+          $ref: '#/components/schemas/AbilityScores'
+        levels:
+          $ref: '#/components/schemas/CharacterLevel'
+        background:
+          type: string
+          example: "Soldier"
+        race:
+          type: string
+          example: "Mountain Dwarf"
+        languages:
+          type: array
+          items:
+            type: string
+          example: ["Common", "Dwarvish"]
+        proficiencies:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/ProficiencyType'
+          example:
+            "Athletics": "proficient"
+            "Smith's Tools": "expert"
+
+    CharacterCreate:
+      type: object
+      required:
+        - name
+        - user_id
+        - campaign_id
+      allOf:
+        - $ref: '#/components/schemas/CharacterBase'
+        - type: object
+          properties:
+            user_id:
+              $ref: '#/components/schemas/UUID'
+              description: ID of user creating the character
+            campaign_id:
+              $ref: '#/components/schemas/UUID'
+              description: ID of campaign the character belongs to
+            character_data:
+              type: object
+              description: Initial character data
+              nullable: true
+
+    CharacterResponse:
+      allOf:
+        - $ref: '#/components/schemas/EntityResponse'
+        - $ref: '#/components/schemas/SoftDelete'
+        - $ref: '#/components/schemas/CharacterBase'
+        - type: object
+          required:
+            - user_id
+            - campaign_id
+          properties:
+            user_id:
+              $ref: '#/components/schemas/UUID'
+            campaign_id:
+              $ref: '#/components/schemas/UUID'
+            parent_id:
+              $ref: '#/components/schemas/UUID'
+              nullable: true
+            character_data:
+              type: object
+            spell_slots:
+              $ref: '#/components/schemas/SpellSlots'
+            hit_points:
+              $ref: '#/components/schemas/ResourceCount'
+            hit_dice:
+              $ref: '#/components/schemas/ResourceCount'
+            metadata:
+              $ref: '#/components/schemas/Metadata'
+
+    CharacterResponse:
+      type: string
+      enum: [story, level_up, quest, transformation, antitheticon]
+      description: Type of theme transition
+
+    ThemeCategory:
+      type: string
+      enum: [traditional, antitheticon, mythic, hybrid]
+      description: Category of theme
+
+    ThemeValidationError:
+      type: object
+      properties:
+        error_type:
+          type: string
+          description: Type of validation error
+        message:
+          type: string
+          description: Error message
+
+    ThemeTransitionRequest:
+      type: object
+      required:
+        - to_theme_id
+        - triggered_by
+      properties:
+        from_theme_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Current theme ID, if any
+        to_theme_id:
+          type: string
+          format: uuid
+          description: Target theme ID
+        transition_type:
+          $ref: '#/components/schemas/ThemeTransitionType'
+        triggered_by:
+          type: string
+          description: User ID or system identifier that triggered the transition
+        campaign_event_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Associated campaign event ID
+        context:
+          type: object
+          additionalProperties:
+            type: string
+          nullable: true
+          description: Additional context for the transition
+
+    ThemeHistoryResponse:
+      type: object
+      required:
+        - transitions
+      properties:
+        transitions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ThemeTransition'
+        current_theme:
+          $ref: '#/components/schemas/Theme'
+          nullable: true
+        current_state:
+          $ref: '#/components/schemas/ThemeState'
+          nullable: true
+
+    Theme:
+      type: object
+      required:
+        - id
+        - name
+        - category
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        category:
+          $ref: '#/components/schemas/ThemeCategory'
+        description:
+          type: string
+        level_range:
+          type: object
+          properties:
+            min:
+              type: integer
+              minimum: 1
+              maximum: 20
+            max:
+              type: integer
+              minimum: 1
+              maximum: 20
+
+    ThemeState:
+      type: object
+      required:
+        - theme_id
+        - features
+        - modifiers
+      properties:
+        theme_id:
+          type: string
+          format: uuid
+        features:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              active:
+                type: boolean
+        modifiers:
+          type: object
+          additionalProperties:
+            type: integer
+
+    ThemeTransition:
+      type: object
+      required:
+        - id
+        - character_id
+        - to_theme_id
+        - transition_type
+        - triggered_by
+        - timestamp
+      properties:
+        id:
+          type: string
+          format: uuid
+        character_id:
+          type: string
+          format: uuid
+        from_theme_id:
+          type: string
+          format: uuid
+          nullable: true
+        to_theme_id:
+          type: string
+          format: uuid
+        transition_type:
+          $ref: '#/components/schemas/ThemeTransitionType'
+        triggered_by:
+          type: string
+        campaign_event_id:
+          type: string
+          format: uuid
+          nullable: true
+        timestamp:
+          type: string
+          format: date-time
+        changes:
+          type: object
+          nullable: true
+
+    ThemeValidationRequest:
+      type: object
+      required:
+        - theme_id
+        - character_id
+      properties:
+        theme_id:
+          type: string
+          format: uuid
+        character_id:
+          type: string
+          format: uuid
+        transition_type:
+          $ref: '#/components/schemas/ThemeTransitionType'
+          nullable: true
+        campaign_event_id:
+          type: string
+          format: uuid
+          nullable: true
+        context:
+          type: object
+          additionalProperties:
+            type: string
+          nullable: true
+
+    ThemeValidationResponse:
+      type: object
+      required:
+        - is_valid
+      properties:
+        is_valid:
+          type: boolean
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ThemeValidationError'
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ThemeValidationError'
+        suggestions:
+          type: array
+          items:
+            type: string
+
+    ThemeSuggestionRequest:
+      type: object
+      required:
+        - character_id
+      properties:
+        character_id:
+          type: string
+          format: uuid
+        event_context:
+          type: object
+          additionalProperties:
+            type: string
+          nullable: true
+          description: Campaign event context for suggestions
+        preferences:
+          type: object
+          additionalProperties:
+            type: string
+          nullable: true
+          description: Theme preferences
+
+    VersionNodeType:
+      type: string
+      enum: [character, equipment]
+      description: Type of version node
+
+    EdgeType:
+      type: string
+      enum: [parent, root, equipped]
+      description: Type of version graph edge
+
+    VersionBase:
+      type: object
+      required:
+        - id
+        - character_id
+        - is_active
+        - created_at
+        - created_by
+      properties:
+        id:
+          type: string
+          format: uuid
+        character_id:
+          type: string
+          format: uuid
+        parent_version_id:
+          type: string
+          format: uuid
+          nullable: true
+        label:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        created_by:
+          type: string
+
+    VersionResponse:
+      allOf:
+        - $ref: '#/components/schemas/VersionBase'
+        - type: object
+          properties:
+            metadata:
+              type: object
+              additionalProperties: true
+              nullable: true
+
+    VersionNodeResponse:
+      type: object
+      required:
+        - id
+        - entity_id
+        - type
+        - theme
+      properties:
+        id:
+          type: string
+          format: uuid
+        entity_id:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/VersionNodeType'
+        theme:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+
+    VersionGraphResponse:
+      type: object
+      required:
+        - graph_id
+        - nodes
+        - edges
+      properties:
+        graph_id:
+          type: string
+          format: uuid
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/VersionNodeResponse'
+        edges:
+          type: array
+          items:
+            type: object
+            required:
+              - from
+              - to
+              - type
+            properties:
+              from:
+                type: string
+                format: uuid
+              to:
+                type: string
+                format: uuid
+              type:
+                $ref: '#/components/schemas/EdgeType'
+
+    VersionCompareResponse:
+      type: object
+      required:
+        - version_a
+        - version_b
+        - diff
+        - changes
+        - metadata
+      properties:
+        version_a:
+          type: string
+          format: uuid
+        version_b:
+          type: string
+          format: uuid
+        diff:
+          type: object
+          additionalProperties: true
+        changes:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: object
+              additionalProperties: true
+        metadata:
+          type: object
+          additionalProperties:
+            type: object
+            nullable: true
+
+    VersionRestoreRequest:
+      type: object
+      required:
+        - restored_by
+      properties:
+        label:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        restored_by:
+          type: string
+          minLength: 1
+          maxLength: 255
+
+    MilestoneRequest:
+      type: object
+      required:
+        - milestone_type
+        - label
+      properties:
+        milestone_type:
+          type: string
+          enum: [story, character, campaign]
+        label:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+          nullable: true
+
+    ValidationError:
+      type: object
+      properties:
+        error_type:
+          type: string
+          description: Type of validation error
+        message:
+          type: string
+          description: Error message
+
+    BulkCharacterCreate:
+      type: object
+      required:
+        - characters
+        - created_by
+      properties:
+        characters:
+          type: array
+          items:
+            $ref: '#/components/schemas/CharacterCreate'
+          minItems: 1
+          maxItems: 100
+          description: List of characters to create
+        batch_label:
+          type: string
+          maxLength: 255
+          nullable: true
+          description: Optional label for the batch
+        campaign_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional campaign ID for all characters
+        theme_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional theme ID to apply to all characters
+        created_by:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Who/what is creating these characters
+
+    BulkValidationError:
+      type: object
+      required:
+        - index
+        - errors
+      properties:
+        index:
+          type: integer
+          description: Index of the character in the batch
+        character_id:
+          type: string
+          format: uuid
+          nullable: true
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationError'
+
+    BulkOperationResult:
+      type: object
+      required:
+        - total_count
+        - success_count
+        - error_count
+        - created
+        - errors
+        - batch_id
+      properties:
+        total_count:
+          type: integer
+        success_count:
+          type: integer
+        error_count:
+          type: integer
+        created:
+          type: array
+          items:
+            $ref: '#/components/schemas/CharacterResponse'
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/BulkValidationError'
+        batch_id:
+          type: string
+          format: uuid
+
+    BulkValidateRequest:
+      type: object
+      required:
+        - characters
+      properties:
+        characters:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          minItems: 1
+          maxItems: 100
+          description: List of character data to validate
+        campaign_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional campaign ID for validation context
+        theme_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional theme ID for validation context
+        validation_rules:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: Optional list of specific rules to validate
+
+    ValidationResult:
+      type: object
+      required:
+        - index
+        - is_valid
+        - errors
+        - warnings
+      properties:
+        index:
+          type: integer
+        character_id:
+          type: string
+          format: uuid
+          nullable: true
+        is_valid:
+          type: boolean
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationError'
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationError'
+
+    BulkValidationResponse:
+      type: object
+      required:
+        - total_count
+        - valid_count
+        - invalid_count
+        - results
+      properties:
+        total_count:
+          type: integer
+        valid_count:
+          type: integer
+        invalid_count:
+          type: integer
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationResult'
+
+    BulkOperationStatus:
+
+    InventoryItemCreate:
+      type: object
+      required:
+        - item_data
+      properties:
+        item_data:
+          type: object
+          description: Item data
+        quantity:
+          type: integer
+          default: 1
+          description: Item quantity
+        equipped:
+          type: boolean
+          default: false
+          description: Whether item is equipped
+        container:
+          type: string
+          nullable: true
+          description: Container storing the item
+        notes:
+          type: string
+          nullable: true
+          description: Item notes
+
+    InventoryItemUpdate:
+      type: object
+      properties:
+        quantity:
+          type: integer
+          nullable: true
+        equipped:
+          type: boolean
+          nullable: true
+        container:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+
+    InventoryItemResponse:
+      allOf:
+        - $ref: '#/components/schemas/EntityResponse'
+        - $ref: '#/components/schemas/SoftDelete'
+        - type: object
+          required:
+            - theme
+            - character_id
+            - item_data
+            - quantity
+            - equipped
+          properties:
+            root_id:
+              $ref: '#/components/schemas/UUID'
+              nullable: true
+            theme:
+              type: string
+            character_id:
+              $ref: '#/components/schemas/UUID'
+            item_data:
+              type: object
+            quantity:
+              type: integer
+            equipped:
+              type: boolean
+            container:
+              type: string
+              nullable: true
+            notes:
+              type: string
+              nullable: true
+      type: object
+      required:
+        - batch_id
+        - status
+        - progress
+        - total_count
+        - processed_count
+        - success_count
+        - error_count
+        - created
+        - errors
+        - started_at
+      properties:
+        batch_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, processing, completed, failed]
+          description: Status of the bulk operation
+        progress:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          description: Progress of the operation (0.0 to 1.0)
+        total_count:
+          type: integer
+        processed_count:
+          type: integer
+        success_count:
+          type: integer
+        error_count:
+          type: integer
+        created:
+          type: array
+          items:
+            $ref: '#/components/schemas/CharacterResponse'
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/BulkValidationError'
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    MilestoneResponse:
+      type: object
+      required:
+        - id
+        - version_id
+        - milestone_type
+        - label
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        version_id:
+          type: string
+          format: uuid
+        milestone_type:
+          type: string
+        label:
+          type: string
+        description:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    ThemeSuggestionResponse:
+      type: object
+      required:
+        - suggestions
+      properties:
+        suggestions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Theme'
+        reason:
+          type: string
+          nullable: true
+
+    CharacterResponse:
+      type: object
+      required:
+        - id
+        - theme
+        - name
+        - user_id
+        - campaign_id
+        - character_data
+        - is_active
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        parent_id:
+          type: string
+          format: uuid
+          nullable: true
+        theme:
+          type: string
+        name:
+          type: string
+        user_id:
+          type: string
+          format: uuid
+        campaign_id:
+          type: string
+          format: uuid
+        character_data:
+          type: object
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Error code
+        message:
+          type: string
+          description: Human-readable error message
+        details:
+          type: object
+          description: Additional error details
+      required:
+        - code
+        - message
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token authentication
+
+security:
+  - bearerAuth: []

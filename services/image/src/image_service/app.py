@@ -16,11 +16,25 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """FastAPI lifespan events."""
-    # Connect to message hub
+    # Connect to services
     from image_service.integration.message_hub import MessageHubClient
+    from image_service.integration.getimg import GetImgClient
     from image_service.events.handlers import EVENT_HANDLERS
+    from image_service.services.queue import AsyncQueueService
+    from image_service.workers.generation import GenerationWorker
 
+    # Initialize services
     message_hub = MessageHubClient()
+    getimg_client = GetImgClient()
+    queue_service = AsyncQueueService(
+        redis=app.state.redis,
+        db=app.state.db,
+    )
+    generation_worker = GenerationWorker(
+        queue_service=queue_service,
+        getimg_client=getimg_client,
+    )
+
     try:
         # Register event handlers
         for event_type, handler in EVENT_HANDLERS.items():
@@ -29,10 +43,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # Connect services
         await message_hub.connect()
         app.state.message_hub = message_hub
+        app.state.queue = queue_service
+        app.state.generation_worker = generation_worker
+
+        # Start worker
+        worker_task = asyncio.create_task(generation_worker.start())
+        app.state.worker_task = worker_task
 
         yield
 
     finally:
+        # Stop worker
+        if hasattr(app.state, "generation_worker"):
+            await app.state.generation_worker.stop()
+            if hasattr(app.state, "worker_task"):
+                app.state.worker_task.cancel()
+                await app.state.worker_task
+
         # Close message hub
         if hasattr(app.state, "message_hub"):
             await app.state.message_hub.close()

@@ -43,9 +43,12 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str
     OPENAI_MAX_RETRIES: int = 3
     OPENAI_TIMEOUT: int = 60
-    OPENAI_MODEL: str = "gpt-4-1106-preview"
-    OPENAI_MAX_TOKENS: int = 2048
-    OPENAI_TEMPERATURE: float = 0.8
+    OPENAI_MODEL: str = "gpt-5-nano"
+    OPENAI_MAX_TOKENS: int = 8000  # Nano's 8k context window
+    OPENAI_TEMPERATURE: float = 0.7  # Optimized for nano
+    OPENAI_TOKEN_BUFFER: int = 1000  # Reserve for system messages
+    OPENAI_STREAM_CHUNK_SIZE: int = 100  # Tokens per stream chunk
+    OPENAI_MAX_PARALLEL: int = 5  # Max parallel nano requests
 
     # GetImg config
     GETIMG_API_KEY: str
@@ -55,9 +58,15 @@ class Settings(BaseSettings):
 
     # LLM generation settings
     CACHE_TTL: int = 3600  # 1 hour
-    RATE_LIMIT_REQUESTS: int = 100
+    RATE_LIMIT_REQUESTS: int = 1000  # Higher for nano
     RATE_LIMIT_PERIOD: int = 60  # 1 minute
-    MAX_REQUEST_SIZE: int = 16384  # 16KB
+    MAX_REQUEST_SIZE: int = 32768  # 32KB for nano's larger context
+    
+    # Theme generation settings
+    THEME_VALIDATION_THRESHOLD: float = 0.8
+    THEME_MAX_VALIDATION_RETRIES: int = 3
+    THEME_CACHE_TTL: int = 7200  # 2 hours
+    THEME_BATCH_SIZE: int = 10
     
     @property
     def get_database_url(self) -> str:

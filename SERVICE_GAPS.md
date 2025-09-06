@@ -109,7 +109,7 @@ This document outlines remaining implementation work needed to bring each servic
    - [x] POST /api/v2/modify/content
 
 3. **Integration Features**
-   - [ ] Character service hooks
+   - [x] Character service hooks
    - [ ] Campaign service integration
    - [ ] Content validation system
 

@@ -1,7 +1,8 @@
-"""Prompt templates for text generation."""
+"""Theme-aware prompt templates for text generation."""
 from typing import Dict, List, Optional
 
-from llm_service.schemas.text import CharacterContext, TextType
+from ..models.theme import ContentType, ThemeContext
+from ..schemas.text import CharacterContext, TextType
 
 
 CHARACTER_BACKSTORY = """Create a rich and compelling backstory for a Dungeons & Dragons character with the following details:
@@ -268,7 +269,7 @@ def format_character_prompt(
 def format_campaign_prompt(
     template: str,
     context: Dict[str, str],
-    theme: Dict[str, str],
+    theme_context: ThemeContext,
     additional_context: Optional[Dict[str, str]] = None,
 ) -> str:
     """Format a campaign-related prompt template."""
@@ -277,25 +278,32 @@ def format_campaign_prompt(
         party_level=context["party_level"],
         party_size=context["party_size"],
         duration=context["duration"],
-        genre=theme.get("genre", "fantasy"),
-        tone=theme.get("tone", "serious"),
-        style=theme.get("style", "descriptive"),
+        genre=theme_context.genre.value,
+        tone=theme_context.tone.value,
+        style=theme_context.elements.style_guide.get("narrative", "descriptive"),
         additional_context="\n".join(
             f"- {k}: {v}" for k, v in (additional_context or {}).items()
         ),
     )
 
 
-def create_chat_prompt(prompt: str) -> List[Dict[str, str]]:
-    """Convert a text prompt into a chat message format."""
-    return [
-        {
+def create_chat_prompt(prompt: str, theme_context: Optional[ThemeContext] = None) -> List[Dict[str, str]]:
+    """Convert a text prompt into a chat message format with theme context."""
+    # Base system message with nano-optimized markers
+    system_message = {
+        "role": "system",
+        "content": "<|system|>You are a creative assistant specializing in D&D 5e (2024) content generation. "
+                  "Provide theme-consistent, mechanically accurate content."
+    }
+    
+    # Add theme context if provided
+    if theme_context:
+        theme_message = {
             "role": "system",
-            "content": "You are a creative assistant specializing in D&D 5e content generation. "
-                      "Your responses should be richly detailed while remaining true to D&D lore and mechanics."
-        },
-        {
-            "role": "user",
-            "content": prompt,
+            "content": f"<|theme|>Theme: {theme_context.name}\n"
+                      f"Genre: {theme_context.genre.value}\n"
+                      f"Tone: {theme_context.tone.value}"
         }
-    ]
+        return [system_message, theme_message, {"role": "user", "content": f"<|prompt|>{prompt}"}]
+    
+    return [system_message, {"role": "user", "content": f"<|prompt|>{prompt}"}]

@@ -12,15 +12,24 @@ from llm_service.core.cache import RateLimiter
 from llm_service.schemas.text import ModelConfig, ModelType
 
 
+class Nano5Config(BaseModel):
+    """GPT-5-nano specific configuration."""
+    context_window: int = Field(default=8000, description="Maximum context window size")
+    token_buffer: int = Field(default=1000, description="Reserved tokens for system messages")
+    stream_chunk_size: int = Field(default=100, description="Number of tokens per stream chunk")
+    max_parallel_requests: int = Field(default=5, description="Maximum parallel requests")
+
+
 class Usage(BaseModel):
     """Model token usage."""
     prompt_tokens: int = Field(description="Number of tokens in the prompt")
     completion_tokens: int = Field(description="Number of tokens in the completion")
-    total_tokens: int = Field(description="Total number of tokens used")
+    total_tokens: int = Field(description="Total tokens used")
+    cached: bool = Field(default=False, description="Whether result was from cache")
 
 
 class OpenAIClient:
-    """OpenAI client with retries and fallback."""
+    """OpenAI client optimized for GPT-5-nano with retries."""
 
     def __init__(
         self,
@@ -32,26 +41,42 @@ class OpenAIClient:
         self.rate_limiter = rate_limiter
         self.logger = logger or structlog.get_logger()
 
-        # Create OpenAI client
+        # Configure GPT-5-nano specific settings
+        self.nano_config = Nano5Config()
+        
+        # Create OpenAI client with nano-optimized configuration
         self.client = openai.AsyncOpenAI(
             api_key=self.settings.openai.api_key.get_secret_value(),
             timeout=self.settings.openai.request_timeout,
             max_retries=self.settings.openai.max_retries,
         )
+        
+        # Set GPT-5-nano as default model
+        self.default_model = "gpt-5-nano"
 
     async def _create_chat_completion(
-        self, messages: List[Dict[str, str]], model_config: ModelConfig
+        self, 
+        messages: List[Dict[str, str]], 
+        model_config: ModelConfig,
+        stream: bool = False
     ) -> ChatCompletion:
         """Create a chat completion with the specified model."""
         try:
             # Check rate limit before making request
             await self.rate_limiter.check_model_limit(model_config.name)
             
+            # Apply nano-specific optimizations
+            nano_messages = self._optimize_messages_for_nano(messages)
+            
             return await self.client.chat.completions.create(
-                messages=messages,
-                model=model_config.name,
+                messages=nano_messages,
+                model=model_config.name or self.default_model,
                 temperature=model_config.temperature,
-                max_tokens=model_config.max_tokens,
+                max_tokens=min(model_config.max_tokens, self.nano_config.context_window - self.nano_config.token_buffer),
+                stream=stream,
+                presence_penalty=0.1,  # Nano-optimized presence penalty
+                frequency_penalty=0.1,  # Nano-optimized frequency penalty
+                response_format={"type": "text"}
             )
         except openai.RateLimitError as e:
             raise TextGenerationError(
@@ -99,10 +124,27 @@ class OpenAIClient:
                 details={"model": model_config.name},
             ) from e
 
+    def _optimize_messages_for_nano(self, messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """Optimize messages for GPT-5-nano processing."""
+        optimized = []
+        for msg in messages:
+            if msg["role"] == "system":
+                # Add nano-specific markers to system messages
+                msg["content"] = f"<|system|>{msg['content']}"
+            elif msg["role"] == "user":
+                # Add nano-specific markers to user messages
+                msg["content"] = f"<|user|>{msg['content']}<|end|>"
+            elif msg["role"] == "assistant":
+                # Add nano-specific markers to assistant messages
+                msg["content"] = f"<|assistant|>{msg['content']}<|end|>"
+            optimized.append(msg)
+        return optimized
+
     async def generate_text(
         self,
         prompt: Union[str, List[Dict[str, str]]],
         model_config: Optional[ModelConfig] = None,
+        stream: bool = False
     ) -> tuple[str, Usage]:
         """Generate text using either chat or completion API.
         

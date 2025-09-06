@@ -26,6 +26,7 @@ httpx = "^0.24.1"
 redis = {extras = ["hiredis"], version = "^5.0.0"}
 prometheus-client = "^0.17.1"
 psycopg = "^3.2.9"
+rodi = "^2.0.8"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"

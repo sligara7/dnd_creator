@@ -34,11 +34,11 @@ from character_service.db.session import get_session
 from character_service.main import create_application
 
 # Test database URL - ensure we use asyncpg driver
-    db_url = os.getenv(
-        "TEST_DATABASE_URL",
-        "postgresql+asyncpg://postgres:postgres@localhost:5432/character_test",
-    )
-    TEST_DB_URL = db_url
+db_url = os.getenv(
+    "TEST_DATABASE_URL",
+    "postgresql+asyncpg://postgres:postgres@localhost:5432/character_test",
+)
+TEST_DB_URL = db_url
 
 
 # Settings override for testing

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from character_service.models.models import Character
 
 
-class CharacterService:
+class CharacterServiceImpl:
     """Service for managing characters."""
 
     def __init__(self, db: AsyncSession):

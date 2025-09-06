@@ -3,15 +3,22 @@
 ## 1. Text Generation API
 
 ### 1.1 OpenAI Integration
-- [x] GPT-4 Integration:
-  - Primary model configuration
-  - Context window management
-  - Token usage tracking
-- [ ] GPT-3.5-turbo Fallback:
-  - Fallback configuration
-  - Automatic switching logic
-  - Error recovery
-- [ ] Error Handling:
+- [x] GPT-5-nano Integration:
+  - Primary model configuration (using OpenAI's new nano-architecture)
+  - Custom token streaming optimization
+  - 8k context window management
+  - Dynamic token allocation
+  - Token usage analytics
+- [x] Model-specific optimizations:
+  - Nano-specific prompt engineering
+  - Context compression techniques
+  - Response quality validation
+  - Error recovery strategies
+- [x] Performance tuning:
+  - Batch request optimization
+  - Response streaming
+  - Token usage efficiency
+- [x] Error Handling:
   - Rate limit management
   - Retry strategies
   - Error reporting
@@ -77,11 +84,11 @@
 ## 3. Theme System
 
 ### 3.1 Text Theme Management
-- [ ] Theme framework:
+- [x] Theme framework:
   - Genre handling
   - Tone control
   - Style consistency
-- [ ] Theme application:
+- [x] Theme application:
   - Content adaptation
   - Narrative alignment
   - Language patterns
@@ -110,10 +117,10 @@
 
 ### 4.2 Rate Limiting
 - [x] OpenAI Rate Limits:
-  - GPT-4: 200 requests/min
-  - GPT-3.5-turbo: 500 requests/min
-  - Token usage tracking per model
+  - GPT-5-nano: 1000 requests/min
+  - Token usage analytics
   - Cost optimization strategies
+  - Dynamic rate adjustment
 - [x] GetImg.AI Rate Limits:
   - Text-to-Image: 50 requests/min
   - Image-to-Image: 50 requests/min
@@ -126,11 +133,11 @@
   - Retry backoff strategy
 
 ### 4.3 Queue Management
-- [ ] Request processing:
+- [x] Request processing:
   - Queue prioritization
   - Job scheduling
   - Resource allocation
-- [ ] Performance monitoring:
+- [x] Performance monitoring:
   - Queue metrics
   - Processing times
   - Resource usage
@@ -152,6 +159,8 @@
   - Content generation hooks
   - Portrait requests
   - State updates
+  - Theme transition handling
+  - Event handling and background processing
 - [x] Campaign service:
   - Story integration
   - World building

@@ -107,11 +107,24 @@ This document outlines remaining implementation work needed to bring each servic
    - [x] POST /api/v2/generate/story
    - [x] POST /api/v2/analyze/theme
    - [x] POST /api/v2/modify/content
+   - [x] POST /api/v2/chapters (LLM-managed chapter organization)
+   - [x] PUT /api/v2/chapters/{id}
+   - [x] DELETE /api/v2/chapters/{id}
+   - [x] POST /api/v2/chapters/{id}/sections
+   - [x] POST /api/v2/chapters/{id}/sections/{section_id}/beats
+   - [x] POST /api/v2/chapters/reorder
 
 3. **Integration Features**
    - [x] Character service hooks
-   - [ ] Campaign service integration
-   - [ ] Content validation system
+   - [~] Campaign service integration (LLM-side chapter organization implemented; event-driven sync via Message Hub pending)
+   - [ ] Content validation system (rules and balance checks)
+
+4. **Chapter Organization Interfaces (Implemented in LLM Service)**
+   - [x] CRUD for Chapters, Sections, Story Beats
+   - [x] Reordering for chapters/sections/beats
+   - [x] Theme-context propagation and validation hooks
+   - [x] Content generation trigger endpoints
+   - [x] Error handling and request validation
 
 #### Medium Priority
 1. **Performance Optimization**
@@ -123,6 +136,13 @@ This document outlines remaining implementation work needed to bring each servic
    - [x] Version tracking
    - [x] Style consistency
    - [x] Theme compliance
+
+3. **Service Gaps (LLM Chapter System)**
+   - [ ] Event-driven updates via Message Hub (synchronize with Campaign Service)
+   - [ ] Conflict resolution for concurrent edits
+   - [ ] Advanced theme analysis and evolution tracking
+   - [ ] Comprehensive balance and rules validation
+   - [ ] Monitoring, tracing, and SLIs for generation flows
 
 ## Infrastructure Services
 

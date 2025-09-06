@@ -9,12 +9,12 @@ Last Updated: 2025-08-30
 ### 1.1 Purpose
 The LLM Service provides AI-powered text and image generation for the D&D Character Creator system, utilizing OpenAI for narrative content and GetImg.AI for visual content.
 
-### 1.2 Core Mission
-- Generate narrative content for characters and campaigns
-- Generate visual content for maps, characters, and items
-- Maintain consistent theme and style across all generations
-- Coordinate with other services via Message Hub
-- Handle complex prompt engineering and model selection
+### 1.2 Core Principles
+- Provide service-specific functionality
+- All inter-service communication MUST go through Message Hub
+- No direct service-to-service communication allowed
+- Service isolation and independence
+- Event-driven architecture
 
 ### 1.3 Scope
 - Text generation (OpenAI)

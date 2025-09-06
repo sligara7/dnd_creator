@@ -97,7 +97,7 @@ class EffectDurationType(str, Enum):
 
 # Many-to-many association tables
 item_effects = Table(
-    "item_effects",
+    "magic_item_effects",  # Changed name to avoid conflicts
     Base.metadata,
     Column(
         "item_id",
@@ -111,6 +111,7 @@ item_effects = Table(
         ForeignKey("item_effects.id", ondelete="CASCADE"),
         primary_key=True,
     ),
+    extend_existing=True
 )
 
 
@@ -179,11 +180,10 @@ class InventoryItem(Base):
         default=0,
     )
 
-    metadata: Mapped[Optional[Dict]] = mapped_column(
+    item_metadata: Mapped[Optional[Dict]] = mapped_column(
         JSON,
         nullable=True,
     )
-
     is_deleted: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
@@ -365,11 +365,10 @@ class ItemEffect(Base):
         nullable=True,
     )
 
-    metadata: Mapped[Optional[Dict]] = mapped_column(
+    effect_metadata: Mapped[Optional[Dict]] = mapped_column(
         JSON,
         nullable=True,
     )
-
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,

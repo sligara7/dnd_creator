@@ -124,8 +124,11 @@ def create_app() -> FastAPI:
             }
         }
 
-# API routers
+    # API routers
     from image_service.api.health import router as health_router
+    from image_service.api.routers.style import router as style_router
+
     app.include_router(health_router)
+    app.include_router(style_router)
 
     return app

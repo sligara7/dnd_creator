@@ -165,6 +165,9 @@
   - Story integration
   - World building
   - NPC management
+  - Theme transition handling
+  - Event handling and background processing
+  - Plot, location, and NPC creation APIs
 
 ## 6. Testing System
 

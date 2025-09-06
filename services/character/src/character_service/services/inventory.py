@@ -24,7 +24,7 @@ from character_service.domain.inventory import (
 )
 
 
-class InventoryService:
+class InventoryServiceImpl:
     """Service for managing character inventory."""
 
     def __init__(self, session: AsyncSession):

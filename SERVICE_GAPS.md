@@ -43,17 +43,17 @@ This document outlines remaining implementation work needed to bring each servic
 #### High Priority
 1. **Story Management**
    - [ ] Chapter organization system
-   - [ ] Plot tracking and evolution
-   - [ ] NPC relationship tracking
+   - [x] Plot tracking and evolution
+   - [x] NPC relationship tracking
 
 2. **Theme System**
-   - [ ] Theme definition framework
-   - [ ] Theme transition mechanics
+   - [x] Theme definition framework
+   - [x] Theme transition mechanics
    - [ ] World effect system
 
 3. **Missing API Endpoints**
    - [ ] POST /api/v2/campaigns/{id}/chapters
-   - [ ] PUT /api/v2/campaigns/{id}/theme
+   - [x] PUT /api/v2/campaigns/{id}/theme
    - [ ] GET /api/v2/campaigns/{id}/timeline
 
 #### Medium Priority

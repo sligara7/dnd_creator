@@ -49,7 +49,7 @@ class VersionNode(Base):
     entity_id = Column(PGUUID(as_uuid=True), nullable=False)  # ID of the actual entity
     type = Column(String, nullable=False)  # VersionNodeType
     theme = Column(String, nullable=False)
-    metadata = Column(JSONB, nullable=False, server_default="{}")
+    node_metadata = Column(JSONB, nullable=False, server_default="{}")
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -71,7 +71,7 @@ class VersionEdge(Base):
     source_id = Column(PGUUID(as_uuid=True), ForeignKey("version_nodes.id"), nullable=False)
     target_id = Column(PGUUID(as_uuid=True), ForeignKey("version_nodes.id"), nullable=False)
     type = Column(String, nullable=False)  # EdgeType
-    metadata = Column(JSONB, nullable=False, server_default="{}")
+    edge_metadata = Column(JSONB, nullable=False, server_default="{}")
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 

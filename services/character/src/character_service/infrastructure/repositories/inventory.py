@@ -10,33 +10,33 @@ from character_service.infrastructure.models.models import InventoryItem
 from character_service.infrastructure.repositories.base import BaseRepository
 
 
-class InventoryRepository(BaseRepository[InventoryItem]):
+class InventoryRepository(BaseRepository[InventoryItemDomain, InventoryItem]):
     """Inventory repository implementation."""
 
     def __init__(self, session: AsyncSession):
         """Initialize repository."""
-        super().__init__(session, InventoryItem)
+        super().__init__(session, InventoryItem, InventoryItemDomain)
 
     async def get_by_character_id(self, character_id: UUID) -> List[InventoryItem]:
         """Get all active inventory items for a character."""
-        query = select(self._model_class).where(
-            self._model_class.character_id == character_id,
-            self._model_class.is_deleted == False,  # noqa: E712
+        query = select(self._persistence_class).where(
+            self._persistence_class.character_id == character_id,
+            self._persistence_class.is_deleted == False,  # noqa: E712
         )
         result = await self._session.execute(query)
         return list(result.scalars().all())
 
     async def get_by_container(self, character_id: UUID, container: str) -> List[InventoryItem]:
         """Get all active inventory items in a specific container."""
-        query = select(self._model_class).where(
-            self._model_class.character_id == character_id,
-            self._model_class.container == container,
-            self._model_class.is_deleted == False,  # noqa: E712
+        query = select(self._persistence_class).where(
+            self._persistence_class.character_id == character_id,
+            self._persistence_class.container == container,
+            self._persistence_class.is_deleted == False,  # noqa: E712
         )
         result = await self._session.execute(query)
         return list(result.scalars().all())
 
-    def to_domain(self, model: InventoryItem) -> InventoryItemDomain:
+    def _to_domain(self, model: InventoryItem) -> InventoryItemDomain:
         """Convert database model to domain model."""
         return InventoryItemDomain(
             id=model.id,
@@ -54,7 +54,7 @@ class InventoryRepository(BaseRepository[InventoryItem]):
             updated_at=model.updated_at,
         )
 
-    def to_db_model(self, domain: InventoryItemDomain) -> InventoryItem:
+    def _to_persistence(self, domain: InventoryItemDomain) -> InventoryItem:
         """Convert domain model to database model."""
         return InventoryItem(
             id=domain.id,

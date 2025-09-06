@@ -13,6 +13,7 @@ from character_service.api.v2.endpoints import (
     inventory_new as inventory,
     journals_new as journals,
 )
+from character_service.api.v2.routers import progress
 from character_service.api.v2.models import ErrorResponse
 
 router = APIRouter()
@@ -43,5 +44,20 @@ router.include_router(
     inventory.router,
     prefix="/inventory",
     tags=["inventory"],
+)
+
+# Character progress and events endpoints
+router.include_router(
+    progress.router,
+    prefix="/characters",
+    tags=["progress", "events"],
+)
+
+# Metrics endpoint
+from character_service.api.v2.routers import metrics as metrics_router
+router.include_router(
+    metrics_router.router,
+    prefix="/metrics",
+    tags=["metrics"],
 )
 

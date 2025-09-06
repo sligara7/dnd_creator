@@ -39,6 +39,21 @@ class Character(Base):
         back_populates="character",
         cascade="all, delete-orphan",
     )
+    campaign_events: Mapped[list["CampaignEvent"]] = relationship(
+        "CampaignEvent",
+        back_populates="character",
+        cascade="all, delete-orphan",
+    )
+    event_impacts: Mapped[list["EventImpact"]] = relationship(
+        "EventImpact",
+        back_populates="character",
+        cascade="all, delete-orphan",
+    )
+    progress: Mapped[list["CharacterProgress"]] = relationship(
+        "CharacterProgress",
+        back_populates="character",
+        cascade="all, delete-orphan",
+    )
 
 
 class InventoryItem(Base):
@@ -99,6 +114,11 @@ class JournalEntry(Base):
     )
     npc_relationships: Mapped[list["NPCRelationship"]] = relationship(
         "NPCRelationship",
+        back_populates="journal_entry",
+        cascade="all, delete-orphan",
+    )
+    campaign_events: Mapped[list["CampaignEvent"]] = relationship(
+        "CampaignEvent",
         back_populates="journal_entry",
         cascade="all, delete-orphan",
     )
@@ -185,4 +205,91 @@ class NPCRelationship(Base):
     journal_entry: Mapped[JournalEntry] = relationship(
         "JournalEntry",
         back_populates="npc_relationships",
+    )
+
+
+class CampaignEvent(Base):
+    """Model for campaign events that impact characters."""
+    __tablename__ = "campaign_events"
+
+    id = Column(PGUUID(as_uuid=True), primary_key=True)
+    character_id = Column(PGUUID(as_uuid=True), ForeignKey('characters.id'), nullable=False, index=True)
+    journal_entry_id = Column(PGUUID(as_uuid=True), ForeignKey('journal_entries.id'), nullable=True)
+    event_type = Column(String, nullable=False)
+    event_data = Column(JSONB, nullable=False, server_default=text('{}'))
+    impact_type = Column(String, nullable=False)
+    impact_magnitude = Column(Integer, nullable=False)
+    timestamp = Column(DateTime, nullable=False)
+    applied = Column(Boolean, nullable=False, server_default=text('false'))
+    applied_at = Column(DateTime, nullable=True)
+    data = Column(JSONB, nullable=False, server_default=text('{}'))
+    is_deleted = Column(Boolean, nullable=False, server_default=text('false'))
+    deleted_at = Column(DateTime, nullable=True)
+
+    # Relationships
+    character: Mapped[Character] = relationship(
+        "Character",
+        back_populates="campaign_events",
+    )
+    journal_entry: Mapped[JournalEntry] = relationship(
+        "JournalEntry",
+        back_populates="campaign_events",
+    )
+    impacts: Mapped[list["EventImpact"]] = relationship(
+        "EventImpact",
+        back_populates="event",
+        cascade="all, delete-orphan",
+    )
+
+
+class EventImpact(Base):
+    """Model for tracking the impact of campaign events on characters."""
+    __tablename__ = "event_impacts"
+
+    id = Column(PGUUID(as_uuid=True), primary_key=True)
+    event_id = Column(PGUUID(as_uuid=True), ForeignKey('campaign_events.id'), nullable=False, index=True)
+    character_id = Column(PGUUID(as_uuid=True), ForeignKey('characters.id'), nullable=False, index=True)
+    impact_type = Column(String, nullable=False)
+    impact_data = Column(JSONB, nullable=False, server_default=text('{}'))
+    applied = Column(Boolean, nullable=False, server_default=text('false'))
+    applied_at = Column(DateTime, nullable=True)
+    reversion_data = Column(JSONB, nullable=True)
+    is_reverted = Column(Boolean, nullable=False, server_default=text('false'))
+    reverted_at = Column(DateTime, nullable=True)
+    notes = Column(Text, nullable=True)
+    data = Column(JSONB, nullable=False, server_default=text('{}'))
+    created_at = Column(DateTime, nullable=False, server_default=text('now()'))
+    updated_at = Column(DateTime, nullable=False, server_default=text('now()'))
+
+    # Relationships
+    event: Mapped[CampaignEvent] = relationship(
+        "CampaignEvent",
+        back_populates="impacts",
+    )
+    character: Mapped[Character] = relationship(
+        "Character",
+        back_populates="event_impacts",
+    )
+
+
+class CharacterProgress(Base):
+    """Model for tracking character progression and milestones."""
+    __tablename__ = "character_progress"
+
+    id = Column(PGUUID(as_uuid=True), primary_key=True)
+    character_id = Column(PGUUID(as_uuid=True), ForeignKey('characters.id'), nullable=False, index=True)
+    experience_points = Column(Integer, nullable=False, server_default=text('0'))
+    milestones = Column(JSONB, nullable=False, server_default=text('[]'))
+    achievements = Column(JSONB, nullable=False, server_default=text('[]'))
+    current_level = Column(Integer, nullable=False, server_default=text('1'))
+    previous_level = Column(Integer, nullable=False, server_default=text('1'))
+    level_updated_at = Column(DateTime, nullable=True)
+    data = Column(JSONB, nullable=False, server_default=text('{}'))
+    created_at = Column(DateTime, nullable=False, server_default=text('now()'))
+    updated_at = Column(DateTime, nullable=False, server_default=text('now()'))
+
+    # Relationships
+    character: Mapped[Character] = relationship(
+        "Character",
+        back_populates="progress",
     )

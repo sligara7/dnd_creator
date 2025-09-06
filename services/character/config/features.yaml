@@ -1,0 +1,90 @@
+# Character Service Feature Configuration
+
+# Core Features
+features:
+  # Enable incremental validation for better performance
+  incremental_validation: true
+  
+  # Enable validation result caching
+  validation_caching: true
+  
+  # Enable parallel rule execution
+  parallel_validation: true
+  
+  # Enable custom content validation
+  custom_content: true
+
+# Validation Engine Configuration
+validation:
+  # Maximum parallel validation workers
+  max_workers: 4
+  
+  # Cache TTL in seconds (1 hour)
+  cache_ttl: 3600
+  
+  # Validation timeout in seconds
+  timeout: 30
+  
+  # Maximum batch size for bulk operations
+  max_batch_size: 100
+
+# Custom Content Limits
+custom_content_limits:
+  # Maximum number of custom features per character
+  max_custom_features: 5
+  
+  # Maximum number of custom spells per character
+  max_custom_spells: 10
+  
+  # Maximum ability score bonus from custom content
+  max_ability_bonus: 3
+  
+  # Maximum number of custom magic items
+  max_magic_items: 3
+
+# Performance Settings
+performance:
+  # Database connection pool
+  db_pool:
+    min_size: 5
+    max_size: 32
+    max_overflow: 64
+    pool_timeout: 30
+    pool_recycle: 1800
+  
+  # Redis cache settings
+  redis_cache:
+    max_connections: 100
+    socket_timeout: 2
+    retry_on_timeout: true
+    health_check_interval: 30
+
+# Monitoring Configuration
+monitoring:
+  # Enable detailed metrics collection
+  detailed_metrics: true
+  
+  # Metric collection interval in seconds
+  metric_interval: 15
+  
+  # Maximum size of timing histograms
+  max_histogram_size: 1000
+  
+  # Profiling settings
+  profiling:
+    enabled: false  # Enable only when needed
+    sample_rate: 0.1
+
+# Integration Settings
+integrations:
+  # Message Hub integration
+  message_hub:
+    retry_attempts: 3
+    retry_delay: 1
+    timeout: 5
+  
+  # LLM Service integration
+  llm_service:
+    timeout: 10
+    max_tokens: 1000
+    cache_results: true

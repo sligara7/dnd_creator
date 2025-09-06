@@ -196,3 +196,56 @@ class NPCRelationship:
     data: Dict[str, Any] = field(default_factory=dict)
     is_deleted: bool = False
     deleted_at: Optional[datetime] = None
+
+
+@dataclass
+class CampaignEvent:
+    """Model for campaign events that impact characters."""
+    id: UUID
+    character_id: UUID
+    journal_entry_id: Optional[UUID]
+    event_type: str
+    event_data: Dict[str, Any]
+    impact_type: str
+    impact_magnitude: int
+    timestamp: datetime
+    applied: bool = False
+    applied_at: Optional[datetime] = None
+    data: Dict[str, Any] = field(default_factory=dict)
+    is_deleted: bool = False
+    deleted_at: Optional[datetime] = None
+
+
+@dataclass
+class EventImpact:
+    """Model for tracking the impact of campaign events on characters."""
+    id: UUID
+    event_id: UUID
+    character_id: UUID
+    impact_type: str
+    impact_data: Dict[str, Any]
+    applied: bool = False
+    applied_at: Optional[datetime] = None
+    reversion_data: Optional[Dict[str, Any]] = None
+    is_reverted: bool = False
+    reverted_at: Optional[datetime] = None
+    notes: Optional[str] = None
+    data: Dict[str, Any] = field(default_factory=dict)
+    created_at: datetime = field(default_factory=datetime.utcnow)
+    updated_at: datetime = field(default_factory=datetime.utcnow)
+
+
+@dataclass
+class CharacterProgress:
+    """Model for tracking character progression and milestones."""
+    id: UUID
+    character_id: UUID
+    experience_points: int = 0
+    milestones: List[Dict[str, Any]] = field(default_factory=list)
+    achievements: List[Dict[str, Any]] = field(default_factory=list)
+    current_level: int = 1
+    previous_level: int = 1
+    level_updated_at: Optional[datetime] = None
+    data: Dict[str, Any] = field(default_factory=dict)
+    created_at: datetime = field(default_factory=datetime.utcnow)
+    updated_at: datetime = field(default_factory=datetime.utcnow)

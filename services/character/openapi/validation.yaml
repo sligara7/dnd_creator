@@ -1,0 +1,232 @@
+# Character Validation API Endpoints
+
+openapi: 3.0.3
+info:
+  title: Character Service - Validation API
+  description: |
+    API endpoints for validating D&D 5e (2024) characters, including support for
+    custom content and incremental validation.
+  version: '2.0.0'
+
+paths:
+  /api/v2/characters/{character_id}/validate:
+    post:
+      summary: Validate a character
+      description: |
+        Validates a character against all applicable rules, including core D&D rules,
+        custom content validation, and theme/campaign compatibility.
+      parameters:
+        - name: character_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: The ID of the character to validate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                categories:
+                  type: array
+                  items:
+                    type: string
+                    enum:
+                      - base
+                      - theme
+                      - campaign
+                      - custom
+                  description: Optional list of rule categories to validate
+                auto_fix:
+                  type: boolean
+                  default: false
+                  description: Whether to attempt automatic fixes for issues
+                incremental:
+                  type: boolean
+                  default: true
+                  description: Whether to use incremental validation for better performance
+      responses:
+        '200':
+          description: Validation results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationResponse'
+        '404':
+          description: Character not found
+        '400':
+          description: Invalid request parameters
+
+  /api/v2/characters/bulk/validate:
+    post:
+      summary: Validate multiple characters
+      description: |
+        Validates multiple characters in parallel. Supports incremental validation
+        and automatic fixing of issues.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                character_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                  description: List of character IDs to validate
+                options:
+                  $ref: '#/components/schemas/ValidationOptions'
+      responses:
+        '200':
+          description: Bulk validation results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: object
+                    additionalProperties:
+                      $ref: '#/components/schemas/ValidationResponse'
+                  summary:
+                    type: object
+                    properties:
+                      total:
+                        type: integer
+                      passed:
+                        type: integer
+                      failed:
+                        type: integer
+                      errors:
+                        type: integer
+                      warnings:
+                        type: integer
+                      auto_fixed:
+                        type: integer
+        '400':
+          description: Invalid request parameters
+
+components:
+  schemas:
+    ValidationOptions:
+      type: object
+      properties:
+        categories:
+          type: array
+          items:
+            type: string
+            enum:
+              - base
+              - theme
+              - campaign
+              - custom
+          description: Optional list of rule categories to validate
+        auto_fix:
+          type: boolean
+          default: false
+          description: Whether to attempt automatic fixes for issues
+        incremental:
+          type: boolean
+          default: true
+          description: Whether to use incremental validation
+    
+    ValidationResponse:
+      type: object
+      required:
+        - character_id
+        - passed
+        - summary
+        - results
+      properties:
+        character_id:
+          type: string
+          format: uuid
+        passed:
+          type: boolean
+        summary:
+          type: string
+          description: Human-readable summary of validation results
+        error_count:
+          type: integer
+        warning_count:
+          type: integer
+        info_count:
+          type: integer
+        fixes_available:
+          type: integer
+        auto_fixes_available:
+          type: integer
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationResult'
+        suggestions:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              $ref: '#/components/schemas/FixSuggestion'
+    
+    ValidationResult:
+      type: object
+      required:
+        - rule_id
+        - passed
+        - issues
+      properties:
+        rule_id:
+          type: string
+        passed:
+          type: boolean
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationIssue'
+    
+    ValidationIssue:
+      type: object
+      required:
+        - severity
+        - message
+        - field
+      properties:
+        severity:
+          type: string
+          enum:
+            - error
+            - warning
+            - info
+        message:
+          type: string
+        field:
+          type: string
+          description: JSON path to the problematic field
+        fix_available:
+          type: boolean
+        metadata:
+          type: object
+          description: Additional context about the issue
+    
+    FixSuggestion:
+      type: object
+      required:
+        - description
+        - field_path
+      properties:
+        description:
+          type: string
+        auto_fixable:
+          type: boolean
+        field_path:
+          type: string
+        example_value:
+          type: string
+        related_fields:
+          type: array
+          items:
+            type: string

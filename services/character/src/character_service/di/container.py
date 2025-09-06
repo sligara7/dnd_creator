@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from character_service.config import get_settings
 from character_service.infrastructure.database import create_engine, create_session_factory
 from character_service.infrastructure.repositories.character import CharacterRepository
+from character_service.infrastructure.repositories.event import CampaignEventRepository, EventImpactRepository
 from character_service.infrastructure.repositories.inventory import InventoryRepository
 from character_service.infrastructure.repositories.journal import (
     ExperienceEntryRepository,
@@ -14,6 +15,12 @@ from character_service.infrastructure.repositories.journal import (
     NPCRelationshipRepository,
     QuestRepository,
 )
+from character_service.domain.event import EventImpactService
+from character_service.domain.event_publisher import EventPublicationManager
+from character_service.domain.progress import ProgressTrackingService
+from character_service.domain.state_publisher import StatePublisher
+from character_service.domain.state_version import VersionManager
+from character_service.domain.subscription import SubscriptionManager
 from character_service.services.character import CharacterServiceImpl
 from character_service.services.inventory import InventoryServiceImpl
 from character_service.services.journal import JournalServiceImpl
@@ -68,6 +75,14 @@ def setup_di() -> Container:
         NPCRelationshipRepository,
         lambda c: NPCRelationshipRepository(c.resolve(get_db_session)),
     )
+    container.add_scoped(
+        CampaignEventRepository,
+        lambda c: CampaignEventRepository(c.resolve(get_db_session)),
+    )
+    container.add_scoped(
+        EventImpactRepository,
+        lambda c: EventImpactRepository(c.resolve(get_db_session)),
+    )
 
     # Services
     container.add_scoped(
@@ -93,6 +108,34 @@ def setup_di() -> Container:
             c.resolve(ExperienceEntryRepository),
             c.resolve(QuestRepository),
             c.resolve(NPCRelationshipRepository),
+        )
+    )
+
+    # State version management
+    container.add_scoped(
+        VersionManager,
+        lambda c: VersionManager(
+            char_repository=c.resolve(CharacterRepository),
+        )
+    )
+
+    # Event-related services
+    container.add_scoped(
+        EventImpactService,
+        lambda c: EventImpactService(
+            c.resolve(CampaignEventRepository),
+            c.resolve(EventImpactRepository),
+            c.resolve(CharacterRepository),
+            c.resolve(VersionManager),
+        )
+    )
+    container.add_scoped(
+        ProgressTrackingService,
+        lambda c: ProgressTrackingService(
+            c.resolve(CharacterRepository),
+            c.resolve(CampaignEventRepository),
+            c.resolve(EventImpactRepository),
+            c.resolve(VersionManager),
         )
     )
 

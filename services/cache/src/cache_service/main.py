@@ -117,7 +117,7 @@ async def health_check():
 async def metrics():
     """Prometheus metrics endpoint"""
     # Return prometheus metrics
-    return await setup_monitoring.get_metrics()
+    return await metrics_collector.get_metrics()
 
 def start() -> None:
     """Entry point for running in production"""

@@ -53,7 +53,7 @@ class Version(BaseTimestampModel):
         JSONB,
         nullable=False
     )
-    metadata: Mapped[Dict] = mapped_column(
+    version_metadata: Mapped[Dict] = mapped_column(
         JSONB,
         nullable=False
     )
@@ -99,7 +99,7 @@ class Branch(BaseTimestampModel):
         DateTime,
         nullable=True
     )
-    metadata: Mapped[Dict] = mapped_column(
+    branch_metadata: Mapped[Dict] = mapped_column(
         JSONB,
         nullable=False
     )
@@ -171,7 +171,7 @@ class MergeRequest(BaseTimestampModel):
         String(40),  # Git-like SHA-1
         nullable=True
     )
-    metadata: Mapped[Dict] = mapped_column(
+    merge_metadata: Mapped[Dict] = mapped_column(
         JSONB,
         nullable=False
     )

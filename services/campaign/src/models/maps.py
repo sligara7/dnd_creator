@@ -30,7 +30,7 @@ class MapLocation(Base):
     location_type = Column(String(50), nullable=False)  # world, region, city, building, etc
     description = Column(String, nullable=True)
     coordinates = Column(JSON, nullable=True)  # For placement on parent map
-    metadata = Column(JSON, nullable=False, default={})
+    location_metadata = Column(JSON, nullable=False, default={})
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime,
@@ -66,7 +66,7 @@ class LocationMap(Base):
     version = Column(Integer, nullable=False, default=1)
     prompt = Column(String, nullable=True)  # Original prompt used to generate
     style_params = Column(JSON, nullable=True)  # Style parameters used
-    metadata = Column(JSON, nullable=False, default={})
+    map_metadata = Column(JSON, nullable=False, default={})
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships

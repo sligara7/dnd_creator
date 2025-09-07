@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +19,8 @@ from search_service.core.exceptions import SearchServiceError
 from search_service.clients.elasticsearch import ElasticsearchClient
 from search_service.clients.cache import CacheManager
 
+# Import analytics router
+from search_service.api.routes.analytics import router as analytics_router
 
 # Create router
 api_router = APIRouter()
@@ -253,6 +255,111 @@ async def delete_index(
     return IndexResponse(**result)
 
 
+@api_router.put(
+    "/indices/{name}/mappings",
+    response_model=IndexResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+async def update_index_mappings(
+    name: str,
+    mappings: Dict[str, Any],
+    es: ElasticsearchClient = Depends(get_es),
+    db: AsyncSession = Depends(get_db),
+    cache: CacheManager = Depends(get_cache),
+) -> IndexResponse:
+    """Update index mappings"""
+    from search_service.services.index import IndexService
+    from search_service.clients.message_hub import MessageHubClient
+    
+    # Get message hub client
+    message_hub = MessageHubClient(
+        base_url="http://message-hub:8200",
+        service_name="search-service"
+    )
+    
+    # Use IndexService for proper mapping updates
+    index_service = IndexService(db, es, cache, message_hub)
+    result = await index_service.update_mappings(
+        index_name=name,
+        mappings=mappings,
+    )
+    return IndexResponse(**result)
+
+
+@api_router.post(
+    "/indices/{name}/refresh",
+    response_model=IndexResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+async def refresh_index(
+    name: str,
+    es: ElasticsearchClient = Depends(get_es),
+    db: AsyncSession = Depends(get_db),
+    cache: CacheManager = Depends(get_cache),
+) -> IndexResponse:
+    """Refresh index to make recent changes searchable"""
+    from search_service.services.index import IndexService
+    from search_service.clients.message_hub import MessageHubClient
+    
+    # Get message hub client
+    message_hub = MessageHubClient(
+        base_url="http://message-hub:8200",
+        service_name="search-service"
+    )
+    
+    # Use IndexService for proper refresh
+    index_service = IndexService(db, es, cache, message_hub)
+    result = await index_service.refresh_index(index_name=name)
+    return IndexResponse(**result)
+
+
+@api_router.post(
+    "/indices/{name}/analyze",
+    response_model=Dict[str, Any],
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+async def analyze_text(
+    name: str,
+    text: str,
+    analyzer: Optional[str] = None,
+    field: Optional[str] = None,
+    es: ElasticsearchClient = Depends(get_es),
+    db: AsyncSession = Depends(get_db),
+    cache: CacheManager = Depends(get_cache),
+) -> Dict[str, Any]:
+    """Analyze text using index analyzers"""
+    from search_service.services.index import IndexService
+    from search_service.clients.message_hub import MessageHubClient
+    
+    # Get message hub client
+    message_hub = MessageHubClient(
+        base_url="http://message-hub:8200",
+        service_name="search-service"
+    )
+    
+    # Use IndexService for text analysis
+    index_service = IndexService(db, es, cache, message_hub)
+    result = await index_service.analyze_text(
+        index_name=name,
+        text=text,
+        analyzer=analyzer,
+        field=field,
+    )
+    return result
+
+
 @api_router.post(
     "/documents",
     response_model=IndexResponse,
@@ -321,6 +428,43 @@ async def bulk_index(
     )
     return BulkResponse(**result)
 
+
+@api_router.get(
+    "/documents/{id}",
+    response_model=Dict[str, Any],
+    responses={
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+async def get_document(
+    id: str,
+    index_type: str = Query(..., description="Index type of the document"),
+    es: ElasticsearchClient = Depends(get_es),
+) -> Dict[str, Any]:
+    """Get document by ID"""
+    try:
+        result = await es.get_document(index_type, id)
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Document {id} not found in index {index_type}"
+            )
+        return result
+    except Exception as e:
+        if "NotFoundError" in str(e) or "404" in str(e):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Document {id} not found in index {index_type}"
+            )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+# Include analytics router
+api_router.include_router(analytics_router, prefix="/analytics", tags=["analytics"])
 
 # Health check routes
 @api_router.get("/health/live")

@@ -46,7 +46,7 @@ class Campaign(Base):
     )
     theme_id: Mapped[Optional[UUID]] = mapped_column(PGUUID(as_uuid=True), nullable=True)
     theme_data: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    metadata: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    campaign_metadata: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     
     # Creator and ownership
     creator_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
@@ -110,7 +110,7 @@ class Chapter(Base):
     )
     sequence_number: Mapped[int] = mapped_column(nullable=False)
     content: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    metadata: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    chapter_metadata: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
     # Dependencies
     prerequisites: Mapped[List[UUID]] = mapped_column(

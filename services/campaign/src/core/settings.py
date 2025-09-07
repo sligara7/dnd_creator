@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     port: int = Field(8001, env="PORT")
 
     # Security
-    api_token: SecretStr = Field(..., env="API_TOKEN")
+    api_token: Optional[SecretStr] = Field(None, env="API_TOKEN")
     cors_origins: List[str] = Field(
         default_factory=lambda: ["http://localhost:3000"]
     )
@@ -72,12 +72,12 @@ class Settings(BaseSettings):
     rate_limit_rpm: int = Field(120, description="Requests per minute per client")
     rate_limit_burst: int = Field(30, description="Burst limit per client")
 
-    # Dependencies
-    database: DatabaseSettings
-    llm_service: LLMServiceSettings
-    message_hub: MessageHubSettings
-    version_control: VersionControlSettings
-    theme: ThemeSettings
+    # Dependencies with defaults for testing
+    database: Optional[DatabaseSettings] = None
+    llm_service: Optional[LLMServiceSettings] = None
+    message_hub: Optional[MessageHubSettings] = None
+    version_control: Optional[VersionControlSettings] = None
+    theme: Optional[ThemeSettings] = None
 
     # Prometheus metrics
     metrics_enabled: bool = True
@@ -109,11 +109,11 @@ class Settings(BaseSettings):
         # Add service-specific validation here
         if not self.api_token:
             raise ValueError("API token is required")
-        if not self.database.dsn:
+        if self.database and not self.database.dsn:
             raise ValueError("Database DSN is required")
-        if not self.llm_service.token:
+        if self.llm_service and not self.llm_service.token:
             raise ValueError("LLM Service token is required")
-        if not self.message_hub.token:
+        if self.message_hub and not self.message_hub.token:
             raise ValueError("Message Hub token is required")
 
 

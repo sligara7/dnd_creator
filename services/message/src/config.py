@@ -43,6 +43,32 @@ class Settings(BaseSettings):
     transaction_timeout: int = 30  # seconds
     max_completed_transactions: int = 1000
     
+    # Retry Manager Settings
+    retry_max_attempts: int = 5
+    retry_base_delay: float = 1.0  # seconds
+    retry_max_delay: float = 300.0  # 5 minutes
+    retry_jitter: float = 0.1
+    dead_letter_ttl: int = 86400  # 24 hours
+    
+    # Priority Queue Settings
+    priority_levels: int = 5
+    queue_processing_interval: float = 0.1  # seconds
+    max_messages_per_service: int = 1000
+    queue_quotas_enabled: bool = True
+    
+    # Enhanced Service Registry Settings
+    load_balancing_strategy: str = "round_robin"  # round_robin, least_connections, weighted
+    health_check_interval: int = 30  # seconds
+    health_check_timeout: int = 5  # seconds
+    max_instances_per_service: int = 10
+    dependency_check_enabled: bool = True
+    
+    # Event Store Settings
+    wal_enabled: bool = True
+    wal_flush_interval: int = 1  # seconds
+    snapshot_interval: int = 1000  # events
+    compaction_threshold: float = 0.5  # 50% deleted events
+    
     # Monitoring
     enable_metrics: bool = True
     enable_tracing: bool = True

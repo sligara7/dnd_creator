@@ -21,7 +21,7 @@ class Database:
 
     def init(self) -> None:
         """Initialize database connection."""
-        if not self.engine:
+        if not self.engine and settings.database:
             self.engine = create_async_engine(
                 str(settings.database.dsn),
                 echo=settings.database.echo,
@@ -61,5 +61,13 @@ class Database:
 # Global database instance
 db = Database()
 
-# Initialize database on import
-db.init()
+# Initialize database on import if configuration exists
+import os
+if not os.getenv("TESTING", "").lower() == "true":
+    db.init()
+
+
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """Dependency for getting database session."""
+    async with db.session() as session:
+        yield session

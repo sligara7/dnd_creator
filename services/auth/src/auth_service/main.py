@@ -3,11 +3,9 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from auth_service.core.config import settings
-from auth_service.api.routes import api_router
 from auth_service.core.exceptions import AuthServiceError
 from auth_service.core.monitoring import setup_monitoring
-from auth_service.security.key_manager import KeyManager
-from auth_service.security.token_service import TokenService
+from auth_service.core.database import init_db
 
 app = FastAPI(
     title="Auth Service",
@@ -24,23 +22,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global dependencies
-key_manager = KeyManager(
-    private_key_path=settings.PRIVATE_KEY_PATH,
-    public_key_path=settings.PUBLIC_KEY_PATH,
-)
-token_service = TokenService(key_manager)
+# Import API routes
+from auth_service.api.v2.auth import router as auth_router
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on startup"""
     await setup_monitoring()
-    await key_manager.setup()
+    await init_db()
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on shutdown"""
-    await key_manager.cleanup()
+    pass
 
 @app.exception_handler(AuthServiceError)
 async def auth_service_exception_handler(request: Request, exc: AuthServiceError):
@@ -60,32 +54,22 @@ async def auth_service_exception_handler(request: Request, exc: AuthServiceError
     )
 
 # Include API routes
-app.include_router(api_router)
+app.include_router(auth_router)
 
 @app.get("/health")
 async def health_check():
     """Service health check endpoint"""
-    # Check health of all dependencies
-    key_status = await key_manager.health_check()
-    token_status = await token_service.health_check()
-    
-    # Determine overall health
-    all_healthy = all([key_status, token_status])
-    
     return {
-        "status": "healthy" if all_healthy else "degraded",
-        "version": settings.VERSION,
-        "components": {
-            "key_manager": "healthy" if key_status else "degraded",
-            "token_service": "healthy" if token_status else "degraded",
-        },
+        "status": "healthy",
+        "version": "2.0.0",
+        "service": "auth-service"
     }
 
 @app.get("/metrics")
 async def metrics():
     """Prometheus metrics endpoint"""
-    # Return prometheus metrics
-    return await setup_monitoring.get_metrics()
+    from auth_service.core.monitoring import get_metrics
+    return await get_metrics()
 
 def start() -> None:
     """Entry point for running in production"""

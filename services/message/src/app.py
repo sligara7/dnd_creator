@@ -10,10 +10,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import Settings
 from .models import ServiceMessage, ServiceResponse, ServiceRegistration
-from .service_registry import ServiceRegistry
+from .enhanced_service_registry import EnhancedServiceRegistry
 from .message_router import MessageRouter
 from .monitoring import MessageHubMetrics
 from .transaction_manager import TransactionManager
+from .retry_manager import RetryManager
+from .priority_queue import PriorityQueueManager
+from .event_store.api import router as event_router
+from .event_persistence import EventPersistence
+from .database import get_session
 
 # Initialize logging
 logger = structlog.get_logger()

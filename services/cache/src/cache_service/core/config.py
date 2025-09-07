@@ -71,6 +71,7 @@ class Settings(BaseSettings):
     CIRCUIT_BREAKER_HALF_OPEN_REQUESTS: int = 3
     
     # Metrics config
+    METRICS_ENABLED: bool = True
     METRICS_PORT: int = 8501
     METRICS_PATH: str = "/metrics"
     COLLECT_DETAILED_METRICS: bool = True

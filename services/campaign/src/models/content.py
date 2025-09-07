@@ -87,7 +87,7 @@ class NPC(BaseTimestampModel):
         ForeignKey("chapters.id"),
         nullable=True
     )
-    metadata: Mapped[Dict] = mapped_column(
+    npc_metadata: Mapped[Dict] = mapped_column(
         JSONB,
         nullable=False,
         default=dict
@@ -167,7 +167,7 @@ class Location(BaseTimestampModel):
         nullable=False,
         default=True
     )
-    metadata: Mapped[Dict] = mapped_column(
+    location_metadata: Mapped[Dict] = mapped_column(
         JSONB,
         nullable=False,
         default=dict
@@ -229,7 +229,7 @@ class ChapterNPC(BaseTimestampModel):
         nullable=False,
         default=list
     )
-    metadata: Mapped[Dict] = mapped_column(
+    chapter_npc_metadata: Mapped[Dict] = mapped_column(
         JSONB,
         nullable=False,
         default=dict
@@ -282,7 +282,7 @@ class ChapterLocation(BaseTimestampModel):
         nullable=False,
         default=list
     )
-    metadata: Mapped[Dict] = mapped_column(
+    chapter_location_metadata: Mapped[Dict] = mapped_column(
         JSONB,
         nullable=False,
         default=dict

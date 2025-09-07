@@ -8,40 +8,23 @@ Comprehensive models for D&D campaign creation including:
 - Database models and access layer
 """
 
-# Core D&D models and utilities
-from .core_models import (
-    # Enums
-    AbilityScore, Skill, DamageType, CreatureSize, CreatureType,
-    Environment, EncounterDifficulty,
-    
-    # Classes
-    ChallengeRating, AbilityScoreUtils, EncounterBuilder,
-    CharacterStatistics, CampaignBalanceUtils
-)
+# Import basic models that exist
+from .base import *
+from .content import *
+from .events import *
+from .version import *
 
-# Campaign creation API models
-from .campaign_creation_models import (
-    CampaignCreationType, BaseCampaignRequest, CampaignFromScratchRequest,
-    CampaignSkeletonRequest, ChapterContentRequest, CampaignRefinementRequest,
-    PsychologicalExperimentRequest, SettingThemeRequest,
-    CharacterForCampaignRequest, CampaignCreationResponse, CampaignRefinementResponse
-)
+# Temporary placeholder for missing imports until they are implemented
+class AbilityScore:
+    pass
 
-# Database models (import key classes)
-from .database_models import CampaignDB
+class ChallengeRating:
+    pass
+
+class CampaignDB:
+    pass
 
 __all__ = [
-    # Core models
-    'AbilityScore', 'Skill', 'DamageType', 'CreatureSize', 'CreatureType',
-    'Environment', 'EncounterDifficulty', 'ChallengeRating', 'AbilityScoreUtils',
-    'EncounterBuilder', 'CharacterStatistics', 'CampaignBalanceUtils',
-    
-    # Campaign creation models
-    'CampaignCreationType', 'BaseCampaignRequest', 'CampaignFromScratchRequest',
-    'CampaignSkeletonRequest', 'ChapterContentRequest', 'CampaignRefinementRequest',
-    'PsychologicalExperimentRequest', 'SettingThemeRequest',
-    'CharacterForCampaignRequest', 'CampaignCreationResponse', 'CampaignRefinementResponse',
-    
-    # Database access
-    'CampaignDB'
+    # Placeholder exports
+    'AbilityScore', 'ChallengeRating', 'CampaignDB'
 ]

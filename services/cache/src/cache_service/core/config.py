@@ -1,6 +1,6 @@
 from typing import List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, PostgresDsn, SecretStr
+from pydantic import Field, PostgresDsn, SecretStr, validator
 
 
 class Settings(BaseSettings):
@@ -30,12 +30,38 @@ class Settings(BaseSettings):
     # Redis Primary config
     REDIS_PRIMARY_HOST: str = "cache_primary"
     REDIS_PRIMARY_PORT: int = 6379
-    REDIS_PASSWORD: SecretStr
+    REDIS_PASSWORD: Optional[SecretStr] = None
     REDIS_DB: int = 0
 
     # Redis Replica config
     REDIS_REPLICA_HOST: str = "cache_replica"
     REDIS_REPLICA_PORT: int = 6379
+    
+    # Redis Cluster Configuration
+    REDIS_CLUSTER_NODES: List[str] = Field(
+        default_factory=lambda: ["localhost:7000", "localhost:7001", "localhost:7002"],
+        env="REDIS_CLUSTER_NODES"
+    )
+    REDIS_CLUSTER_ENABLED: bool = False
+    
+    # Redis Sentinel Configuration
+    REDIS_SENTINEL_HOSTS: List[str] = Field(
+        default_factory=lambda: ["localhost:26379"],
+        env="REDIS_SENTINEL_HOSTS"
+    )
+    REDIS_SENTINEL_MASTER: str = "mymaster"
+    REDIS_SENTINEL_ENABLED: bool = False
+    
+    # Connection Pool Settings
+    REDIS_POOL_MIN_SIZE: int = 5
+    REDIS_POOL_MAX_SIZE: int = 50
+    REDIS_CONNECTION_TIMEOUT: int = 5
+    REDIS_SOCKET_TIMEOUT: int = 5
+    REDIS_SOCKET_KEEPALIVE: bool = True
+    
+    # Performance Settings
+    COMPRESSION_ENABLED: bool = True
+    COMPRESSION_THRESHOLD: int = 1024  # bytes
 
     # Cache config
     CACHE_MEMORY_LIMIT: str = "26GB"  # 80% of 32GB

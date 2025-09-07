@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 

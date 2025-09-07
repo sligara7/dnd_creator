@@ -5,7 +5,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from search_service.clients.cache import CacheClient
+from search_service.clients.cache import CacheManager as CacheClient
 from search_service.clients.elasticsearch import ElasticsearchClient
 from search_service.clients.message_hub import MessageHubClient
 from search_service.repositories.search import SearchRepository

@@ -35,9 +35,37 @@ The Search Service provides centralized search capabilities for the D&D Characte
     * Suggestions and autocomplete
     * Click tracking
     * Message Hub integration for events
+  - Created IndexService with:
+    * Index creation and deletion
+    * Mappings management
+    * Index refresh and optimization
+    * Text analysis capabilities
+    * Index statistics and monitoring
+    * Backup and restore operations
+  - Created AnalyticsService with:
+    * Search query tracking
+    * Popular queries analysis
+    * Performance metrics collection
+    * Zero-result query tracking
+    * Click-through rate analysis
+    * Query suggestions based on history
+    * Analytics data export (JSON/CSV)
   - Business logic orchestration between repositories
   - Caching strategy implementation
   - Analytics tracking integration
+
+- [x] **API Implementation**
+  - Added missing index management endpoints:
+    * PUT /indices/{name}/mappings - Update index mappings
+    * POST /indices/{name}/refresh - Refresh index
+    * POST /indices/{name}/analyze - Analyze text
+    * GET /documents/{id} - Get document by ID
+  - Analytics router with endpoints for:
+    * Search analytics retrieval
+    * Popular queries
+    * Performance metrics
+    * Click tracking
+  - Integrated analytics router into main API
 
 - [x] **Existing Infrastructure**
   - Configuration system with pydantic-settings

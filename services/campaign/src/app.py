@@ -5,7 +5,7 @@ from prometheus_client import Counter, Histogram
 import time
 
 from .api.routers import campaign, chapter, version, health
-from .routers import story
+from .campaign.routers import story, factory, theme
 from .core.config import settings
 from .core.logging import get_logger
 
@@ -66,6 +66,8 @@ app.include_router(chapter.router)
 app.include_router(version.router)
 app.include_router(health.router)
 app.include_router(story.router)
+app.include_router(factory.router)
+app.include_router(theme.router)
 
 
 @app.on_event("startup")

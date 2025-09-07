@@ -22,13 +22,13 @@
 - [x] Performance optimization (Completed 2025-09-07)
 
 ## 4. Testing
-- [ ] Unit tests for retry manager
-- [ ] Unit tests for event persistence
-- [ ] Unit tests for priority queue
-- [ ] Unit tests for enhanced service registry
-- [ ] Integration tests for message routing
-- [ ] Integration tests for event replay
-- [ ] Performance tests
+- [x] Unit tests for retry manager (Completed 2025-09-07)
+- [x] Unit tests for event persistence (Completed 2025-09-07)
+- [x] Unit tests for priority queue (Completed 2025-09-07)
+- [x] Unit tests for enhanced service registry (Completed 2025-09-07)
+- [x] Integration tests for message routing (Completed 2025-09-07)
+- [x] Integration tests for event replay (Completed 2025-09-07)
+- [x] Performance tests (Completed 2025-09-07)
 
 ## Progress Notes
 

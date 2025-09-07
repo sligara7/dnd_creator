@@ -2,13 +2,13 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from cache_service.core.config import settings
-from cache_service.api.routes import api_router
-from cache_service.core.exceptions import CacheServiceError
-from cache_service.core.monitoring import setup_monitoring
-from cache_service.services.cache_manager import CacheManager
-from cache_service.services.local_cache import LocalCache
-from cache_service.services.circuit_breaker import CircuitBreaker
+from .core.config import settings
+from .api.routes import api_router
+from .core.exceptions import CacheServiceError
+from .core.monitoring import setup_monitoring, metrics_collector
+from .services.cache_manager import CacheManager
+from .services.local_cache import LocalCache
+from .services.circuit_breaker import CircuitBreaker
 
 app = FastAPI(
     title="Cache Service",

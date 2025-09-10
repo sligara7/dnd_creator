@@ -2,9 +2,106 @@
 
 Version: 1.0
 Status: Active
-Last Updated: 2025-09-07
+Last Updated: 2025-09-10
+
+## Linked Documents
+- Character Service Tests: `/services/character/SERVICE_TESTS.md`
+- Campaign Service Tests: `/services/campaign/SERVICE_TESTS.md`
+- Image Service Tests: `/services/image/SERVICE_TESTS.md`
+- Message Hub Tests: `/services/message_hub/SERVICE_TESTS.md`
+
+> Note: This document is automatically synchronized with service-level test documents.
+> Updates to this file or any service-level test document will automatically update the related documents.
 
 ## Overview
+
+This document serves as a high-level test strategy index for all services. Detailed test plans and requirements are maintained in service-specific SERVICE_TESTS.md files, with integration tests documented in the tests/INTEGRATION_TEST_PLAN.md. 
+
+## Rule
+
+Fix issues at their root cause.  Do not create work-arounds.  Treat these tests like this is going into the production phase next, so issues must be fixed properly.
+
+## Test Process Guidelines
+
+### Pre-Test Requirements
+
+Before implementing or running tests, complete these steps:
+
+1. Documentation Review:
+   - Review service's SRD (System Requirements Document) for test requirements
+   - Review service's ICD (Interface Control Document) for integration points
+   - Check DOC_INDEX.md at: /dnd_char_creator/DOC_INDEX.md for all reference docs
+   - Review service's SERVICE_TESTS.md for existing test specifications
+
+2. Code Review:
+   - Index the service's existing test files
+   - Review test coverage reports
+   - Identify gaps in test coverage
+   - Check for test-specific TODO comments
+
+3. Environment Setup:
+   - Verify test database configuration
+   - Check Message Hub availability for integration tests
+   - Configure mock services as needed
+   - Set required environment variables
+
+### Post-Test Requirements
+
+After completing ANY test run, perform these steps IN ORDER:
+
+1. Documentation Updates:
+   a. Update SERVICE_TESTS.md:
+      - Add test completion timestamp
+      - Document key test changes/additions
+      - Note any testing patterns or gotchas worth preserving
+      - Update coverage statistics
+   
+   b. Update test reports:
+      ```bash
+      # Generate coverage report
+      pytest --cov=src --cov-report=html
+      
+      # Generate test results
+      pytest --junitxml=test-results.xml
+      ```
+   
+   c. If major test changes were made:
+      - Update the service's README.md with new test requirements
+      - Update WARP.md if test architecture changes affect the system
+
+2. Test Data Cleanup:
+   - Reset test databases to clean state
+   - Clear test caches
+   - Remove temporary test files
+   - Reset mock services
+
+3. Git Updates (REQUIRED):
+   a. Stage changes:
+      ```bash
+      git add .
+      ```
+   
+   b. Create detailed commit:
+      ```bash
+      git commit -m "[Service Name] Tests: Brief description of changes
+      
+      - Added tests for feature X
+      - Improved coverage for component Y
+      - Fixed flaky test Z
+      - Updated test documentation
+      - References task/issue number if applicable"
+      ```
+   
+   c. Push to remote:
+      ```bash
+      git push origin main  # or appropriate branch
+      ```
+
+4. Test Environment Cleanup:
+   - Stop test databases
+   - Clear message queues
+   - Reset environment variables
+   - Clean coverage data
 
 This document outlines our testing strategy and tracks test outcomes, root causes, and fixes. The testing approach follows a layered strategy:
 
@@ -16,13 +113,43 @@ This document outlines our testing strategy and tracks test outcomes, root cause
 
 ### L1: Individual Service Testing
 
-Service-specific tests focusing on core functionality without external dependencies.
+Service-specific tests focusing on core functionality without external dependencies. Each service has its own SERVICE_TESTS.md document that details the specific test requirements for that service.
 
 #### Character Service Tests
 
+##### Completed Tests
+- [x] Database Configuration and Setup
+- [x] Repository Layer:
+  - [x] Base Model Implementation
+  - [x] Character Model Implementation
+  - [x] Character Creation (CHAR-001-A)
+  - [x] Character Retrieval (CHAR-001-B)
+  - [x] Character Updates:
+    - [x] Basic Field Updates
+    - [x] Ability Score Updates
+    - [x] Combat Stats Updates
+  - [x] Character Listing:
+    - [x] Basic List Operations
+    - [x] Empty List Handling
+    - [x] Soft Delete Filtering
+
+##### Pending Tests
+- [ ] Repository Layer:
+- [x] Filter Characters
+  - [x] Sort Characters
+  - [x] Batch Operations
+- [x] Service Layer Creation Tests
+- [x] Service Layer Evolution Tests (HP, Level)
+- [x] Service Layer Evolution Tests (Class Features)
+- [x] Service Layer Evolution Tests (Multiclass)
+- [x] Service Layer Validation Tests (Combat, Resources, State)
+- [x] API Layer Tests (Create, Get, List, Update, Validation)
+- [ ] Integration Tests
+
+##### Test Progress Table
 | Test ID | Description | Status | Issue/Failure | Root Cause | Fix |
 |---------|-------------|--------|---------------|------------|-----|
-| CHAR-001 | Basic CRUD operations | - | - | - | - |
+| CHAR-API-002 | API Endpoints | COMPLETE | Endpoint tests | Create, Get, List, Update, Validation | Implemented FastAPI app with DI, models, and error handling |
 | CHAR-002 | Character sheet validation | - | - | - | - |
 | CHAR-003 | Character evolution tracking | - | - | - | - |
 | CHAR-004 | Journal system | - | - | - | - |
@@ -62,9 +189,35 @@ E   fastapi.exceptions.FastAPIError: Invalid args for response field! ... check 
 
 #### Campaign Service Tests
 
+##### Completed Tests
+- [x] Database Configuration and Setup
+  - [x] PostgreSQL test database created and configured
+  - [x] Alembic migrations with proper schema
+  - [x] Base model with UUID, timestamps, soft delete
+- [x] Repository Layer - Base Operations:
+  - [x] Campaign Creation (CAMP-001-A)
+  - [x] Campaign Update (CAMP-001-B)
+  - [x] Campaign State Transitions (CAMP-001-C)
+- [x] Soft Delete Implementation:
+  - [x] Soft delete flags and timestamps
+  - [x] Default query filtering
+  - [x] Chapter preservation on parent delete
+  - [x] Update blocking when deleted
+
+##### In Progress
+- [ ] Repository Layer - Advanced Operations:
+  - [ ] Batch operations
+  - [ ] Complex filtering
+  - [ ] Pagination
+- [ ] Theme System Implementation
+- [ ] Chapter Management
+
+##### Test Progress Table
 | Test ID | Description | Status | Issue/Failure | Root Cause | Fix |
 |---------|-------------|--------|---------------|------------|-----|
-| CAMP-001 | Campaign CRUD operations | - | - | - | - |
+| CAMP-001-A | Basic creation | ✅ | Initial DB setup | Alembic auto-detection | Fixed migration detection |
+| CAMP-001-B | Campaign updates | ✅ | Transaction management | Nested transaction cleanup | Implemented proper savepoint handling |
+| CAMP-001-C | Soft delete | ✅ | - | - | - |
 | CAMP-002 | Theme system validation | - | - | - | - |
 | CAMP-003 | Chapter organization | - | - | - | - |
 | CAMP-004 | NPC management | - | - | - | - |
@@ -74,11 +227,11 @@ E   fastapi.exceptions.FastAPIError: Invalid args for response field! ... check 
 
 | Test ID | Description | Status | Issue/Failure | Root Cause | Fix |
 |---------|-------------|--------|---------------|------------|-----|
-| IMG-001 | Basic image operations | - | - | - | - |
-| IMG-002 | Portrait generation mocks | - | - | - | - |
-| IMG-003 | Map creation validation | - | - | - | - |
-| IMG-004 | Asset management | - | - | - | - |
-| IMG-005 | Style transfer validation | - | - | - | - |
+| IMG-001 | Basic image operations | ✅ | SQLAlchemy schema mismatch | Test DB not updated with new columns | Improved test DB creation with explicit drop/create and error handling |
+| IMG-002 | Portrait generation mocks | ✅ | GetImg.AI API mocking issues | Async mock configuration | Added proper async mock patterns with realistic responses |
+| IMG-003 | Map creation validation | ✅ | Map generation tests failing | Missing test fixtures and metadata | Added comprehensive map generation fixtures and metadata handling |
+| IMG-004 | Asset management | ✅ | Storage persistence test failures | Improper version handling | Implemented proper version management in mock storage repository |
+| IMG-005 | Style transfer validation | ✅ | Theme integration issues | Incomplete style guide data | Added complete theme and style guide test data |
 
 #### Message Hub Tests
 
@@ -92,7 +245,7 @@ E   fastapi.exceptions.FastAPIError: Invalid args for response field! ... check 
 
 ### L2: Service Integration Testing
 
-Tests focusing on service-to-service communication and integration.
+Tests focusing on service-to-service communication and integration. Detailed in INTEGRATION_TEST_PLAN.md, these tests verify proper event handling and state synchronization between services through the Message Hub.
 
 #### Character-Campaign Integration
 
@@ -142,9 +295,68 @@ Tests requiring actual LLM service interaction.
    - Use mocks for external service dependencies
    - Maintain separate test databases per service
 
+2. **Database Test Configuration**
+   - Each service uses TestSessionManager with proper error handling
+   - Tables are explicitly dropped and recreated for each test run
+   - Connection pools use pre-ping and proper isolation levels
+   - Nested transactions ensure test isolation
+
+Example test database configuration:
+```python
+async def init(self) -> None:
+    try:
+        self.engine = create_async_engine(
+            self.database_url,
+            echo=False,
+            pool_size=5,
+            pool_pre_ping=True,  # Verify connections
+            isolation_level='READ COMMITTED'
+        )
+    except Exception as e:
+        print(f"Error initializing test database: {e}")
+        raise
+
+async def setup_tables(self):
+    try:
+        async with self.engine.begin() as conn:
+            # Drop all tables to ensure clean state
+            await conn.run_sync(Base.metadata.drop_all)
+            # Create all tables from current models
+            await conn.run_sync(Base.metadata.create_all)
+    except Exception as e:
+        print(f"Error creating test tables: {e}")
+        raise
+```
+
 2. **Database Testing**
+
+   Key principles:
+   - Use nested transactions for isolation
+   - Ensure clean state for each test
+   - Handle schema changes properly
+   - Robust error handling
+
    ```python
-   @pytest.fixture(scope="function")
+   # Database manager fixture
+   @pytest.fixture
+   async def db_manager() -> AsyncGenerator[TestSessionManager, None]:
+       manager = TestSessionManager()
+       await manager.init()
+
+       # Ensure clean database state
+       try:
+           async with manager.engine.begin() as conn:
+               await conn.run_sync(Base.metadata.drop_all)
+               await conn.run_sync(Base.metadata.create_all)
+       except Exception as e:
+           print(f"Error setting up test database: {e}")
+           raise
+
+       yield manager
+       await manager.cleanup()
+
+   # Session fixture with transaction isolation
+   @pytest.fixture
    async def test_db(db_manager):
        async with db_manager.begin_nested() as session:
            yield session
@@ -158,7 +370,9 @@ Tests requiring actual LLM service interaction.
            yield mock
    ```
 
-### Service Integration Testing (L2)
+### L2: Service Integration Testing (L2)
+
+Refer to /tests/INTEGRATION_TEST_PLAN.md for detailed integration test specifications. Key areas:
 
 1. **Message Hub Testing**
    - Test message routing between services

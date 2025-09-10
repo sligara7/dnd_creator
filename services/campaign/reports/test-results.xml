@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" errors="7" failures="0" skipped="0" tests="7" time="5.901" timestamp="2025-09-09T21:23:30.445508" hostname="asligar-bitecool"><testcase classname="" name="tests.test_version_control" time="0.000"><error message="collection failure">tests/test_version_control.py:10: in &lt;module&gt;
+    from campaign_service.models.version import Branch, BranchType, StateTransition, Version, VersionType
+src/campaign_service/models/version.py:35: in &lt;module&gt;
+    class Version(Base):
+/home/ajs7/.cache/pypoetry/virtualenvs/campaign-service--UAC_3oV-py3.12/lib/python3.12/site-packages/sqlalchemy/orm/decl_api.py:845: in __init_subclass__
+    _as_declarative(cls._sa_registry, cls, cls.__dict__)
+/home/ajs7/.cache/pypoetry/virtualenvs/campaign-service--UAC_3oV-py3.12/lib/python3.12/site-packages/sqlalchemy/orm/decl_base.py:245: in _as_declarative
+    return _MapperConfig.setup_mapping(registry, cls, dict_, None, {})
+/home/ajs7/.cache/pypoetry/virtualenvs/campaign-service--UAC_3oV-py3.12/lib/python3.12/site-packages/sqlalchemy/orm/decl_base.py:326: in setup_mapping
+    return _ClassScanMapperConfig(
+/home/ajs7/.cache/pypoetry/virtualenvs/campaign-service--UAC_3oV-py3.12/lib/python3.12/site-packages/sqlalchemy/orm/decl_base.py:573: in __init__
+    self._extract_mappable_attributes()
+/home/ajs7/.cache/pypoetry/virtualenvs/campaign-service--UAC_3oV-py3.12/lib/python3.12/site-packages/sqlalchemy/orm/decl_base.py:1530: in _extract_mappable_attributes
+    raise exc.InvalidRequestError(
+E   sqlalchemy.exc.InvalidRequestError: Attribute name 'metadata' is reserved when using the Declarative API.</error></testcase><testcase classname="" name="tests.integration.test_factory_flows" time="0.000"><error message="collection failure">ImportError while importing test module '/home/ajs7/dnd_tools/dnd_char_creator/services/campaign/tests/integration/test_factory_flows.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/home/ajs7/miniconda3/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+tests/integration/test_factory_flows.py:11: in &lt;module&gt;
+    from campaign.services.factory import CampaignFactory
+src/campaign/services/factory.py:16: in &lt;module&gt;
+    from ..models.theme import Theme
+src/campaign/models/theme.py:13: in &lt;module&gt;
+    from ..database import Base
+E   ModuleNotFoundError: No module named 'campaign.database'</error></testcase><testcase classname="" name="tests.integration.test_story_flows" time="0.000"><error message="collection failure">tests/integration/test_story_flows.py:13: in &lt;module&gt;
+    from campaign.services.story import StoryService
+src/campaign/services/story.py:17: in &lt;module&gt;
+    from campaign_service.models.story import Plot, StoryArc, NPCRelationship, PlotChapter
+src/campaign_service/models/story.py:35: in &lt;module&gt;
+    class Plot(Base):
+/home/ajs7/.cache/pypoetry/virtualenvs/campaign-service--UAC_3oV-py3.12/lib/python3.12/site-packages/sqlalchemy/orm/decl_api.py:845: in __init_subclass__
+    _as_declarative(cls._sa_registry, cls, cls.__dict__)
+/home/ajs7/.cache/pypoetry/virtualenvs/campaign-service--UAC_3oV-py3.12/lib/python3.12/site-packages/sqlalchemy/orm/decl_base.py:245: in _as_declarative
+    return _MapperConfig.setup_mapping(registry, cls, dict_, None, {})
+/home/ajs7/.cache/pypoetry/virtualenvs/campaign-service--UAC_3oV-py3.12/lib/python3.12/site-packages/sqlalchemy/orm/decl_base.py:326: in setup_mapping
+    return _ClassScanMapperConfig(
+/home/ajs7/.cache/pypoetry/virtualenvs/campaign-service--UAC_3oV-py3.12/lib/python3.12/site-packages/sqlalchemy/orm/decl_base.py:573: in __init__
+    self._extract_mappable_attributes()
+/home/ajs7/.cache/pypoetry/virtualenvs/campaign-service--UAC_3oV-py3.12/lib/python3.12/site-packages/sqlalchemy/orm/decl_base.py:1530: in _extract_mappable_attributes
+    raise exc.InvalidRequestError(
+E   sqlalchemy.exc.InvalidRequestError: Attribute name 'metadata' is reserved when using the Declarative API.</error></testcase><testcase classname="" name="tests.integration.test_theme_flows" time="0.000"><error message="collection failure">ImportError while importing test module '/home/ajs7/dnd_tools/dnd_char_creator/services/campaign/tests/integration/test_theme_flows.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/home/ajs7/miniconda3/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+tests/integration/test_theme_flows.py:10: in &lt;module&gt;
+    from campaign.models.theme import ThemeType, ThemeTone, ThemeIntensity
+src/campaign/models/theme.py:13: in &lt;module&gt;
+    from ..database import Base
+E   ModuleNotFoundError: No module named 'campaign.database'</error></testcase><testcase classname="" name="tests.routers.test_factory" time="0.000"><error message="collection failure">/home/ajs7/.cache/pypoetry/virtualenvs/campaign-service--UAC_3oV-py3.12/lib/python3.12/site-packages/_pytest/python.py:617: in _importtestmodule
+    mod = import_path(self.path, mode=importmode, root=self.config.rootpath)
+/home/ajs7/.cache/pypoetry/virtualenvs/campaign-service--UAC_3oV-py3.12/lib/python3.12/site-packages/_pytest/pathlib.py:567: in import_path
+    importlib.import_module(module_name)
+/home/ajs7/miniconda3/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+&lt;frozen importlib._bootstrap&gt;:1387: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+&lt;frozen importlib._bootstrap&gt;:1331: in _find_and_load_unlocked
+    ???
+&lt;frozen importlib._bootstrap&gt;:935: in _load_unlocked
+    ???
+/home/ajs7/.cache/pypoetry/virtualenvs/campaign-service--UAC_3oV-py3.12/lib/python3.12/site-packages/_pytest/assertion/rewrite.py:186: in exec_module
+    exec(co, module.__dict__)
+tests/routers/test_factory.py:26: in &lt;module&gt;
+    from campaign.routers.factory import router
+E     File "/home/ajs7/dnd_tools/dnd_char_creator/services/campaign/src/campaign/routers/factory.py", line 24
+E       MapGenerationRequest, MapGenerationResponse)
+E                                                  ^
+E   SyntaxError: unmatched ')'</error></testcase><testcase classname="" name="tests.routers.test_story" time="0.000"><error message="collection failure">ImportError while importing test module '/home/ajs7/dnd_tools/dnd_char_creator/services/campaign/tests/routers/test_story.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/home/ajs7/miniconda3/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+tests/routers/test_story.py:17: in &lt;module&gt;
+    from campaign.routers.story import router
+src/campaign/routers/story.py:9: in &lt;module&gt;
+    from ..dependencies import get_db, get_story_service
+src/campaign/dependencies.py:8: in &lt;module&gt;
+    from ..core.db import get_db
+E   ImportError: attempted relative import beyond top-level package</error></testcase><testcase classname="" name="tests.services.test_theme" time="0.000"><error message="collection failure">ImportError while importing test module '/home/ajs7/dnd_tools/dnd_char_creator/services/campaign/tests/services/test_theme.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/home/ajs7/miniconda3/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+tests/services/test_theme.py:9: in &lt;module&gt;
+    from campaign.models.theme import Theme, ThemeType, ThemeTone, ThemeIntensity
+src/campaign/models/theme.py:13: in &lt;module&gt;
+    from ..database import Base
+E   ModuleNotFoundError: No module named 'campaign.database'</error></testcase></testsuite></testsuites>

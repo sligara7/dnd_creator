@@ -1,11 +1,12 @@
 """Base repository pattern implementation."""
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Any, Generic, List, Optional, Type, TypeVar
 from uuid import UUID
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from campaign_service.core.exceptions import DeletedEntityError
 from campaign_service.models.base import Base
 
 ModelType = TypeVar("ModelType", bound=Base)
@@ -99,20 +100,37 @@ class BaseRepository(Generic[ModelType]):
             obj_in (dict): Updated entity data
 
         Returns:
-            Optional[ModelType]: Updated entity if found, None otherwise
+            Optional[ModelType]: Updated entity if found and not deleted, None if not found
+
+        Raises:
+            DeletedEntityError: If the entity exists but is soft-deleted
         """
-        obj_in["updated_at"] = datetime.utcnow()
+        # First check if entity exists and is deleted
+        existing = await self.db.execute(
+            select(self.model)
+            .where(self.model.id == entity_id)
+        )
+        entity = existing.scalar_one_or_none()
+
+        if entity is None:
+            return None
+
+        if entity.is_deleted:
+            raise DeletedEntityError(
+                f"Cannot update {self.model.__name__} with ID {entity_id} "
+                "because it is marked as deleted"
+            )
+
+        # Proceed with update
+        obj_in["updated_at"] = datetime.now(UTC)
         query = (
             update(self.model)
-            .where(
-                self.model.id == entity_id,
-                self.model.is_deleted == False,  # noqa: E712
-            )
+            .where(self.model.id == entity_id)
             .values(**obj_in)
             .returning(self.model)
         )
         result = await self.db.execute(query)
-        return result.scalar_one_or_none()
+        return result.scalar_one()
 
     async def delete(self, entity_id: UUID) -> bool:
         """Soft delete entity.
@@ -123,7 +141,7 @@ class BaseRepository(Generic[ModelType]):
         Returns:
             bool: True if entity was deleted, False otherwise
         """
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         query = (
             update(self.model)
             .where(

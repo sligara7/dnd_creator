@@ -1,0 +1,34 @@
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "character-service"
+version = "0.1.0"
+description = "D&D Character Creation Service"
+packages = [{include = "character_service", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+httpx = "^0.26.0"
+fastapi = "^0.103.0"
+uvicorn = {extras = ["standard"], version = "^0.23.0"}
+sqlalchemy = {extras = ["asyncio"], version = "^2.0.20"}
+asyncpg = "^0.28.0"
+alembic = "^1.11.3"
+pydantic = {extras = ["email"], version = "^2.3.0"}
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+pytest-asyncio = "^0.21.1"
+pytest-cov = "^4.1.0"
+black = "^23.7.0"
+isort = "^5.12.0"
+ruff = "^0.0.286"
+mypy = "^1.5.1"
+
+[tool.pytest.ini_options]
+addopts = "--asyncio-mode=auto"
+markers = [
+    "integration: mark test as an integration test"
+]

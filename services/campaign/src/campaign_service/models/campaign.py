@@ -1,10 +1,10 @@
 """Campaign models for the campaign service."""
-from datetime import datetime
+from datetime import datetime, UTC
 from enum import Enum
 from typing import List, Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import ForeignKey, String, TIMESTAMP, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -53,14 +53,15 @@ class Campaign(Base):
     owner_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
 
     # Timestamps and soft delete
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
     is_deleted: Mapped[bool] = mapped_column(default=False, nullable=False)
-    deleted_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
 
     # Relationships
     chapters: Mapped[List["Chapter"]] = relationship(
@@ -118,14 +119,15 @@ class Chapter(Base):
     )  # List of chapter IDs that must be completed first
     
     # Timestamps and soft delete
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
     is_deleted: Mapped[bool] = mapped_column(default=False, nullable=False)
-    deleted_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
 
     # Relationships
     campaign: Mapped["Campaign"] = relationship(

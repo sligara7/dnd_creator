@@ -1,0 +1,39 @@
+[tool.poetry]
+name = "dnd-char-creator"
+version = "0.1.0"
+description = "Next-generation D&D 5e 2024 character creation and campaign management system"
+authors = ["Your Name <your.email@example.com>"]
+packages = [{include = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.103.0"
+uvicorn = {extras = ["standard"], version = "^0.23.0"}
+sqlalchemy = "^2.0.20"
+alembic = "^1.11.3"
+asyncpg = "^0.28.0"
+pydantic = {extras = ["email"], version = "^2.3.0"}
+redis = "^5.0.1"
+
+[tool.poetry.group.test.dependencies]
+pytest = "^7.4.0"
+pytest-asyncio = "^0.21.1"
+pytest-cov = "^4.1.0"
+httpx = "^0.24.1"
+black = "^23.7.0"
+isort = "^5.12.0"
+ruff = "^0.0.286"
+mypy = "^1.5.1"
+psycopg2-binary = "^2.9.10"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+python_classes = ["Test*"]
+addopts = "-v --tb=short"

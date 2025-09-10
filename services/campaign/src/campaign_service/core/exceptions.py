@@ -67,6 +67,12 @@ class StoryManagementError(CampaignServiceError):
     pass
 
 
+class DeletedEntityError(CampaignServiceError):
+    """Raised when attempting to update a soft-deleted entity."""
+
+    pass
+
+
 class MergeConflictError(VersionControlError):
     """Raised when branch merge conflicts occur."""
 

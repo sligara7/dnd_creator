@@ -155,8 +155,40 @@ async def test_cannot_update_campaign_without_name(test_db: AsyncSession) -> Non
     assert campaign.name == "Test Campaign"
 
 @pytest.mark.asyncio
-async def test_update_campaign_state_transition(test_db: AsyncSession) -> None:
-    """Test valid campaign state transitions."""
+    async def test_update_campaign_state_transition(test_db: AsyncSession) -> None:
+        """Test valid campaign state transitions.
+    
+        Additional tests needed:
+        1. Theme application and consistency:
+           - Theme inheritance to chapters/NPCs/locations
+           - Theme change validation and propagation
+           - Theme conflict resolution
+           - Theme versioning support
+        
+        2. Content generation validation:
+           - Campaign factory edge cases
+           - Chapter generation constraints
+           - NPC/location coherence
+           - Content reuse patterns
+        
+        3. Plot branching logic:
+           - Branch creation and validation
+           - State tracking per branch
+           - Branch merging logic
+           - Choice tracking system
+        
+        4. Chapter state transitions:
+           - Valid/invalid transitions
+           - Dependency validation
+           - Resource locking
+           - Concurrent modifications
+        
+        5. Event handling and integration:
+           - Message Hub integration
+           - Event validation and processing
+           - Service communication patterns
+           - Event replay and recovery
+        """
     # Create a test campaign in DRAFT state
     campaign = Campaign(
         name="Test Campaign",

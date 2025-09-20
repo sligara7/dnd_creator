@@ -20,6 +20,53 @@ class MessageHubError(Exception):
         self.timestamp = datetime.utcnow()
 
 
+class MessageHubConnectionError(MessageHubError):
+    """Raised when there is a connection error to the message bus."""
+    
+    def __init__(self, message: str = "Failed to connect to message bus"):
+        super().__init__(
+            message=message,
+            error_code="CONNECTION_ERROR",
+            status_code=503
+        )
+
+
+class MessageHubDeliveryError(MessageHubError):
+    """Raised when message delivery fails."""
+    
+    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
+        super().__init__(
+            message=message,
+            error_code="DELIVERY_ERROR",
+            status_code=500,
+            details=details
+        )
+
+
+class MessageHubCircuitBreakerError(MessageHubError):
+    """Raised when circuit breaker prevents operation."""
+    
+    def __init__(self, message: str, service: str):
+        super().__init__(
+            message=message,
+            error_code="CIRCUIT_BREAKER_ERROR",
+            status_code=503,
+            details={"service": service}
+        )
+
+
+class MessageHubRetryError(MessageHubError):
+    """Raised when retry operation fails."""
+    
+    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
+        super().__init__(
+            message=message,
+            error_code="RETRY_ERROR",
+            status_code=500,
+            details=details
+        )
+
+
 class CircuitBreakerOpen(MessageHubError):
     """Raised when circuit breaker is open"""
 

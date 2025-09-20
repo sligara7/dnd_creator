@@ -131,3 +131,16 @@ class ServiceUnavailableError(LLMServiceError):
             message=message,
             details=details,
         )
+
+
+class ContentGenerationError(LLMServiceError):
+    """Error during content generation."""
+    def __init__(
+        self, message: str, details: Optional[Dict[str, Any]] = None
+    ) -> None:
+        super().__init__(
+            status_code=500,
+            code="CONTENT_GENERATION_FAILED",
+            message=message,
+            details=details,
+        )

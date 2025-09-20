@@ -3,7 +3,7 @@
 from typing import List, Optional, Set
 from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession
+
 
 from auth_service.core.exceptions import AuthorizationError
 from auth_service.models.role import Role

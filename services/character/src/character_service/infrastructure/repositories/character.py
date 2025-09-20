@@ -8,50 +8,47 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from character_service.domain.models import Character as CharacterDomain
 from character_service.infrastructure.models.models import Character
 from character_service.infrastructure.repositories.base import BaseRepository
+from character_service.clients.storage_port import StoragePort
 
 
 class CharacterRepository(BaseRepository[CharacterDomain, Character]):
     """Character repository implementation."""
 
-    def __init__(self, session: AsyncSession):
-        """Initialize repository."""
+    def __init__(self, session: AsyncSession, storage: StoragePort):
+        """Initialize repository.
+        
+        Args:
+            session: Database session
+            storage: Storage service client
+        """
         super().__init__(session, Character, CharacterDomain)
+        self.storage = storage
 
     async def get_by_user_id(self, user_id: UUID) -> List[Character]:
         """Get all active characters for a user."""
-        query = select(self._persistence_class).where(
-            self._persistence_class.user_id == user_id,
-            self._persistence_class.is_deleted == False,  # noqa: E712
-        )
-        result = await self._session.execute(query)
-        return list(result.scalars().all())
+        # Use storage service
+        result = await self.storage.list_characters(user_id=user_id, active_only=True)
+        return [self._to_persistence(char) for char in result]
 
     async def get_by_campaign_id(self, campaign_id: UUID) -> List[Character]:
         """Get all active characters in a campaign."""
-        query = select(self._persistence_class).where(
-            self._persistence_class.campaign_id == campaign_id,
-            self._persistence_class.is_deleted == False,  # noqa: E712
-        )
-        result = await self._session.execute(query)
-        return list(result.scalars().all())
+        # Use storage service
+        result = await self.storage.list_characters(campaign_id=campaign_id, active_only=True)
+        return [self._to_persistence(char) for char in result]
 
     async def get_by_theme(self, theme: str) -> List[Character]:
         """Get all active characters with a specific theme."""
-        query = select(self._persistence_class).where(
-            self._persistence_class.theme == theme,
-            self._persistence_class.is_deleted == False,  # noqa: E712
-        )
-        result = await self._session.execute(query)
-        return list(result.scalars().all())
+        # Use storage service
+        result = await self.storage.list_characters(theme=theme, active_only=True)
+        return [self._to_persistence(char) for char in result]
 
     async def get_by_parent_id(self, parent_id: UUID) -> Optional[Character]:
         """Get character by parent ID."""
-        query = select(self._persistence_class).where(
-            self._persistence_class.parent_id == parent_id,
-            self._persistence_class.is_deleted == False,  # noqa: E712
-        )
-        result = await self._session.execute(query)
-        return result.scalar_one_or_none()
+        # Get all characters and filter by parent_id since storage service
+        # doesn't have a direct parent_id filter
+        result = await self.storage.list_characters(active_only=True)
+        chars = [self._to_persistence(char) for char in result]
+        return next((char for char in chars if char.parent_id == parent_id), None)
 
     def _to_domain(self, model: Character) -> CharacterDomain:
         """Convert database model to domain model."""

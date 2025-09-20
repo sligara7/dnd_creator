@@ -1,3 +1,50 @@
+"""Application configuration."""
+
+from typing import Optional
+
+from pydantic import Field
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    """Application settings."""
+    APP_NAME: str = "character_service"
+    DEBUG: bool = False
+    API_PREFIX: str = "/api/v2"
+    ENVIRONMENT: str = "development"
+
+    # RabbitMQ Settings
+    RABBITMQ_HOST: str = "rabbitmq"
+    RABBITMQ_PORT: int = 5672
+    RABBITMQ_USER: str = "guest"
+    RABBITMQ_PASS: str = "guest"
+    RABBITMQ_VHOST: str = "/"
+
+    @property
+    def RABBITMQ_URL(self) -> str:
+        """Get RabbitMQ connection URL."""
+        return f"amqp://{self.RABBITMQ_USER}:{self.RABBITMQ_PASS}@{self.RABBITMQ_HOST}:{self.RABBITMQ_PORT}/{self.RABBITMQ_VHOST}"
+
+    # Auth Settings
+    SECRET_KEY: str = Field(default="secret", env="SECRET_KEY")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    
+    # CORS Settings
+    CORS_ORIGINS: list[str] = ["*"]
+    CORS_ALLOW_CREDENTIALS: bool = True
+    CORS_ALLOW_METHODS: list[str] = ["*"]
+    CORS_ALLOW_HEADERS: list[str] = ["*"]
+
+    # Monitoring Settings
+    MONITORING_ENABLED: bool = True
+    
+    class Config:
+        env_file = ".env"
+        case_sensitive = True
+
+
+settings = Settings()
+
 """Configuration Settings for Character Service"""
 
 from typing import List

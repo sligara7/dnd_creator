@@ -11,8 +11,6 @@ packages = [{include = "campaign_service", from = "src"}]
 dependencies = [
     "fastapi>=0.103.0",
     "uvicorn[standard]>=0.23.0",
-    "sqlalchemy>=2.0.20",
-    "asyncpg>=0.28.0",
     "pydantic>=2.3.0",
     "pydantic-settings>=2.2.0",
     "structlog>=23.2.0",
@@ -22,7 +20,7 @@ dependencies = [
     "python-jose[cryptography]>=3.3.0",
     "redis>=5.0.0",
     "aiofiles>=23.2.1",
-    "alembic>=1.11.0",
+    "aio-pika>=9.3.0",
 ]
 
 [tool.poetry.group.dev.dependencies]

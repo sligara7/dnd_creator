@@ -3,66 +3,49 @@
 from datetime import datetime
 from typing import Optional, List
 from uuid import UUID
-from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import AsyncSession
+
 from character_service.models.models import JournalEntry
 from character_service.schemas.schemas import JournalEntryCreate, JournalEntryUpdate
+from character_service.clients.storage_port import StoragePort
 
 class JournalRepository:
     """Journal repository."""
 
-    def __init__(self, db: AsyncSession):
-        self.db = db
+    def __init__(self, storage: StoragePort):
+        self.storage = storage
 
     async def create(self, entry: JournalEntryCreate) -> JournalEntry:
         """Create a new journal entry"""
-        db_entry = JournalEntry(**entry.dict())
-        self.db.add(db_entry)
-        await self.db.flush()
-        await self.db.refresh(db_entry)
-        return db_entry
+        # Create using storage service
+        result = await self.storage.create_journal_entry(entry.dict())
+        return JournalEntry(**result)
 
     async def get(self, entry_id: UUID) -> Optional[JournalEntry]:
         """Get a non-deleted journal entry by ID"""
-        query = select(JournalEntry).where(
-            JournalEntry.id == entry_id,
-            JournalEntry.is_deleted == False
-        )
-        result = await self.db.execute(query)
-        return result.scalar_one_or_none()
+        # Get using storage service
+        result = await self.storage.get_journal_entry(entry_id)
+        if result:
+            return JournalEntry(**result)
+        return None
 
     async def get_all_by_character(self, character_id: UUID) -> List[JournalEntry]:
         """Get all non-deleted journal entries for a character"""
-        query = select(JournalEntry).where(
-            JournalEntry.character_id == character_id,
-            JournalEntry.is_deleted == False
-        )
-        result = await self.db.execute(query)
-        return [row[0] for row in result.all()]
+        # List using storage service
+        results = await self.storage.list_journal_entries(character_id)
+        return [JournalEntry(**entry) for entry in results]
 
     async def update(self, entry_id: UUID, entry: JournalEntryUpdate) -> Optional[JournalEntry]:
         """Update a non-deleted journal entry"""
-        db_entry = await self.get(entry_id)
-        if not db_entry:
-            return None
-
-        for key, value in entry.dict(exclude_unset=True).items():
-            setattr(db_entry, key, value)
-
-        await self.db.flush()
-        await self.db.refresh(db_entry)
-        return db_entry
+        # Update using storage service
+        result = await self.storage.update_journal_entry(
+            entry_id,
+            entry.dict(exclude_unset=True)
+        )
+        if result:
+            return JournalEntry(**result)
+        return None
 
     async def delete(self, entry_id: UUID) -> bool:
         """Soft delete a journal entry"""
-        query = update(JournalEntry).where(
-            JournalEntry.id == entry_id,
-            JournalEntry.is_deleted == False
-        ).values(
-            is_deleted=True,
-            deleted_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
-        )
-        result = await self.db.execute(query)
-        await self.db.flush()
-        return result.rowcount > 0
+        # Delete using storage service
+        return await self.storage.delete_journal_entry(entry_id)

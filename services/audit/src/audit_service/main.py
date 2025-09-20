@@ -34,16 +34,12 @@ analysis_service = AnalysisService()
 async def startup_event():
     """Initialize services on startup"""
     await setup_monitoring()
-    await event_processor.setup()
-    await archival_service.setup()
-    await analysis_service.setup()
+    await services.init_services()
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on shutdown"""
-    await event_processor.cleanup()
-    await archival_service.cleanup()
-    await analysis_service.cleanup()
+    await services.cleanup_services()
 
 @app.exception_handler(AuditServiceError)
 async def audit_service_exception_handler(request: Request, exc: AuditServiceError):

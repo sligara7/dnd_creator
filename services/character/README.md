@@ -4,7 +4,7 @@ Character creation and management service for the D&D Character Creator project.
 
 ## Overview
 
-The Character Service is a FastAPI-based microservice that handles character creation, management, and evolution for D&D 5e 2024. It includes support for both traditional D&D character creation and the Antitheticon identity deception system.
+The Character Service is a FastAPI-based microservice that handles character creation, management, and evolution for D&D 5e 2024. It includes support for both traditional D&D character creation and the Antitheticon identity deception system. The service uses the centralized Storage Service for data persistence, ensuring consistent data management across the platform.
 
 ### Key Features
 
@@ -47,10 +47,11 @@ character-service/
 ### Prerequisites
 
 - Python 3.10
-- PostgreSQL 14
 - Redis 7
 - Poetry
 - podman or docker
+- Storage Service (for persistence)
+- Message Hub (for service communication)
 
 ### Installation
 
@@ -71,9 +72,9 @@ character-service/
    # Edit .env with your values
    ```
 
-4. Run database migrations:
+4. Verify storage service connection:
    ```bash
-   alembic upgrade head
+   poetry run python -m character_service.utils.check_storage
    ```
 
 ### Running the Service
@@ -110,6 +111,12 @@ Service configuration is managed through:
 1. Environment variables (`.env`)
 2. Configuration files (`config.yaml`)
 3. Kubernetes ConfigMaps and Secrets
+
+Key configuration options:
+- `STORAGE_SERVICE_URL`: URL of the storage service
+- `STORAGE_SERVICE_TOKEN`: Authentication token for storage service
+- `MESSAGE_HUB_URL`: URL of the message hub service
+- `MESSAGE_HUB_TOKEN`: Authentication token for message hub
 
 See `.env.example` and `config/config.yaml` for available options.
 
@@ -155,9 +162,10 @@ The service follows Clean Architecture principles:
    - Domain rules
 
 3. **Repository Layer** (`repositories/`)
+   - Storage service integration
    - Data access abstraction
-   - Database operations
    - Caching logic
+   - Message hub communication
 
 4. **Model Layer** (`models/`)
    - Database models

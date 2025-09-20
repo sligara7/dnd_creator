@@ -1,11 +1,38 @@
 import json
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Union
+from uuid import UUID
 
+from fastapi import HTTPException
+from pydantic import BaseModel
 from redis.asyncio import Redis
 from redis.asyncio.connection import ConnectionPool
+from structlog import get_logger
 
-from llm_service.core.settings import Settings
+from ..core.settings import Settings
+
+
+class CacheKey(BaseModel):
+    """Model for cache key components."""
+    service: str
+    type: str
+    content_hash: str
+    theme_hash: Optional[str] = None
+
+
+class CacheItem(BaseModel):
+    """Model for cached items."""
+    content: str
+    metadata: Dict[str, Any]
+    created_at: str
+    expires_at: str
+
+
+class RateLimitInfo(BaseModel):
+    """Rate limit information."""
+    remaining: int
+    reset_at: str
+    limit: int
 
 
 class RedisCache:
@@ -13,9 +40,10 @@ class RedisCache:
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self.prefix = settings.redis.prefix
+        self.prefix = settings.service_name.lower()
         self._client: Redis | None = None
         self._pool: ConnectionPool | None = None
+        self.logger = get_logger()
 
     async def initialize(self) -> None:
         """Initialize Redis connection pool."""

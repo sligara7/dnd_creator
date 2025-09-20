@@ -6,6 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from character_service.config import get_settings
 from character_service.infrastructure.database import create_engine, create_session_factory
+from character_service.domain.messages import MessagePublisher
+from character_service.clients.storage_integration import StorageServiceClient
+from character_service.clients.storage_port import StoragePort
 from character_service.infrastructure.repositories.character import CharacterRepository
 from character_service.infrastructure.repositories.event import CampaignEventRepository, EventImpactRepository
 from character_service.infrastructure.repositories.inventory import InventoryRepository
@@ -35,6 +38,15 @@ def setup_di() -> Container:
     settings = get_settings()
     container.add_singleton(lambda: settings)
 
+    # Message publisher for storage service
+    container.add_singleton(MessagePublisher)
+    
+    # Storage service client
+    container.add_singleton(
+        StoragePort,
+        lambda c: StorageServiceClient(c.resolve(MessagePublisher))
+    )
+
     # Database engine and session factory
     container.add_singleton(lambda c: create_engine(c.resolve(get_settings)))
     container.add_singleton(
@@ -53,35 +65,35 @@ def setup_di() -> Container:
     # Repositories
     container.add_scoped(
         CharacterRepository,
-        lambda c: CharacterRepository(c.resolve(get_db_session)),
+        lambda c: CharacterRepository(c.resolve(get_db_session), c.resolve(StoragePort)),
     )
     container.add_scoped(
         InventoryRepository,
-        lambda c: InventoryRepository(c.resolve(get_db_session)),
+        lambda c: InventoryRepository(c.resolve(get_db_session), c.resolve(StoragePort)),
     )
     container.add_scoped(
         JournalEntryRepository,
-        lambda c: JournalEntryRepository(c.resolve(get_db_session)),
+        lambda c: JournalEntryRepository(c.resolve(get_db_session), c.resolve(StoragePort)),
     )
     container.add_scoped(
         ExperienceEntryRepository,
-        lambda c: ExperienceEntryRepository(c.resolve(get_db_session)),
+        lambda c: ExperienceEntryRepository(c.resolve(get_db_session), c.resolve(StoragePort)),
     )
     container.add_scoped(
         QuestRepository,
-        lambda c: QuestRepository(c.resolve(get_db_session)),
+        lambda c: QuestRepository(c.resolve(get_db_session), c.resolve(StoragePort)),
     )
     container.add_scoped(
         NPCRelationshipRepository,
-        lambda c: NPCRelationshipRepository(c.resolve(get_db_session)),
+        lambda c: NPCRelationshipRepository(c.resolve(get_db_session), c.resolve(StoragePort)),
     )
     container.add_scoped(
         CampaignEventRepository,
-        lambda c: CampaignEventRepository(c.resolve(get_db_session)),
+        lambda c: CampaignEventRepository(c.resolve(get_db_session), c.resolve(StoragePort)),
     )
     container.add_scoped(
         EventImpactRepository,
-        lambda c: EventImpactRepository(c.resolve(get_db_session)),
+        lambda c: EventImpactRepository(c.resolve(get_db_session), c.resolve(StoragePort)),
     )
 
     # Services

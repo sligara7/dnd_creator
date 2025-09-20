@@ -1,0 +1,212 @@
+{
+  "architectural_principles": {
+    "service_isolation": {
+      "rule": "Each service must be fully isolated with clearly defined boundaries, except for shared access to the singular storage (database) service.",
+      "enforcement": [
+        "All persistent data is managed by the storage service, which provides isolated sub-databases or schemas for each domain service.",
+        "No direct communication (HTTP, RPC, etc.) is allowed between services.",
+        "All inter-service communication must be routed through the message bus service (the central hub).",
+        "Clients must use the API gateway for all external access."
+      ]
+    },
+    "single_responsibility": {
+      "rule": "Each service owns exactly one domain of functionality. Persistent storage is delegated to the storage service, which exposes sub-services (databases) for each domain.",
+      "examples": [
+        "character: Character creation and management (uses character_db in storage service)",
+        "campaign: Campaign management (uses campaign_db in storage service)",
+        "game_session: Live gameplay coordination and state management (uses session_db in storage service)",
+        "catalog: Item, spell, and rules catalog (uses catalog_db in storage service)",
+        "auth: Authentication and user management (uses auth_db in storage service)",
+        "cache: Caching and session state",
+        "image: Image storage and retrieval",
+        "llm: Language model and AI features",
+        "message: Inter-service messaging",
+        "metrics: Metrics and monitoring (uses metrics_db in storage service)",
+        "search: Search and indexing",
+        "storage: File, blob, and database storage (provides all sub-databases)"
+      ]
+    }
+  },
+  "dependency_rules": {
+    "explicit_constraints": {
+      "database_access": {
+        "rule": "Only the storage service may interact directly with databases. All other services must access persistent data through the storage service's API or message interface.",
+        "implementation": {
+          "allowed_service": "storage",
+          "restricted_packages": ["asyncpg", "aiomysql", "aiosqlite", "sqlalchemy"],
+          "violation_severity": "HIGH"
+        }
+      },
+      "message_routing": {
+        "rule": "All inter-service communication must be routed through the message bus service (the central hub). No direct service-to-service communication is permitted.",
+        "implementation": {
+          "required_package": "aio-pika",
+          "violation_severity": "HIGH"
+        }
+      }
+    }
+  },
+  "communication_patterns": {
+    "api_gateway": {
+      "rule": "Clients must only communicate through the API Gateway",
+      "implementation": {
+        "protocol": "HTTPS/REST",
+        "package": "httpx",
+        "patterns": [
+          "secure authentication",
+          "rate-limited requests"
+        ]
+      }
+    },
+    "message_bus": {
+      "rule": "Central hub for all service communication",
+      "implementation": {
+        "protocol": "AMQP",
+        "package": "aio-pika",
+        "patterns": [
+          "request/response",
+          "pub/sub",
+          "broadcast",
+          "queue"
+        ]
+      }
+    },
+    "prohibited_patterns": [
+      "Direct REST calls between services",
+      "Direct RPC or socket calls between services",
+      "Shared databases or files",
+      "Direct network access from unauthorized services",
+      "Any service-to-service communication not routed through the message bus"
+    ]
+  },
+  "service_boundaries": {
+    "character": {
+      "exclusive_capabilities": [
+        "Character creation and management",
+        "Character inventory and progression"
+      ],
+      "dependencies": {
+        "required": ["aio-pika"],
+        "prohibited": ["sqlalchemy", "asyncpg", "aiomysql", "aiosqlite"]
+      },
+      "persistent_storage": "character_db (sub-database in storage service)"
+    },
+    "campaign": {
+      "exclusive_capabilities": [
+        "Campaign and session management"
+      ],
+      "dependencies": {
+        "required": ["aio-pika"],
+        "prohibited": ["sqlalchemy", "asyncpg", "aiomysql", "aiosqlite"]
+      },
+      "persistent_storage": "campaign_db (sub-database in storage service)"
+    },
+    "catalog": {
+      "exclusive_capabilities": [
+        "Item, spell, and rules catalog"
+      ],
+      "dependencies": {
+        "required": ["aio-pika"],
+        "prohibited": ["sqlalchemy", "asyncpg", "aiomysql", "aiosqlite"]
+      },
+      "persistent_storage": "catalog_db (sub-database in storage service)"
+    },
+    "auth": {
+      "exclusive_capabilities": [
+        "Authentication and user management"
+      ],
+      "dependencies": {
+        "required": ["aio-pika"],
+        "prohibited": ["sqlalchemy", "asyncpg", "aiomysql", "aiosqlite"]
+      },
+      "persistent_storage": "auth_db (sub-database in storage service)"
+    },
+    "cache": {
+      "exclusive_capabilities": [
+        "Caching and session state"
+      ],
+      "dependencies": {
+        "required": ["redis", "aio-pika"],
+        "prohibited": ["sqlalchemy", "asyncpg", "aiomysql", "aiosqlite"]
+      }
+    },
+    "image": {
+      "exclusive_capabilities": [
+        "Image storage and retrieval"
+      ],
+      "dependencies": {
+        "required": ["aio-pika"],
+        "prohibited": ["sqlalchemy", "asyncpg", "aiomysql", "aiosqlite"]
+      }
+    },
+    "llm": {
+      "exclusive_capabilities": [
+        "Language model and AI features"
+      ],
+      "dependencies": {
+        "required": ["aio-pika"],
+        "prohibited": ["sqlalchemy", "asyncpg", "aiomysql", "aiosqlite"]
+      }
+    },
+    "message": {
+      "exclusive_capabilities": [
+        "Inter-service messaging"
+      ],
+      "dependencies": {
+        "required": ["aio-pika"],
+        "prohibited": ["sqlalchemy", "asyncpg", "aiomysql", "aiosqlite"]
+      }
+    },
+    "metrics": {
+      "exclusive_capabilities": [
+        "Metrics and monitoring"
+      ],
+      "dependencies": {
+        "required": ["prometheus_client", "aio-pika"],
+        "prohibited": ["sqlalchemy", "asyncpg", "aiomysql", "aiosqlite"]
+      },
+      "persistent_storage": "metrics_db (sub-database in storage service)"
+    },
+    "search": {
+      "exclusive_capabilities": [
+        "Search and indexing"
+      ],
+      "dependencies": {
+        "required": ["elasticsearch", "aio-pika"],
+        "prohibited": ["sqlalchemy", "asyncpg", "aiomysql", "aiosqlite"]
+      }
+    },
+    "game_session": {
+      "exclusive_capabilities": [
+        "Live gameplay coordination",
+        "Real-time state management",
+        "Combat coordination",
+        "WebSocket communication",
+        "Service orchestration during gameplay"
+      ],
+      "dependencies": {
+        "required": ["aio-pika", "websockets", "redis"],
+        "prohibited": ["sqlalchemy", "asyncpg", "aiomysql", "aiosqlite"]
+      },
+      "persistent_storage": "session_db (sub-database in storage service)"
+    },
+    "storage": {
+      "exclusive_capabilities": [
+        "File, blob, and database storage",
+        "Provides isolated sub-databases for each domain service"
+      ],
+      "dependencies": {
+        "required": ["sqlalchemy", "asyncpg", "aio-pika", "alembic"],
+        "prohibited": []
+      },
+      "sub_databases": [
+        "character_db",
+        "campaign_db",
+        "catalog_db",
+        "auth_db",
+        "metrics_db",
+        "session_db"
+      ]
+    }
+  }
+}

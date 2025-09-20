@@ -13,7 +13,12 @@ sqlalchemy = "^2.0.20"
 alembic = "^1.11.3"
 asyncpg = "^0.28.0"
 pydantic = {extras = ["email"], version = "^2.3.0"}
-redis = "^5.0.1"
+redis = {extras = ["hiredis"], version = "^6.4.0"}
+aio-pika = "^9.5.7"
+prometheus-client = "^0.23.1"
+structlog = "^25.4.0"
+pydantic-settings = "^2.10.1"
+setuptools = "^80.9.0"
 
 [tool.poetry.group.test.dependencies]
 pytest = "^7.4.0"

@@ -1,0 +1,91 @@
+{
+  "general_requirements": [
+    "Uses Poetry 2.0 for dependency management"
+  ],
+  "services": [
+    {
+      "service_name": "API Gateway",
+      "service_directory": "./services/gateway",
+      "SRD": "/services/gateway/docs/SRD_api_gateway.md",
+      "ICD": "/services/gateway/docs/ICD_api_gateway.md"
+    },
+    {
+      "service_name": "Character Service",
+      "service_directory": "./services/character",
+      "SRD": "/services/character/docs/SRD_character_service.md",
+      "ICD": "/services/character/docs/ICD_character_service.md"
+    },
+    {
+      "service_name": "Campaign Service",
+      "service_directory": "./services/campaign",
+      "SRD": "/services/campaign/docs/SRD_campaign_service.md",
+      "ICD": "/services/campaign/docs/ICD_campaign_service.md"
+    },
+    {
+      "service_name": "Image Service",
+      "service_directory": "./services/image",
+      "SRD": "/services/image/docs/SRD_image_service.md",
+      "ICD": "/services/image/docs/ICD_image_service.md"
+    },
+    {
+      "service_name": "LLM Service",
+      "service_directory": "./services/llm",
+      "SRD": "/services/llm/docs/SRD_llm_service.md",
+      "ICD": "/services/llm/docs/ICD_llm_service.md"
+    },
+    {
+      "service_name": "Catalog Service",
+      "service_directory": "./services/catalog",
+      "SRD": "/services/catalog/docs/SRD_catalog_service.md",
+      "ICD": "/services/catalog/docs/ICD_catalog_service.md"
+    },
+    {
+      "service_name": "Auth Service",
+      "service_directory": "./services/auth",
+      "SRD": "/services/auth/docs/SRD_auth_service.md",
+      "ICD": "/services/auth/docs/ICD_auth_service.md"
+    },
+    {
+      "service_name": "Metrics Service",
+      "service_directory": "./services/metrics",
+      "SRD": "/services/metrics/docs/SRD_metrics_service.md",
+      "ICD": "/services/metrics/docs/ICD_metrics_service.md"
+    },
+    {
+      "service_name": "Message Hub",
+      "service_directory": "./services/message",
+      "SRD": "/services/message/docs/SRD_message_hub.md",
+      "ICD": "/services/message/docs/ICD_message_hub.md"
+    },
+    {
+      "service_name": "Cache Service",
+      "service_directory": "./services/cache",
+      "SRD": "/services/cache/docs/SRD_cache_service.md",
+      "ICD": "/services/cache/docs/ICD_cache_service.md"
+    },
+    {
+      "service_name": "Storage Service",
+      "service_directory": "./services/storage",
+      "SRD": "/services/storage/docs/SRD_storage_service.md",
+      "ICD": "/services/storage/docs/ICD_storage_service.md"
+    },
+    {
+      "service_name": "Search Service",
+      "service_directory": "./services/search",
+      "SRD": "/services/search/docs/SRD_search_service.md",
+      "ICD": "/services/search/docs/ICD_search_service.md"
+    },
+    {
+      "service_name": "Audit Service",
+      "service_directory": "./services/audit",
+      "SRD": "/services/audit/docs/SRD_audit_service.md",
+      "ICD": "/services/audit/docs/ICD_audit_service.md"
+    },
+    {
+      "service_name": "Game Session Service",
+      "service_directory": "./services/game_session",
+      "SRD": "/services/game_session/docs/SRD.md",
+      "ICD": "/services/game_session/docs/ICD.md"
+    }
+  ]
+}

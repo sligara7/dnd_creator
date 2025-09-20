@@ -34,10 +34,22 @@ class Settings(BaseSettings):
     REDIS_DB: int = 0
     REDIS_URL: RedisDsn | None = None
 
-    # Message Hub config
-    MESSAGE_HUB_URL: str = "http://message-hub:8200"
+# Message Hub config
+    MESSAGE_HUB_HOST: str = "message-hub"
+    MESSAGE_HUB_PORT: int = 5672
+    MESSAGE_HUB_USER: str = "llm_service"
+    MESSAGE_HUB_PASSWORD: str | None = None
+    MESSAGE_HUB_VHOST: str = "/"
+    MESSAGE_HUB_EXCHANGE: str = "llm_service"
+    MESSAGE_HUB_QUEUE_PREFIX: str = "llm_service"
     SERVICE_TTL: int = 30
     HEALTH_CHECK_INTERVAL: int = 10
+
+    @property
+    def message_hub_url(self) -> str:
+        """Get Message Hub URL."""
+        auth = f":{self.MESSAGE_HUB_PASSWORD}@" if self.MESSAGE_HUB_PASSWORD else "@"
+        return f"amqp://{self.MESSAGE_HUB_USER}{auth}{self.MESSAGE_HUB_HOST}:{self.MESSAGE_HUB_PORT}/{self.MESSAGE_HUB_VHOST}"
 
     # OpenAI config
     OPENAI_API_KEY: str

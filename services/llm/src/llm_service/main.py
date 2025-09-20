@@ -5,9 +5,10 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from llm_service.core.config import settings
-from llm_service.api.routes import api_router
+from llm_service.api import text, character, image, theme
 from llm_service.core.exceptions import LLMServiceError
 from llm_service.core.monitoring import setup_monitoring
+from llm_service.core.message_hub import MessageHubClient
 from llm_service.providers.openai import OpenAIProvider
 from llm_service.providers.getimg import GetImgProvider
 
@@ -29,6 +30,7 @@ app.add_middleware(
 # Global dependencies
 openai_provider = OpenAIProvider(api_key=settings.OPENAI_API_KEY)
 getimg_provider = GetImgProvider(api_key=settings.GETIMG_API_KEY)
+message_hub = MessageHubClient(settings=settings)
 
 @app.on_event("startup")
 async def startup_event():
@@ -36,12 +38,14 @@ async def startup_event():
     await setup_monitoring()
     await openai_provider.setup()
     await getimg_provider.setup()
+    await message_hub.setup()
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on shutdown"""
     await openai_provider.cleanup()
     await getimg_provider.cleanup()
+    await message_hub.cleanup()
 
 @app.exception_handler(LLMServiceError)
 async def llm_service_exception_handler(request: Request, exc: LLMServiceError):
@@ -61,23 +65,35 @@ async def llm_service_exception_handler(request: Request, exc: LLMServiceError):
     )
 
 # Include API routes
-app.include_router(api_router)
+app.include_router(text.router)
+app.include_router(character.router)
+app.include_router(image.router)
+app.include_router(theme.router)
 
 @app.get("/health")
 async def health_check() -> Dict:
     """Service health check endpoint"""
     openai_health = await openai_provider.health_check()
     getimg_health = await getimg_provider.health_check()
+    message_hub_health = bool(message_hub._connection and message_hub._connection.is_closed is False)
     
     # Determine overall health
-    providers_healthy = all([openai_health, getimg_health])
+    all_healthy = all([openai_health, getimg_health, message_hub_health])
     
     return {
-        "status": "healthy" if providers_healthy else "degraded",
+        "status": "healthy" if all_healthy else "degraded",
         "version": settings.VERSION,
-        "providers": {
+        "components": {
             "openai": "healthy" if openai_health else "degraded",
-            "getimg": "healthy" if getimg_health else "degraded",
+            "getimg_ai": "healthy" if getimg_health else "degraded",
+            "message_hub": "healthy" if message_hub_health else "degraded",
+            "queue": "healthy",  # To be implemented with queue metrics
+        },
+        "metrics": {
+            "text_generation_rate": 0.0,  # To be implemented
+            "image_generation_rate": 0.0,  # To be implemented
+            "error_rate": 0.0,  # To be implemented
+            "queue_length": 0,  # To be implemented
         },
     }
 

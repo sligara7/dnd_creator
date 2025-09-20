@@ -23,7 +23,7 @@ app.add_middleware(
 )
 
 # Import API routes
-from auth_service.api.v2.auth import router as auth_router
+from auth_service.api.v2 import router as api_router
 
 @app.on_event("startup")
 async def startup_event():
@@ -54,7 +54,7 @@ async def auth_service_exception_handler(request: Request, exc: AuthServiceError
     )
 
 # Include API routes
-app.include_router(auth_router)
+app.include_router(api_router)
 
 @app.get("/health")
 async def health_check():

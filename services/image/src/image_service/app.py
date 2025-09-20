@@ -1,5 +1,6 @@
 """FastAPI application setup."""
 
+import asyncio
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -9,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 from image_service.core.config import Settings, get_settings
 from image_service.core.exceptions import ImageServiceError
+from image_service.integration.storage_service import StorageServiceClient
 
 settings = get_settings()
 
@@ -26,13 +28,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Initialize services
     message_hub = MessageHubClient()
     getimg_client = GetImgClient()
+    storage_client = StorageServiceClient()
     queue_service = AsyncQueueService(
         redis=app.state.redis,
-        db=app.state.db,
+        storage=storage_client,
     )
     generation_worker = GenerationWorker(
         queue_service=queue_service,
         getimg_client=getimg_client,
+        storage=storage_client,
     )
 
     try:
@@ -43,6 +47,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # Connect services
         await message_hub.connect()
         app.state.message_hub = message_hub
+        app.state.storage = storage_client
         app.state.queue = queue_service
         app.state.generation_worker = generation_worker
 
@@ -63,6 +68,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # Close message hub
         if hasattr(app.state, "message_hub"):
             await app.state.message_hub.close()
+
+        # Close storage client
+        if hasattr(app.state, "storage"):
+            await app.state.storage.close()
 
 
 def create_app() -> FastAPI:

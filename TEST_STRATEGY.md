@@ -8,7 +8,7 @@ Last Updated: 2025-09-10
 - Character Service Tests: `/services/character/SERVICE_TESTS.md`
 - Campaign Service Tests: `/services/campaign/SERVICE_TESTS.md`
 - Image Service Tests: `/services/image/SERVICE_TESTS.md`
-- Message Hub Tests: `/services/message_hub/SERVICE_TESTS.md`
+- Message Hub Tests: `/services/message/SERVICE_TESTS.md`
 
 > Note: This document is automatically synchronized with service-level test documents.
 > Updates to this file or any service-level test document will automatically update the related documents.

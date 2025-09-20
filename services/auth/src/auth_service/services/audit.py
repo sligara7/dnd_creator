@@ -3,7 +3,7 @@
 from typing import Any, Optional
 from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession
+
 
 
 class AuditService:

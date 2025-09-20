@@ -4,8 +4,14 @@ from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
-from ..core.exceptions import EventHandlingError, IntegrationError
+from ..core.exceptions import ContentGenerationError, EventHandlingError, IntegrationError
 from ..models.theme import ContentType, ThemeContext
+from ..models.character_content import (
+    CharacterContentRequest,
+    CharacterContentResponse,
+    CharacterContentType
+)
+from ..services.character_content import CharacterContentService
 from ..services.character import CharacterEventType, CharacterService
 from ..services.events import EventHandler
 from ..services.generation import GenerationPipeline
@@ -18,6 +24,14 @@ async def get_character_service() -> CharacterService:
     from ..core.dependencies import get_settings
     settings = get_settings()
     return CharacterService(settings)
+
+
+async def get_character_content_service() -> CharacterContentService:
+    """Get Character content service instance."""
+    from ..core.dependencies import get_settings, get_openai_provider
+    settings = get_settings()
+    openai_provider = get_openai_provider()
+    return CharacterContentService(settings, openai_provider)
 
 
 async def get_generation_pipeline() -> GenerationPipeline:
@@ -131,6 +145,62 @@ async def handle_theme_transition(
         return {"status": "Theme transition queued"}
 
     except (IntegrationError, EventHandlingError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post(
+    "/{character_id}/content/generate",
+    response_model=CharacterContentResponse,
+    description="Generate content for a character"
+)
+async def generate_content(
+    character_id: UUID,
+    request: CharacterContentRequest,
+    character_content_service: CharacterContentService = Depends(get_character_content_service)
+) -> CharacterContentResponse:
+    """Generate content for a character based on the requested type."""
+    try:
+        content: Dict[str, any] = {}
+
+        # Generate content based on type
+        if request.content_type == CharacterContentType.PERSONALITY_TRAITS:
+            traits = await character_content_service.generate_personality_traits(
+                character_data=request.character_data,
+                theme_context=request.theme_context,
+                campaign_context=request.campaign_context
+            )
+            content = traits.dict()
+            
+        elif request.content_type == CharacterContentType.BACKGROUND_NARRATIVE:
+            narrative = await character_content_service.generate_background_narrative(
+                character_data=request.character_data,
+                theme_context=request.theme_context,
+                campaign_context=request.campaign_context
+            )
+            content = narrative.dict()
+            
+        elif request.content_type == CharacterContentType.CHARACTER_ARC:
+            arc = await character_content_service.generate_character_arc(
+                character_data=request.character_data,
+                theme_context=request.theme_context,
+                campaign_context=request.campaign_context
+            )
+            content = arc.dict()
+
+        # Return response with generated content
+        return CharacterContentResponse(
+            content_type=request.content_type,
+            content=content,
+            metadata={
+                "character_id": str(character_id),
+                "theme_applied": bool(request.theme_context),
+                "campaign_integrated": bool(request.campaign_context)
+            }
+        )
+
+    except ContentGenerationError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

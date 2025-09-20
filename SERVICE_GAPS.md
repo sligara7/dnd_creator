@@ -307,8 +307,17 @@ Completed (2025-09-20):
 ✓ OpenAPI/Swagger documentation
 ✓ Unit and integration tests
 
-Remaining work:
+Remaining High Priority Work:
 - Message Hub Integration
+- Database Migration Implementation (Per ARCHITECTURE.json):
+  * Create character_db and migrate from Character Service
+  * Create auth_db and migrate from Auth Service
+  * Create metrics_db with time-series optimization
+  * Create session_db for game session management
+  * Create catalog_db for items, spells, and rules
+  * Configure database isolation and monitoring
+  * Implement API endpoints for each sub-database
+  * Set up connection pooling and health checks
 
 ### Search Service
 Status: IN PROGRESS

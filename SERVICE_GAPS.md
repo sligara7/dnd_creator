@@ -78,27 +78,21 @@ Major Changes & Milestones:
 Status: FEATURE COMPLETE
 Completion Tasks: [/services/character/docs/COMPLETION_TASKS.md](/dnd_tools/dnd_char_creator/services/character/docs/COMPLETION_TASKS.md)
 
-Remaining High Priority:
-✓ Load Testing & Performance Profiling (Completed 2025-09-06)
-✓ API Documentation (OpenAPI/Swagger) (Completed 2025-09-06)
-✓ Implementation & Operational Guides (Completed 2025-09-07)
+Architecture Compliance (Storage Migration) — 2025-09-20:
+- ✓ Message-based Storage Adapter and AMQP client with retries/metrics
+- ✓ Repositories updated to use storage adapter (Character, Inventory, Journal, Experience, Version)
+- ✓ DI container refactored to remove DB sessions and wire RabbitMQPublisher + storage adapter
+- ✓ Removed SQLAlchemy/asyncpg from service dependencies
+- ✓ Services refactored off ORM: CharacterService, InventoryService, ThemeService
+- ☐ API routes refactor to dict-based responses (In Progress)
+- ☐ Tests updated to use storage mocks; remove DB fixtures (In Progress)
+- ☐ Clean up any remaining ORM imports in routes/domain (In Progress)
+- ☐ Documentation updates (COMPLETION_TASKS.md, README) (Pending)
+- ☐ Performance validation on new path (Pending)
 
-Note: Service has extensive test coverage with performance baselines established
-
-⚠️ MIGRATION REQUIRED: Current internal database must be migrated to use character_db in the storage service to comply with ARCHITECTURE.json
-
-Note: API Documentation completion includes:
-- Complete OpenAPI 3.0 specification
-- Reusable schema components
-- Code examples in multiple languages
-- Ready for FastAPI integration
-
-Note: Service is feature complete with:
-- Complete test coverage with performance baselines
-- Comprehensive OpenAPI/Swagger documentation
-- Operational guide for deployment and maintenance
-- Implementation guide for developers
-- All core features implemented and tested
+Notes:
+- Service has extensive test coverage; new storage-path test updates underway
+- OpenAPI documentation complete and integrated with FastAPI
 
 ### Campaign Service
 Status: FEATURE COMPLETE
@@ -569,9 +563,9 @@ Note: Service has implemented core search functionality:
    ✓ Completed Services:
    - ✓ Character Service (fully integrated)
    - ✓ Image Service (fully integrated)
+   - ✓ Campaign Service (fully integrated)
    
    Pending Services:
-   - Campaign Service (next priority)
    - Auth Service (security focus)
    - Metrics Service (time-series)
    - Session Service (real-time)
@@ -601,12 +595,14 @@ Database Schema Status (✓ All Complete):
 
 Service Integration Status:
 ✓ 1. Character Service: Fully integrated and operational
-2. Campaign Service: Integration in progress
-   - ✓ Storage models enhanced with version control and world effects
-   - ✓ Identity network support added for Antitheticon campaigns
-   - ✓ Storage repository layer implemented
-   - ✓ Message Hub client integration complete
-   - Pending: Integration testing and configuration updates
+✓ 2. Campaign Service: Fully integrated (2025-09-20)
+   - ✓ Database migration completed to campaign_db in Storage Service
+   - ✓ Direct database dependencies removed
+   - ✓ Storage port layer implemented
+   - ✓ Message Hub integration completed
+   - ✓ API endpoints updated
+   - ✓ Test suite updated and expanded
+   - ✓ All integrations now routed through Message Hub
 3. Image Service: ✓ Fully integrated and operational
 4. Auth Service: Schema ready, awaiting integration
 5. Metrics Service: Schema ready, awaiting integration (requires time-series support)
@@ -615,13 +611,13 @@ Service Integration Status:
 
 Next Integration Steps (Priority Order):
 
-1. Campaign Service Integration
+1. ✓ Campaign Service Integration (Completed 2025-09-20):
    - ✓ Storage port interface and models complete
    - ✓ Message Hub client implemented
    - ✓ Base repository layer complete
-   - Fix development environment setup
-   - Complete integration test suite
-   - Update service configuration
+   - ✓ Development environment setup fixed
+   - ✓ Integration test suite complete
+   - ✓ Service configuration updated
 
 2. Auth Service Integration
    - Follow Campaign Service pattern
@@ -1209,6 +1205,29 @@ Previously completed:
   - Support for traditional and Antitheticon campaigns
   - Full validation and error handling
   - Complete test coverage
+
+### 2025-09-20 (Campaign Service Integration - COMPLETE)
+Campaign Service Migration Milestones:
+- Completed database migration to storage service:
+  * Removed all direct database dependencies
+  * Created storage port layer for campaign_db access
+  * Updated all service components to use storage port
+  * Removed SQLAlchemy and asyncpg dependencies
+- All operations now use Message Hub:
+  * Database operations through storage service
+  * LLM requests through Message Hub
+  * Theme system integration via Message Hub
+  * Content generation coordination through Message Hub
+- API and Testing Updates:
+  * Updated all API endpoints
+  * Created integration test suite
+  * Added Message Hub communication tests
+  * Updated existing tests to use storage port
+- Service now complies with ARCHITECTURE.json:
+  * No direct database access
+  * All persistence through storage service
+  * All inter-service communication through Message Hub
+  * Clean separation of concerns
 
 ### 2025-09-07 (Search Service Completion)
 Search Service Milestones:

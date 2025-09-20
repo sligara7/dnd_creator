@@ -293,7 +293,7 @@ See SERVICE_GAPS.md Character Service section: /home/ajs7/dnd_tools/dnd_char_cre
 ## 8. Database Migration
 
 ### 8.1 Storage Service Integration
-- [ ] Storage Service Client
+- [x] Storage Service Client (Completed 2025-09-20)
   - Message-based communication via RabbitMQ
   - Support for binary assets (portraits, sheets)
   - Integration with Message Hub
@@ -301,10 +301,10 @@ See SERVICE_GAPS.md Character Service section: /home/ajs7/dnd_tools/dnd_char_cre
   - Monitoring and metrics
 
 ### 8.2 Database Migration
-- [ ] Character DB Access
+- [x] Character DB Access (Completed 2025-09-20)
   - Define message-based contracts with storage service
   - Implement storage adapter interface
-  - Repository layer updates
+  - Repository layer updates (Character, Inventory, Journal, Experience, Version)
   - Data validation
   - Error handling
 
@@ -317,21 +317,19 @@ See SERVICE_GAPS.md Character Service section: /home/ajs7/dnd_tools/dnd_char_cre
   - Rollback capability
 
 ### 8.4 Architecture Updates
-- [ ] Post-Migration
-  - Remove direct database access
-  - Update configuration
-  - Update documentation
-  - Verify all tests pass
-  - Performance validation
+- [x] Remove direct database access (Completed 2025-09-20)
+- [x] Update configuration (DI container, dependencies) (Completed 2025-09-20)
+- [ ] Update documentation (README, guides)
+- [ ] Verify all tests pass (update tests to storage mocks)
+- [ ] Performance validation
 
 ### 8.5 Integration Status
-Work In Progress - Tasks Started 2025-09-20:
-- Storage Service Client implementation begun:
-  * Message Publisher interface created
-  * RabbitMQ integration added
-  * Asset operations support added
-  * Configuration updated for messaging
-- Next: Character DB access contract and migration
+Updated 2025-09-20:
+- Storage Service Client implemented with retries/metrics
+- Storage adapter + repositories integrated across Character, Inventory, Journal, Experience, Version
+- DI refactored to use RabbitMQPublisher + storage adapter; removed DB sessions
+- Services refactored off ORM: CharacterService, InventoryService, ThemeService
+- Next: Refactor API routes to dict-based responses; update tests to use storage mocks; finalize docs and performance validation
 
 ## Success Criteria
 
@@ -354,26 +352,25 @@ Migrated database functionality to storage service:
   * Added message handler for storage service integration
   * Preserved all domain models and business logic
 
-- Created initial Message Hub integration:
+- Message Hub integration:
   * Added StorageServiceClient for character service
   * Implemented RabbitMQ-based MessagePublisher
   * Added messaging configuration
   * Set up initial binary asset support
   * Created ports and adapters pattern for storage
 
-- Defined character data access contract:
-  * Character CRUD operations
-  * Inventory management
-  * Journal system
-  * Filtering and pagination
-  * Soft delete support
-  * Optimistic locking
+- Character data access migration (Completed):
+  * Defined message-based contract + storage adapter interface
+  * Updated repositories (Character, Inventory, Journal, Experience, Version) to use storage adapter
+  * Refactored DI container to remove DB sessions
+  * Removed SQLAlchemy/asyncpg from dependencies
+  * Refactored services off ORM: CharacterService, InventoryService, ThemeService
 
 - Next steps:
-  * Migrate repository layer to use message-based storage
-  * Update service layer to use new storage interface
-  * Remove direct database access from character service
-  * Verify all functionality through new storage layer
+  * Refactor API routes to handle dict-based responses
+  * Update tests to use storage mocks and remove DB fixtures
+  * Update documentation
+  * Performance validation on new path
 
 ### 2025-09-07
 Completed Implementation Guide:

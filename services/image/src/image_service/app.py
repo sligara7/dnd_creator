@@ -20,24 +20,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """FastAPI lifespan events."""
     # Connect to services
     from image_service.integration.message_hub import MessageHubClient
-    from image_service.integration.getimg import GetImgClient
     from image_service.events.handlers import EVENT_HANDLERS
-    from image_service.services.queue import AsyncQueueService
-    from image_service.workers.generation import GenerationWorker
 
     # Initialize services
     message_hub = MessageHubClient()
-    getimg_client = GetImgClient()
     storage_client = StorageServiceClient()
-    queue_service = AsyncQueueService(
-        redis=app.state.redis,
-        storage=storage_client,
-    )
-    generation_worker = GenerationWorker(
-        queue_service=queue_service,
-        getimg_client=getimg_client,
-        storage=storage_client,
-    )
 
     try:
         # Register event handlers
@@ -46,32 +33,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
         # Connect services
         await message_hub.connect()
+        await storage_client.connect()
+
         app.state.message_hub = message_hub
         app.state.storage = storage_client
-        app.state.queue = queue_service
-        app.state.generation_worker = generation_worker
-
-        # Start worker
-        worker_task = asyncio.create_task(generation_worker.start())
-        app.state.worker_task = worker_task
 
         yield
 
     finally:
-        # Stop worker
-        if hasattr(app.state, "generation_worker"):
-            await app.state.generation_worker.stop()
-            if hasattr(app.state, "worker_task"):
-                app.state.worker_task.cancel()
-                await app.state.worker_task
-
-        # Close message hub
-        if hasattr(app.state, "message_hub"):
-            await app.state.message_hub.close()
-
-        # Close storage client
+        # Close services
         if hasattr(app.state, "storage"):
             await app.state.storage.close()
+        if hasattr(app.state, "message_hub"):
+            await app.state.message_hub.close()
 
 
 def create_app() -> FastAPI:
@@ -126,18 +100,15 @@ def create_app() -> FastAPI:
                 "cache": "healthy"
             },
             "metrics": {
-                "images_generated": 0,  # TODO: Add actual metrics
-                "generation_queue": 0,
-                "error_rate": 0.0,
-                "cache_hit_rate": 0.0
+                "storage_operations": 0,  # TODO: Add actual metrics
+                "message_hub_events": 0,
+                "error_rate": 0.0
             }
         }
 
     # API routers
-    from image_service.api.health import router as health_router
-    from image_service.api.routers.style import router as style_router
+    from image_service.api.routers.images import router as images_router
 
-    app.include_router(health_router)
-    app.include_router(style_router)
+    app.include_router(images_router)
 
     return app

@@ -5,17 +5,17 @@ from typing import Dict, Any, Optional, List
 from uuid import UUID, uuid4
 
 from character_service.clients.storage_port import (
-    StoragePort,
     CharacterData,
     InventoryItemData,
     JournalEntryData
 )
 from character_service.schemas.schemas import CharacterCreate, CharacterUpdate
+from character_service.storage.storage_adapter import StorageAdapter
 
 class CharacterStorageRepository:
     """Character repository using the storage service."""
 
-    def __init__(self, storage: StoragePort):
+    def __init__(self, storage: StorageAdapter):
         self.storage = storage
 
     def _get_safe_fields(self, data: Dict[str, Any]) -> Dict[str, Any]:

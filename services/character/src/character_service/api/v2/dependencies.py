@@ -1,7 +1,6 @@
 """API dependency configuration."""
 from fastapi import Depends
 from rodi import Container
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from character_service.services.interfaces import CharacterService, InventoryService, JournalService
 from character_service.services.character import CharacterServiceImpl
@@ -12,7 +11,7 @@ from character_service.domain.event import EventImpactService
 from character_service.domain.event_publisher import EventPublicationManager
 from character_service.domain.progress import ProgressTrackingService
 from character_service.domain.state_publisher import StatePublisher
-from character_service.infrastructure.messaging.hub_client import MessageHubClient
+from character_service.storage.storage_adapter import StorageAdapter
 from character_service.api.v2.lifecycle import event_publisher
 
 
@@ -23,46 +22,55 @@ def get_container() -> Container:
     return setup_di()
 
 
-async def get_db_session(container: Container = Depends(get_container)) -> AsyncSession:
-    """Get database session."""
-    session = container.resolve_provider("get_db_session")
-    async for s in session():
-        yield s
-
-
-async def get_character_service(
+def get_character_service(
     container: Container = Depends(get_container),
 ) -> CharacterService:
     """Get character service."""
     return container.resolve(CharacterServiceImpl)
 
 
-async def get_inventory_service(
+def get_inventory_service(
     container: Container = Depends(get_container),
 ) -> InventoryService:
     """Get inventory service."""
     return container.resolve(InventoryServiceImpl)
 
 
-async def get_journal_service(
+def get_journal_service(
     container: Container = Depends(get_container),
 ) -> JournalService:
     """Get journal service."""
     return container.resolve(JournalServiceImpl)
 
 
-async def get_theme_service(
+def get_theme_service(
     container: Container = Depends(get_container),
 ) -> ThemeService:
     """Get theme service."""
     return container.resolve(ThemeService)
 
 
-async def get_event_publisher() -> EventPublicationManager:
+def get_event_publisher(
+    container: Container = Depends(get_container)
+) -> EventPublicationManager:
     """Get event publication manager instance."""
     if event_publisher is None:
         raise RuntimeError("Event publisher not initialized")
     return event_publisher
+
+
+def get_progress_service(
+    container: Container = Depends(get_container)
+) -> ProgressTrackingService:
+    """Get progress tracking service."""
+    return container.resolve(ProgressTrackingService)
+
+
+def get_storage_adapter(
+    container: Container = Depends(get_container)
+) -> StorageAdapter:
+    """Get storage adapter."""
+    return container.resolve(StorageAdapter)
 
 
 async def get_event_service(

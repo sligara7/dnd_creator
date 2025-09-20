@@ -6,13 +6,13 @@ from uuid import UUID
 
 from character_service.models.models import ExperienceEntry
 from character_service.schemas.schemas import ExperienceEntryCreate, ExperienceEntryUpdate
-from character_service.clients.storage_port import StoragePort
+from character_service.storage.storage_adapter import StorageAdapter
 
 
 class ExperienceEntryRepository:
     """Experience entry repository."""
 
-    def __init__(self, storage: StoragePort):
+    def __init__(self, storage: StorageAdapter):
         self.storage = storage
 
     async def create(self, entry: ExperienceEntryCreate) -> ExperienceEntry:

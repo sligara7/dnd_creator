@@ -37,6 +37,12 @@ class CharacterNotFoundError(Exception):
     pass
 
 
+class StorageOperationError(Exception):
+    """Raised when a storage service operation fails."""
+
+    pass
+
+
 class EventNotFoundError(Exception):
     """Raised when an event is not found."""
 

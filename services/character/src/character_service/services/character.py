@@ -243,12 +243,13 @@ class CharacterServiceImpl:
                 if character.character_data["ability_scores"][ability] < min_score:
                     raise ValueError(f"Does not meet requirements for {new_class} multiclass")
 
-    def _calculate_level_up_hp(self, character: Character, level_up_data: Dict[str, Any]) -> int:
+    def _calculate_level_up_hp(self, character: Dict[str, Any], level_up_data: Dict[str, Any]) -> int:
         """Calculate new hit points after level up."""
+        data = character["data"]
         # Get hit die size for the new class level
         new_class = None
         for class_name, level in level_up_data["character_classes"].items():
-            if level > character.character_data["character_classes"].get(class_name, 0):
+            if level > data["character_classes"].get(class_name, 0):
                 new_class = class_name
                 break
 
@@ -261,5 +262,5 @@ class CharacterServiceImpl:
         hit_die = hit_die_sizes.get(new_class, 8)
 
         # Add Constitution modifier and rolled value
-        con_mod = (character.character_data["ability_scores"].get("constitution", 10) - 10) // 2
-        return character.character_data["hit_points"] + level_up_data["hp_roll"] + con_mod
+        con_mod = (data["ability_scores"].get("constitution", 10) - 10) // 2
+        return data["hit_points"] + level_up_data["hp_roll"] + con_mod

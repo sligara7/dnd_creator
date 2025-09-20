@@ -1,6 +1,6 @@
 # D&D Character Creator Image Service
 
-AI-powered image generation and manipulation service for the D&D Character Creator application.
+Streamlined image storage and retrieval service for the D&D Character Creator application. This service integrates with the Storage Service via Message Hub for image persistence and management.
 
 ## Quick Start
 
@@ -17,13 +17,8 @@ AI-powered image generation and manipulation service for the D&D Character Creat
      --name dnd-image-service \
      -p 8002:8000 \
      --network dnd_network \
-     -e GETIMG_API_KEY="your-getimg-api-key" \
-     -e MESSAGE_HUB_URL="http://message_hub:8200" \
-     -e REDIS_HOST="redis" \
-     -e POSTGRES_SERVER="db" \
-     -e POSTGRES_USER="dnd" \
-     -e POSTGRES_PASSWORD="your-db-password" \
-     -e POSTGRES_DB="dnd_image" \
+     -e MESSAGE_HUB_URL="amqp://message_hub:5672" \
+     -e STORAGE_SERVICE_URL="http://storage:8000" \
      dnd-image-service
    ```
 
@@ -33,20 +28,11 @@ AI-powered image generation and manipulation service for the D&D Character Creat
 
 ## Required Environment Variables
 
-- `GETIMG_API_KEY`: API key for GetImg.AI
-- `POSTGRES_USER`: Database username
-- `POSTGRES_PASSWORD`: Database password
-- `POSTGRES_DB`: Database name
+- `MESSAGE_HUB_URL`: Message Hub AMQP URL
+- `STORAGE_SERVICE_URL`: Storage Service URL
 
 ## Optional Environment Variables
 
-- `MESSAGE_HUB_URL`: Message Hub service URL (default: http://message_hub:8200)
-- `GETIMG_API_URL`: GetImg.AI API URL (default: https://api.getimg.ai/v1)
-- `POSTGRES_SERVER`: PostgreSQL server (default: localhost)
-- `POSTGRES_PORT`: PostgreSQL port (default: 5432)
-- `REDIS_HOST`: Redis server (default: localhost)
-- `REDIS_PORT`: Redis port (default: 6379)
-- `REDIS_PASSWORD`: Redis password (optional)
 - `LOG_LEVEL`: `INFO` (default), `DEBUG`, `WARNING`, `ERROR`
 
 ## Production Deployment
@@ -62,124 +48,61 @@ The container is optimized for rootless Podman deployment with:
 
 ### Core Components
 - **FastAPI**: Modern async web framework
-- **SQLAlchemy**: Database ORM with async support
 - **Pydantic**: Data validation and serialization
 - **aio-pika**: Async AMQP client for Message Hub
-- **Redis**: Advanced caching and queue management
-- **S3**: Content storage with multipart support
-- **CDN**: Global content delivery network
 
 ### Service Integration
-- **GetImg.AI Client**: AI image generation
 - **Message Hub Client**: Service communication
-- **Storage Service**: Asset management
-- **Queue System**: Redis-based task management with:
-  - Priority-based task scheduling
-  - Batch processing support
-  - Async worker system
-  - Progress tracking
-  - Retry mechanism
-  - Prometheus metrics
-- Redis Cache: Performance optimization with cache warming
-- CDN Integration: Multi-region content delivery
-- Storage Integration:
-  - S3 content storage
-  - Content deduplication
-  - Versioning support
-  - Multipart upload/download
+  - Event-based messaging
+  - Request/response correlation
+  - Automatic reconnection
+  - Error handling
 
-### Database
-- Independent PostgreSQL database for image metadata
-- Version control for image assets
-- Task state and event tracking
-- Theme and style configuration storage
-- Queue management with:
-  - Task status history
-  - Event logging
-  - Progress tracking
-  - Batch operation support
+- **Storage Service Client**: Asset management via Message Hub
+  - Image persistence
+  - Metadata management
+  - Theme-aware storage
+  - Content delivery
 
-## Image Generation Features
+## Core Features
 
-### Map Generation
-- Tactical battle maps with grid support
-- Campaign maps with points of interest
-- Terrain and feature generation
-- Theme-aware visual styles
+### Image Storage
+- Secure image upload
+- Theme-aware organization
+- Metadata management
+- Content type validation
 
-### Character Visualization
-- Character portraits from descriptions
-- Equipment visualization
-- Theme-appropriate styling
-- Pose and background variations
-
-### Item Illustration
-- Weapon and armor visualization
-- Magical item effects
-- Material and quality representation
-- Theme-consistent styling
-
-### Overlay System
-- Tactical position markers
-- Range and effect areas
-- Territory control visualization
-- Travel route mapping
+### Image Retrieval
+- Direct image access
+- Filtered image listing
+- Theme-based searching
+- Metadata querying
 
 ## Service Communication
 
-### Outbound Events
-- `image_generated`: New image creation
-- `overlay_updated`: Overlay modifications
-- `theme_applied`: Theme application
+### Message Hub Events
+- `storage.request`: Operations on images
+- `storage.response`: Operation responses
 
-### Inbound Events
-- `character_updated`: Character appearance changes
-- `campaign_theme_changed`: Theme updates
-- `map_state_changed`: Map overlay updates
-
-## Theme System
-
-### Visual Themes
-- Fantasy (traditional)
-- Western
-- Cyberpunk
-- Steampunk
-- Horror
-- Space Fantasy
-
-### Style Elements
-- Architecture design
-- Clothing styles
-- Technology level
-- Environmental features
-- Color schemes
-- Lighting effects
+## Theme Support
+Theme information is preserved and stored with images for consistent organization and retrieval.
 
 ## Health and Monitoring
 
 - Health endpoint: `/health`
   - Service status
-  - Dependency checks
-  - Queue metrics
-- Queue monitoring:
-  - Task status tracking
-  - Processing metrics
-  - Queue size by priority
-  - Worker status
-  - Batch processing stats
+  - Message Hub status
+  - Storage service status
 - Prometheus metrics:
-  - Generation throughput
-  - Queue latency
-  - Worker utilization
-  - Cache performance
+  - Storage operations
+  - Message Hub events
   - Error rates
+  - API latency
 - Structured JSON logging
-- Generation pipeline metrics
 
 ## Performance Targets
 
-- Map generation: < 30 seconds
-- Character portraits: < 15 seconds
-- Item illustrations: < 10 seconds
-- Overlay application: < 1 second
-- Cache hit rate: > 90%
+- Storage operations: < 100ms
+- Image upload: < 2s for 5MB
+- List operations: < 50ms
+- API response time: < 100ms

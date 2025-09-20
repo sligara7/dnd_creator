@@ -13,9 +13,6 @@ packages = [{include = "image_service", from = "src"}]
 python = "^3.11"
 fastapi = "^0.103.0"
 uvicorn = {extras = ["standard"], version = "^0.23.0"}
-sqlalchemy = {extras = ["asyncio"], version = "^2.0.20"}
-alembic = "^1.11.3"
-asyncpg = "^0.28.0"
 pydantic = {extras = ["email"], version = "^2.3.0"}
 aio-pika = "^9.3.0"
 httpx = "^0.24.1"

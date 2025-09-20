@@ -3,26 +3,20 @@
 from datetime import datetime
 from typing import Dict, List, Optional, Any, Tuple
 from uuid import UUID, uuid4
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from character_service.models.version import (
-    VersionGraph,
-    VersionNode,
-    VersionEdge,
-    VersionNodeType,
-    EdgeType,
-)
-from character_service.models.models import Character, InventoryItem
 from character_service.repositories.version_repository import VersionRepository
-from character_service.repositories.character_repository import CharacterRepository
+from character_service.repositories.character_storage_repository import CharacterStorageRepository
+from character_service.repositories.inventory_repository import InventoryRepository
+from character_service.core.exceptions import ValidationError
 
 class ThemeService:
     """Service for managing character and item themes."""
 
-    def __init__(self, db: AsyncSession):
-        self.db = db
-        self.version_repo = VersionRepository(db)
-        self.character_repo = CharacterRepository(db)
+    def __init__(self, version_repo: VersionRepository, character_repo: CharacterStorageRepository,
+                inventory_repo: InventoryRepository):
+        self.version_repo = version_repo
+        self.character_repo = character_repo
+        self.inventory_repo = inventory_repo
 
     async def transition_theme(
         self,
@@ -34,6 +28,19 @@ class ThemeService:
         """
         Transition a character to a new theme.
         
+        Args:
+            character_id: ID of the character to transition
+            new_theme: Name of the new theme
+            chapter_id: ID of the current chapter
+            equipment_transitions: List of equipment transition specs
+                [{
+                    "equipment_id": str,
+                    "transition_type": "theme_reset" | "adapt_new"
+                }]
+                
+        Returns:
+            Dict containing new character state, equipment states, and version graph
+            
         This creates a new character version with the new theme, preserving memory,
         while equipment either resets to root theme versions or gets adapted.
         """
@@ -160,22 +167,26 @@ class ThemeService:
 
     async def _create_item_version(
         self,
-        item: InventoryItem,
+        item: Dict[str, Any],
         new_theme: str
-    ) -> InventoryItem:
+    ) -> Dict[str, Any]:
         """Create a new themed version of an item."""
-        new_data = dict(item.item_data)
+        new_data = dict(item.get("data", {}))
         new_data["theme_data"] = self._adapt_item_theme(new_data, new_theme)
 
-        return InventoryItem(
-            id=uuid4(),
-            root_id=item.root_id or item.id,
-            theme=new_theme,
-            character_id=item.character_id,
-            item_data=new_data,
-            quantity=item.quantity,
-            equipped=item.equipped
-        )
+        new_item = {
+            "id": str(uuid4()),
+            "root_id": item.get("root_id") or item["id"],
+            "theme": new_theme,
+            "character_id": item["character_id"],
+            "data": new_data,
+            "quantity": item["quantity"],
+            "equipped": item.get("equipped", False),
+            "created_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat()
+        }
+
+        return await self.inventory_repo.create_inventory_item(new_item)
 
     async def _add_character_node(
         self,
@@ -287,28 +298,22 @@ class ThemeService:
             "adapted_at": datetime.utcnow().isoformat()
         }
 
-    def _character_to_dict(self, character: Character) -> Dict[str, Any]:
+    def _character_to_dict(self, character: Dict[str, Any]) -> Dict[str, Any]:
         """Convert character to dictionary representation."""
         return {
-            "id": str(character.id),
-            "name": character.name,
-            "theme": character.theme,
-            "data": character.character_data,
-            "journal_entries": [
-                {
-                    "id": str(entry.id),
-                    "content": entry.content
-                }
-                for entry in character.journal_entries
-                if not entry.is_deleted
-            ]
+            "id": character["id"],
+            "name": character["name"],
+            "theme": character["theme"],
+            "data": character["data"],
+            # Journal entries are now managed by the journal repository
+            "journal_entries": []
         }
 
-    def _item_to_dict(self, item: InventoryItem) -> Dict[str, Any]:
+    def _item_to_dict(self, item: Dict[str, Any]) -> Dict[str, Any]:
         """Convert inventory item to dictionary representation."""
         return {
-            "id": str(item.id),
-            "root_id": str(item.root_id) if item.root_id else None,
-            "theme": item.theme,
-            "data": item.item_data
+            "id": item["id"],
+            "root_id": item.get("root_id"),
+            "theme": item["theme"],
+            "data": item.get("data", {})
         }

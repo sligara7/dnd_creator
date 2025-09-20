@@ -1,35 +1,49 @@
 """Service dependencies."""
-from fastapi import Depends
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Optional
 
-from character_service.core.database import get_session
-from character_service.services.inventory import InventoryService
-from character_service.services.magic_items import MagicItemService
+from fastapi import Depends, Request
 
-
-async def get_inventory_service(
-    session: AsyncSession = Depends(get_session),
-) -> InventoryService:
-    """Get inventory service dependency.
-
-    Args:
-        session: Database session
-
-    Returns:
-        Inventory service
-    """
-    return InventoryService(session)
+from character_service.di.container import setup_di
+from character_service.domain.messages import MessagePublisher
+from character_service.services.interfaces import (
+    CharacterService,
+    InventoryService,
+    JournalService
+)
+from character_service.services.theme_service import ThemeService
 
 
-async def get_magic_item_service(
-    session: AsyncSession = Depends(get_session),
-) -> MagicItemService:
-    """Get magic item service dependency.
+_container = None
 
-    Args:
-        session: Database session
 
-    Returns:
-        Magic item service
-    """
-    return MagicItemService(session)
+def get_container(request: Request = None):
+    """Get DI container singleton."""
+    global _container
+    if not _container:
+        _container = setup_di()
+    return _container
+
+
+def get_message_publisher(container=Depends(get_container)) -> MessagePublisher:
+    """Get message publisher dependency."""
+    return container.resolve(MessagePublisher)
+
+
+def get_character_service(container=Depends(get_container)) -> CharacterService:
+    """Get character service dependency."""
+    return container.resolve(CharacterService)
+
+
+def get_inventory_service(container=Depends(get_container)) -> InventoryService:
+    """Get inventory service dependency."""
+    return container.resolve(InventoryService)
+
+
+def get_journal_service(container=Depends(get_container)) -> JournalService:
+    """Get journal service dependency."""
+    return container.resolve(JournalService)
+
+
+def get_theme_service(container=Depends(get_container)) -> ThemeService:
+    """Get theme service dependency."""
+    return container.resolve(ThemeService)

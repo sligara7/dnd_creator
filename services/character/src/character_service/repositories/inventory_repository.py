@@ -6,12 +6,12 @@ from uuid import UUID
 
 from character_service.models.models import InventoryItem
 from character_service.schemas.schemas import InventoryItemCreate, InventoryItemUpdate
-from character_service.clients.storage_port import StoragePort
+from character_service.storage.storage_adapter import StorageAdapter
 
 class InventoryRepository:
     """Inventory repository."""
 
-    def __init__(self, storage: StoragePort):
+    def __init__(self, storage: StorageAdapter):
         self.storage = storage
 
     async def create(self, item: InventoryItemCreate) -> InventoryItem:

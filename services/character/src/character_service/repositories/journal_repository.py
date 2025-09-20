@@ -6,12 +6,12 @@ from uuid import UUID
 
 from character_service.models.models import JournalEntry
 from character_service.schemas.schemas import JournalEntryCreate, JournalEntryUpdate
-from character_service.clients.storage_port import StoragePort
+from character_service.storage.storage_adapter import StorageAdapter
 
 class JournalRepository:
     """Journal repository."""
 
-    def __init__(self, storage: StoragePort):
+    def __init__(self, storage: StorageAdapter):
         self.storage = storage
 
     async def create(self, entry: JournalEntryCreate) -> JournalEntry:

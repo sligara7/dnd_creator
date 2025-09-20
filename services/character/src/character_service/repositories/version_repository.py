@@ -5,18 +5,18 @@ from typing import Dict, List, Optional, Any, Tuple
 from uuid import UUID, uuid4
 
 from character_service.clients.storage_port import (
-    StoragePort,
     VersionGraph,
     VersionNode,
     VersionEdge,
     VersionNodeType,
     EdgeType,
 )
+from character_service.storage.storage_adapter import StorageAdapter
 
 class VersionRepository:
     """Repository for managing version graphs using storage service."""
 
-    def __init__(self, storage: StoragePort):
+    def __init__(self, storage: StorageAdapter):
         self.storage = storage
 
     async def create_graph(self, name: str, description: str = None) -> VersionGraph:

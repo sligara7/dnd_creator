@@ -11,7 +11,7 @@ from campaign_service.core.exceptions import (
     ThemeValidationError,
 )
 from campaign_service.core.logging import get_logger
-from campaign_service.models.campaign import CampaignState
+from campaign_service.models.storage_campaign import Campaign, CampaignState
 from campaign_service.schemas.campaign import (
     CampaignCreate,
     CampaignList,
@@ -118,12 +118,12 @@ async def list_campaigns(
         if theme_id:
             filters["theme_id"] = theme_id
 
-        campaigns = await factory.campaign_repo.get_multi(
+        campaigns = await factory.campaign_storage.get_all(
             skip=skip,
             limit=limit,
             **filters,
         )
-        total = await factory.campaign_repo.count(**filters)
+        total = await factory.campaign_storage.count(**filters)
 
         return CampaignList(
             items=[CampaignRead.from_orm(c) for c in campaigns],
@@ -158,11 +158,11 @@ async def get_campaign(
         HTTPException: If campaign not found or retrieval fails
     """
     try:
-        campaign = await factory.campaign_repo.get_with_chapters(campaign_id)
+        campaign = await factory.campaign_storage.get(campaign_id)
         if not campaign:
             raise CampaignNotFoundError(f"Campaign not found: {campaign_id}")
 
-        return CampaignRead.from_orm(campaign)
+        return CampaignRead.model_validate(campaign.model_dump())
 
     except CampaignNotFoundError as e:
         raise HTTPException(
@@ -199,20 +199,20 @@ async def update_campaign(
     """
     try:
         # Verify campaign exists
-        campaign = await factory.campaign_repo.get(campaign_id)
+        campaign = await factory.campaign_storage.get(campaign_id)
         if not campaign:
             raise CampaignNotFoundError(f"Campaign not found: {campaign_id}")
 
         # Prepare update data
-        update_data = request.dict(exclude_unset=True)
+        update_data = request.model_dump(exclude_unset=True)
         update_data["updated_at"] = datetime.utcnow()
 
         # Update campaign
-        updated_campaign = await factory.campaign_repo.update(campaign_id, update_data)
+        updated_campaign = await factory.campaign_storage.update(campaign_id, update_data)
         if not updated_campaign:
             raise CampaignNotFoundError(f"Campaign not found: {campaign_id}")
 
-        return CampaignRead.from_orm(updated_campaign)
+        return CampaignRead.model_validate(updated_campaign.model_dump())
 
     except CampaignNotFoundError as e:
         raise HTTPException(
@@ -247,12 +247,12 @@ async def delete_campaign(
     """
     try:
         # Verify campaign exists
-        campaign = await factory.campaign_repo.get(campaign_id)
+        campaign = await factory.campaign_storage.get(campaign_id)
         if not campaign:
             raise CampaignNotFoundError(f"Campaign not found: {campaign_id}")
 
         # Delete campaign
-        result = await factory.campaign_repo.delete(campaign_id)
+        result = await factory.campaign_storage.delete(campaign_id)
         if not result:
             raise CampaignNotFoundError(f"Campaign not found: {campaign_id}")
 

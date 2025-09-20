@@ -1,8 +1,11 @@
 """AMQP implementation of the storage port."""
 
+import asyncio
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
+
+from prometheus_client import Counter, Histogram
 
 from character_service.clients.storage_port import (
     CharacterData,
@@ -10,7 +13,27 @@ from character_service.clients.storage_port import (
     JournalEntryData,
     StoragePort
 )
+from character_service.core.exceptions import StorageOperationError
 from character_service.domain.messages import MessagePublisher
+
+# Metrics
+STORAGE_OPERATION_DURATION = Histogram(
+    'character_storage_operation_duration_seconds',
+    'Duration of storage service operations',
+    ['operation', 'status']
+)
+
+STORAGE_OPERATION_COUNT = Counter(
+    'character_storage_operation_total',
+    'Total number of storage service operations',
+    ['operation', 'status']
+)
+
+STORAGE_ERROR_COUNT = Counter(
+    'character_storage_error_total',
+    'Total number of storage service errors',
+    ['operation', 'error_type']
+)
 
 
 class AMQPStoragePort(StoragePort):
@@ -22,16 +45,44 @@ class AMQPStoragePort(StoragePort):
     async def _publish_storage_request(
         self,
         operation: str,
-        data: Dict[str, Any]
+        data: Dict[str, Any],
+        retries: int = 3
     ) -> Dict[str, Any]:
-        """Helper to publish storage service requests."""
-        event = {
-            "service": "character",
-            "type": f"storage.character.{operation}",
-            "data": data,
-            "timestamp": datetime.utcnow().isoformat()
-        }
-        return await self.publisher.publish_request("storage", event)
+        """Helper to publish storage service requests with retries and metrics."""
+        with STORAGE_OPERATION_DURATION.labels(operation=operation, status='total').time():
+            for attempt in range(retries):
+                try:
+                    event = {
+                        "service": "character",
+                        "type": f"storage.character.{operation}",
+                        "data": data,
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "attempt": attempt + 1,
+                        "max_attempts": retries
+                    }
+                    
+                    response = await self.publisher.publish_request("storage", event)
+                    
+                    if not response:
+                        raise StorageOperationError(f"Empty response from storage service for operation: {operation}")
+                    
+                    if error := response.get("error"):
+                        raise StorageOperationError(f"Storage operation failed: {error}")
+                    
+                    STORAGE_OPERATION_COUNT.labels(operation=operation, status='success').inc()
+                    return response
+                    
+                except Exception as e:
+                    STORAGE_ERROR_COUNT.labels(
+                        operation=operation,
+                        error_type=type(e).__name__
+                    ).inc()
+                    
+                    if attempt == retries - 1:
+                        STORAGE_OPERATION_COUNT.labels(operation=operation, status='error').inc()
+                        raise StorageOperationError(f"Storage operation failed after {retries} attempts: {str(e)}")
+                    
+                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
 
     async def get_character(self, character_id: UUID) -> Optional[CharacterData]:
         """Get a character by ID."""

@@ -1,39 +1,30 @@
 """Inventory management service."""
 from datetime import datetime
 from typing import Dict, List, Optional, Any
-from uuid import UUID
-
-from sqlalchemy import select, and_, or_, not_
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
+from uuid import UUID, uuid4
 
 from character_service.core.exceptions import (
     ValidationError,
     InventoryError,
     ResourceExhaustedError,
-    StateError,
+    StateError
 )
-from character_service.domain.inventory import (
-    InventoryItem,
-    MagicItem,
-    ItemEffect,
-    Container,
-    ItemLocation,
-    ItemType,
-    AttunementState,
-)
+from character_service.repositories.inventory_repository import InventoryRepository
+from character_service.repositories.character_storage_repository import CharacterStorageRepository
 
 
 class InventoryServiceImpl:
     """Service for managing character inventory."""
 
-    def __init__(self, session: AsyncSession):
+    def __init__(self, inventory_repo: InventoryRepository, character_repo: CharacterStorageRepository):
         """Initialize the service.
-
+        
         Args:
-            session: Database session
+            inventory_repo: Repository for inventory operations
+            character_repo: Repository for character operations
         """
-        self.session = session
+        self.inventory_repo = inventory_repo
+        self.character_repo = character_repo
         self._currency_types = {
             "cp": {"name": "Copper", "value": 1},
             "sp": {"name": "Silver", "value": 10},
@@ -45,11 +36,11 @@ class InventoryServiceImpl:
     async def get_inventory(
         self,
         character_id: UUID,
-        location: Optional[ItemLocation] = None,
-        item_type: Optional[ItemType] = None,
+        location: Optional[str] = None,
+        item_type: Optional[str] = None,
         container_id: Optional[UUID] = None,
         include_deleted: bool = False,
-    ) -> List[InventoryItem]:
+    ) -> List[Dict[str, Any]]:
         """Get a character's inventory items.
 
         Args:
@@ -63,28 +54,22 @@ class InventoryServiceImpl:
             List of inventory items
         """
         try:
-            # Build query
-            query = (
-                select(InventoryItem)
-                .where(InventoryItem.character_id == character_id)
-                .options(
-                    joinedload(InventoryItem.container_items),
-                )
+            # Get items via repository
+            items = await self.inventory_repo.list_inventory_items(
+                character_id=character_id,
+                include_deleted=include_deleted
             )
 
-            # Apply filters
-            if not include_deleted:
-                query = query.where(not_(InventoryItem.is_deleted))
+            # Apply filters in memory
+            filtered_items = items
             if location:
-                query = query.where(InventoryItem.location == location)
+                filtered_items = [i for i in filtered_items if i["location"] == location]
             if item_type:
-                query = query.where(InventoryItem.item_type == item_type)
-            if container_id is not None:
-                query = query.where(InventoryItem.container_id == container_id)
+                filtered_items = [i for i in filtered_items if i["item_type"] == item_type]
+            if container_id:
+                filtered_items = [i for i in filtered_items if i.get("container_id") == str(container_id)]
 
-            # Execute query
-            result = await self.session.execute(query)
-            return result.scalars().all()
+            return filtered_items
 
         except Exception as e:
             raise InventoryError(f"Failed to get inventory: {str(e)}") from e
@@ -93,9 +78,9 @@ class InventoryServiceImpl:
         self,
         character_id: UUID,
         item_id: UUID,
-        location: ItemLocation,
+        location: str,
         container_id: Optional[UUID] = None,
-    ) -> InventoryItem:
+    ) -> Dict[str, Any]:
         """Move an item to a new location.
 
         Args:
@@ -118,7 +103,7 @@ class InventoryServiceImpl:
                 raise ValidationError("Item not found")
 
             # Validate move
-            if location == ItemLocation.CONTAINER and not container_id:
+            if location == "CONTAINER" and not container_id:
                 raise ValidationError("Container ID required for container location")
 
             if container_id:
@@ -130,19 +115,20 @@ class InventoryServiceImpl:
                 if not await self._check_container_capacity(
                     container=container,
                     item_data={
-                        "weight": item.weight,
-                        "quantity": item.quantity,
+                        "weight": item["weight"],
+                        "quantity": item["quantity"],
                     },
                 ):
                     raise ValidationError("Container capacity exceeded")
 
             # Update item
-            item.location = location
-            item.container_id = container_id
-            item.updated_at = datetime.utcnow()
-
-            await self.session.flush()
-            return item
+            update_data = {
+                "location": location,
+                "container_id": str(container_id) if container_id else None,
+                "updated_at": datetime.utcnow().isoformat()
+            }
+            updated_item = await self.inventory_repo.update_inventory_item(item_id, update_data)
+            return updated_item
 
         except Exception as e:
             raise InventoryError(f"Failed to move item: {str(e)}") from e
@@ -152,7 +138,7 @@ class InventoryServiceImpl:
         character_id: UUID,
         item_id: UUID,
         quantity: int,
-    ) -> InventoryItem:
+    ) -> Dict[str, Any]:
         """Update item quantity.
 
         Args:
@@ -177,13 +163,13 @@ class InventoryServiceImpl:
             if quantity < 0:
                 raise ValidationError("Quantity cannot be negative")
 
-            if item.container_id:
+            if container_id := item.get("container_id"):
                 # Check container capacity
-                container = await self._get_container(item.container_id, character_id)
+                container = await self._get_container(UUID(container_id), character_id)
                 if not await self._check_container_capacity(
                     container=container,
                     item_data={
-                        "weight": item.weight,
+                        "weight": item["weight"],
                         "quantity": quantity,
                     },
                     exclude_item_id=item_id,
@@ -191,11 +177,12 @@ class InventoryServiceImpl:
                     raise ValidationError("Container capacity exceeded")
 
             # Update quantity
-            item.quantity = quantity
-            item.updated_at = datetime.utcnow()
-
-            await self.session.flush()
-            return item
+            update_data = {
+                "quantity": quantity,
+                "updated_at": datetime.utcnow().isoformat()
+            }
+            updated_item = await self.inventory_repo.update_inventory_item(item_id, update_data)
+            return updated_item
 
         except Exception as e:
             raise InventoryError(f"Failed to update quantity: {str(e)}") from e
@@ -224,12 +211,16 @@ class InventoryServiceImpl:
                 raise ValidationError("Item not found")
 
             if permanent:
-                await self.session.delete(item)
+                success = await self.inventory_repo.delete_inventory_item(item_id)
+                if not success:
+                    raise InventoryError("Failed to delete item permanently")
             else:
-                item.is_deleted = True
-                item.updated_at = datetime.utcnow()
-
-            await self.session.flush()
+                update_data = {
+                    "is_deleted": True,
+                    "deleted_at": datetime.utcnow().isoformat(),
+                    "updated_at": datetime.utcnow().isoformat()
+                }
+                await self.inventory_repo.update_inventory_item(item_id, update_data)
 
         except Exception as e:
             raise InventoryError(f"Failed to delete item: {str(e)}") from e
@@ -237,7 +228,7 @@ class InventoryServiceImpl:
     async def calculate_weight(
         self,
         character_id: UUID,
-        location: Optional[ItemLocation] = None,
+        location: Optional[str] = None,
         container_id: Optional[UUID] = None,
     ) -> float:
         """Calculate total weight of items.
@@ -261,7 +252,7 @@ class InventoryServiceImpl:
             # Calculate total weight
             total_weight = 0.0
             for item in items:
-                total_weight += item.weight * item.quantity
+                total_weight += item["weight"] * item["quantity"]
 
             return total_weight
 
@@ -295,53 +286,66 @@ class InventoryServiceImpl:
             if currency_type not in self._currency_types:
                 raise ValidationError(f"Invalid currency type: {currency_type}")
 
-            # Get current currency
-            query = select(InventoryItem).where(
-                and_(
-                    InventoryItem.character_id == character_id,
-                    InventoryItem.item_type == ItemType.CURRENCY,
-                    not_(InventoryItem.is_deleted),
-                )
+            # Get current currency items
+            items = await self.get_inventory(
+                character_id=character_id,
+                item_type="CURRENCY",
+                include_deleted=False
             )
-            result = await self.session.execute(query)
-            currency_items = result.scalars().all()
 
             # Get or create currency item
             currency_item = next(
-                (i for i in currency_items if i.metadata.get("type") == currency_type),
+                (i for i in items if i.get("metadata", {}).get("type") == currency_type),
                 None,
             )
 
             if not currency_item:
-                currency_item = InventoryItem(
-                    character_id=character_id,
-                    name=f"{self._currency_types[currency_type]['name']} Pieces",
-                    item_type=ItemType.CURRENCY,
-                    location=ItemLocation.CARRIED,
-                    quantity=0,
-                    weight=0.02,  # 50 coins per pound
-                    metadata={"type": currency_type},
-                )
-                self.session.add(currency_item)
+                # Create new currency item
+                new_item = {
+                    "id": str(uuid4()),
+                    "character_id": str(character_id),
+                    "name": f"{self._currency_types[currency_type]['name']} Pieces",
+                    "item_type": "CURRENCY",
+                    "location": "CARRIED",
+                    "quantity": 0,
+                    "weight": 0.02,  # 50 coins per pound
+                    "metadata": {"type": currency_type},
+                    "created_at": datetime.utcnow().isoformat(),
+                    "updated_at": datetime.utcnow().isoformat()
+                }
+                currency_item = await self.inventory_repo.create_inventory_item(new_item)
+                items.append(currency_item)
 
             # Update amount
+            current_quantity = currency_item["quantity"]
             if operation == "add":
-                currency_item.quantity += amount
+                new_quantity = current_quantity + amount
             elif operation == "remove":
-                if currency_item.quantity < amount:
+                if current_quantity < amount:
                     raise ValidationError(f"Insufficient {currency_type}")
-                currency_item.quantity -= amount
+                new_quantity = current_quantity - amount
             else:
                 raise ValidationError(f"Invalid operation: {operation}")
 
-            currency_item.updated_at = datetime.utcnow()
-
-            # Return current amounts
-            await self.session.flush()
-            return {
-                item.metadata["type"]: item.quantity
-                for item in currency_items + [currency_item]
+            # Update item
+            update_data = {
+                "quantity": new_quantity,
+                "updated_at": datetime.utcnow().isoformat()
             }
+            updated_item = await self.inventory_repo.update_inventory_item(
+                UUID(currency_item["id"]),
+                update_data
+            )
+
+            # Return current amounts for all currencies
+            currency_amounts = {}
+            for item in items:
+                if item_type := item.get("metadata", {}).get("type"):
+                    if item["id"] == currency_item["id"]:
+                        currency_amounts[item_type] = new_quantity
+                    else:
+                        currency_amounts[item_type] = item["quantity"]
+            return currency_amounts
 
         except Exception as e:
             raise InventoryError(f"Failed to manage currency: {str(e)}") from e
@@ -363,11 +367,20 @@ class InventoryServiceImpl:
         if not isinstance(item_data["name"], str) or not item_data["name"]:
             raise ValidationError("Name must be a non-empty string")
 
-        if not ItemType.has_value(item_data["item_type"]):
+        valid_item_types = [
+            "WEAPON", "ARMOR", "POTION", "SCROLL", "RING", "ROD",
+            "STAFF", "WAND", "WONDROUS", "AMMUNITION", "CONTAINER",
+            "CURRENCY", "OTHER"
+        ]
+        if item_data["item_type"] not in valid_item_types:
             raise ValidationError(f"Invalid item type: {item_data['item_type']}")
 
+        valid_locations = [
+            "EQUIPPED", "CARRIED", "STORED", "CONTAINER",
+            "MOUNT", "BANK", "VAULT"
+        ]
         if location := item_data.get("location"):
-            if not ItemLocation.has_value(location):
+            if location not in valid_locations:
                 raise ValidationError(f"Invalid location: {location}")
 
         if quantity := item_data.get("quantity"):
@@ -387,7 +400,7 @@ class InventoryServiceImpl:
         item_id: UUID,
         character_id: UUID,
         include_deleted: bool = False,
-    ) -> Optional[InventoryItem]:
+    ) -> Optional[Dict[str, Any]]:
         """Get an inventory item.
 
         Args:
@@ -398,25 +411,26 @@ class InventoryServiceImpl:
         Returns:
             The item if found
         """
-        query = select(InventoryItem).where(
-            and_(
-                InventoryItem.id == item_id,
-                InventoryItem.character_id == character_id,
-            )
+        # Get item from repository
+        item = await self.inventory_repo.get_inventory_item(
+            item_id=item_id,
+            character_id=character_id
         )
+        if not item:
+            return None
 
-        if not include_deleted:
-            query = query.where(not_(InventoryItem.is_deleted))
+        # Check deleted status
+        if not include_deleted and item.get("is_deleted", False):
+            return None
 
-        result = await self.session.execute(query)
-        return result.scalar_one_or_none()
+        return item
 
     async def _get_container(
         self,
         container_id: UUID,
         character_id: UUID,
         include_deleted: bool = False,
-    ) -> Optional[Container]:
+    ) -> Optional[Dict[str, Any]]:
         """Get a container.
 
         Args:
@@ -427,22 +441,23 @@ class InventoryServiceImpl:
         Returns:
             The container if found
         """
-        query = select(Container).where(
-            and_(
-                Container.id == container_id,
-                Container.character_id == character_id,
-            )
+        # Get container from repository
+        container = await self.inventory_repo.get_inventory_item(
+            item_id=container_id,
+            character_id=character_id
         )
+        if not container or container.get("item_type") != "CONTAINER":
+            return None
 
-        if not include_deleted:
-            query = query.where(not_(Container.is_deleted))
+        # Check deleted status
+        if not include_deleted and container.get("is_deleted", False):
+            return None
 
-        result = await self.session.execute(query)
-        return result.scalar_one_or_none()
+        return container
 
     async def _check_container_capacity(
         self,
-        container: Container,
+        container: Dict[str, Any],
         item_data: Dict[str, Any],
         exclude_item_id: Optional[UUID] = None,
     ) -> bool:
@@ -458,23 +473,25 @@ class InventoryServiceImpl:
         """
         # Get current contents
         contents = await self.get_inventory(
-            character_id=container.character_id,
-            container_id=container.id,
+            character_id=UUID(container["character_id"]),
+            container_id=UUID(container["id"]),
         )
 
         # Calculate current usage
         current_usage = 0.0
         for item in contents:
-            if exclude_item_id and item.id == exclude_item_id:
+            if exclude_item_id and UUID(item["id"]) == exclude_item_id:
                 continue
 
-            if container.capacity_type == "weight":
-                current_usage += item.weight * item.quantity
+            capacity_type = container.get("metadata", {}).get("capacity_type", "weight")
+            if capacity_type == "weight":
+                current_usage += item["weight"] * item["quantity"]
             else:  # item count
-                current_usage += item.quantity
+                current_usage += item["quantity"]
 
         # Calculate new usage
-        if container.capacity_type == "weight":
+        capacity_type = container.get("metadata", {}).get("capacity_type", "weight")
+        if capacity_type == "weight":
             new_usage = (
                 current_usage
                 + item_data.get("weight", 0.0) * item_data.get("quantity", 1)
@@ -482,4 +499,5 @@ class InventoryServiceImpl:
         else:  # item count
             new_usage = current_usage + item_data.get("quantity", 1)
 
-        return new_usage <= container.capacity
+        capacity = container.get("metadata", {}).get("capacity", float('inf'))
+        return new_usage <= capacity

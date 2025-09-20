@@ -6,8 +6,16 @@ This document serves as a high-level index of remaining work needed for each ser
 Process Reminders:
 
 Pre-Task:
-- Review service's SRD (System Requirements Document) and ICD (Interface Control Document) to ensure requirements and interfaces are considered in context. See the index at: /dnd_char_creator/DOC_INDEX.md
+- Review service's SRD (System Requirements Document) and ICD (Interface Control Document) to ensure requirements and interfaces are considered in context. See the index at: /home/ajs7/dnd_tools/dnd_char_creator/RQMTS.json
+- Review architectural rules.  See the rules at: /home/ajs7/dnd_tools/dnd_char_creator/ARCHITECTURE.json
 - Index the files within a service to know exactly what the service already performs
+- Use poetry 2.0 and pyproject.toml approach versus using requirements.txt for creating environment
+- IMPORTANT - Minimalist Implementation Philosophy:
+  * Implement only the absolute minimum set of functions required to meet the SRD and ICD requirements
+  * Resist feature creep and over-engineering - if a feature isn't explicitly required, don't build it
+  * Even if a service has evolved into a complex implementation, evaluate stripping it back to core functions
+  * Focus on simple, efficient solutions that can be enhanced later rather than building everything upfront
+  * The goal is a lean, maintainable codebase that does exactly what's needed - nothing more, nothing less
 
 Post-Task:
 
@@ -68,7 +76,7 @@ Major Changes & Milestones:
 
 ### Character Service
 Status: FEATURE COMPLETE
-Completion Tasks: [/services/character/COMPLETION_TASKS.md](/dnd_tools/dnd_char_creator/services/character/COMPLETION_TASKS.md)
+Completion Tasks: [/services/character/docs/COMPLETION_TASKS.md](/dnd_tools/dnd_char_creator/services/character/docs/COMPLETION_TASKS.md)
 
 Remaining High Priority:
 ✓ Load Testing & Performance Profiling (Completed 2025-09-06)
@@ -76,6 +84,8 @@ Remaining High Priority:
 ✓ Implementation & Operational Guides (Completed 2025-09-07)
 
 Note: Service has extensive test coverage with performance baselines established
+
+⚠️ MIGRATION REQUIRED: Current internal database must be migrated to use character_db in the storage service to comply with ARCHITECTURE.json
 
 Note: API Documentation completion includes:
 - Complete OpenAPI 3.0 specification
@@ -92,7 +102,7 @@ Note: Service is feature complete with:
 
 ### Campaign Service
 Status: FEATURE COMPLETE
-Completion Tasks: [/services/campaign/COMPLETION_TASKS.md](/dnd_tools/dnd_char_creator/services/campaign/COMPLETION_TASKS.md)
+Completion Tasks: [/services/campaign/docs/COMPLETION_TASKS.md](/dnd_tools/dnd_char_creator/services/campaign/docs/COMPLETION_TASKS.md)
 
 Completed Features:
 ✓ Story Management System (Completed 2025-09-06)
@@ -109,6 +119,8 @@ Note: Service is feature complete with all major components implemented:
 - Version Control with branching and state tracking
 - All API endpoints implemented and wired
 
+⚠️ MIGRATION REQUIRED: Current internal database must be migrated to use campaign_db in the storage service to comply with ARCHITECTURE.json
+
 Remaining work:
 - Unit and integration testing
 - Performance benchmarking
@@ -116,7 +128,7 @@ Remaining work:
 
 ### Image Service
 Status: FEATURE COMPLETE
-Completion Tasks: [/services/image/COMPLETION_TASKS.md](/dnd_tools/dnd_char_creator/services/image/COMPLETION_TASKS.md)
+Completion Tasks: [/services/image/docs/COMPLETION_TASKS.md](/dnd_tools/dnd_char_creator/services/image/docs/COMPLETION_TASKS.md)
 
 Remaining High Priority:
 ✓ API Endpoint Completion for Generation Features (Completed 2025-09-06)
@@ -132,6 +144,8 @@ Note: Service now feature complete with:
 - Health monitoring
 - Comprehensive OpenAPI documentation
 
+⚠️ MIGRATION REQUIRED: Current internal database must be migrated to use image_storage_db in the storage service to comply with ARCHITECTURE.json
+
 Next steps:
 - Performance testing and optimization
 - Integration testing with other services
@@ -139,7 +153,7 @@ Next steps:
 
 ### LLM Service
 Status: FEATURE COMPLETE
-Completion Tasks: [/services/llm/COMPLETION_TASKS.md](/dnd_tools/dnd_char_creator/services/llm/COMPLETION_TASKS.md)
+Completion Tasks: [/services/llm/docs/COMPLETION_TASKS.md](/dnd_tools/dnd_char_creator/services/llm/docs/COMPLETION_TASKS.md)
 
 ✓ Service Integration Features (Completed 2025-09-06)
 ✓ Content Validation System (Completed 2025-09-06)
@@ -161,7 +175,7 @@ Next steps:
 
 ### API Gateway
 Status: FEATURE COMPLETE
-Completion Tasks: [/services/api_gateway/COMPLETION_TASKS.md](./services/api_gateway/COMPLETION_TASKS.md)
+Completion Tasks: [/services/api_gateway/docs/COMPLETION_TASKS.md](/dnd_tools/dnd_char_creator/services/api_gateway/docs/COMPLETION_TASKS.md)
 
 Remaining High Priority:
 - Load Testing & Performance Profiling
@@ -177,7 +191,7 @@ Milestones Completed:
 
 ### Message Hub
 Status: FEATURE COMPLETE
-Completion Tasks: [/services/message/COMPLETION_TASKS.md](/dnd_tools/dnd_char_creator/services/message/COMPLETION_TASKS.md)
+Completion Tasks: [/services/message/docs/COMPLETION_TASKS.md](/dnd_tools/dnd_char_creator/services/message/docs/COMPLETION_TASKS.md)
 
 Remaining High Priority:
 ✓ Event Management System (Completed 2025-09-07)
@@ -196,7 +210,7 @@ Milestones Completed:
 
 ### Auth Service
 Status: FEATURE COMPLETE (Core Functionality)
-Completion Tasks: [/services/auth/COMPLETION_TASKS.md](/dnd_tools/dnd_char_creator/services/auth/COMPLETION_TASKS.md)
+Completion Tasks: [/services/auth/docs/COMPLETION_TASKS.md](/dnd_tools/dnd_char_creator/services/auth/docs/COMPLETION_TASKS.md)
 
 Remaining Work:
 - Message Hub Integration
@@ -223,9 +237,11 @@ Completed (2025-09-07):
 
 Note: Auth Service now has complete core authentication and authorization functionality. Remaining work focuses on advanced features and integrations.
 
+⚠️ MIGRATION REQUIRED: Current internal database must be migrated to use auth_db in the storage service to comply with ARCHITECTURE.json
+
 ### Cache Service
 Status: FEATURE COMPLETE
-Completion Tasks: [/services/cache/COMPLETION_TASKS.md](/dnd_tools/dnd_char_creator/services/cache/COMPLETION_TASKS.md)
+Completion Tasks: [/services/cache/docs/COMPLETION_TASKS.md](/dnd_tools/dnd_char_creator/services/cache/docs/COMPLETION_TASKS.md)
 
 Remaining High Priority:
 ✓ Cache Management (Completed 2025-09-07)
@@ -253,7 +269,7 @@ Next steps:
 
 ### Storage Service
 Status: FEATURE COMPLETE
-Completion Tasks: [/services/storage/COMPLETION_TASKS.md](./services/storage/COMPLETION_TASKS.md)
+Completion Tasks: [/services/storage/docs/COMPLETION_TASKS.md](/dnd_tools/dnd_char_creator/services/storage/docs/COMPLETION_TASKS.md)
 
 Completed (2025-09-07 - Session III):
 ✓ Core Infrastructure (Completed 2025-09-07)
@@ -284,14 +300,58 @@ Note: Service is feature complete with:
 - Bulk operations for efficiency
 - Presigned URL generation
 
+Completed (2025-09-20):
+✓ API Endpoint wiring with comprehensive implementation
+✓ Request/Response model validation
+✓ Error handling system
+✓ OpenAPI/Swagger documentation
+✓ Unit and integration tests
+
 Remaining work:
-- API Endpoint wiring (placeholders exist)
 - Message Hub Integration
-- Testing & Documentation
 
 ### Search Service
 Status: IN PROGRESS
-Completion Tasks: [/services/search/COMPLETION_TASKS.md](/services/search/COMPLETION_TASKS.md)
+Completion Tasks: [/services/search/docs/COMPLETION_TASKS.md](/dnd_tools/dnd_char_creator/services/search/docs/COMPLETION_TASKS.md)
+
+### Metrics Service
+Status: PLANNED
+Completion Tasks: [/services/metrics/docs/COMPLETION_TASKS.md](/dnd_tools/dnd_char_creator/services/metrics/docs/COMPLETION_TASKS.md)
+
+Planned High Priority:
+- Project Structure Setup
+- Core Metrics Collection
+- Data Storage Integration
+- API Endpoints
+- Message Hub Integration
+
+Note: Initial planning complete, ready for development.
+
+### Catalog Service
+Status: PLANNED
+Completion Tasks: [/services/catalog/docs/COMPLETION_TASKS.md](/dnd_tools/dnd_char_creator/services/catalog/docs/COMPLETION_TASKS.md)
+
+Planned High Priority:
+- Project Structure Setup
+- Core Catalog Features
+- Data Storage Integration
+- API Endpoints
+- Message Hub Integration
+
+Note: Requirements defined, ready for implementation.
+
+### Audit Service
+Status: PLANNED
+Completion Tasks: [/services/audit/docs/COMPLETION_TASKS.md](/dnd_tools/dnd_char_creator/services/audit/docs/COMPLETION_TASKS.md)
+
+Planned High Priority:
+- Project Structure Setup
+- Core Audit Features
+- Data Storage Integration
+- API Endpoints
+- Message Hub Integration
+
+Note: Service planned with focus on security event tracking and compliance reporting.
 
 Remaining High Priority:
 ✓ Core Repository Implementation (Completed 2025-09-07)
@@ -306,6 +366,8 @@ Note: Service has implemented core search functionality:
 - Support for full-text, semantic, and faceted search
 - Index management capabilities
 
+⚠️ MIGRATION REQUIRED: Current internal database must be migrated to use search_db in the storage service to comply with ARCHITECTURE.json
+
 ## Implementation Phases
 
 ### Current Phase: Core Functionality
@@ -317,6 +379,22 @@ Note: Service has implemented core search functionality:
 6. LLM Service - Content Generation
 7. Message Hub - Event Management
 8. API Gateway - Security & Routing
+
+### Database Migration Phase
+The following services must migrate their internal databases to the storage service:
+1. Character Service → character_db
+2. Campaign Service → campaign_db
+3. Image Service → image_storage_db
+4. Auth Service → auth_db
+5. Search Service → search_db
+
+Migration Process:
+1. Create corresponding database in storage service
+2. Migrate schema and data
+3. Update service to use storage service API
+4. Remove direct database dependencies
+5. Test and verify functionality
+6. Remove old database code
 
 ### Upcoming Phases
 1. Security & Integration

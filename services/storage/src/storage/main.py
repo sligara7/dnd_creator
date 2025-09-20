@@ -4,15 +4,22 @@ import logging
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.openapi.utils import get_openapi
 from prometheus_client import make_asgi_app
+
+from storage.core.exceptions import (
+    StorageException, AssetNotFoundException, AssetAlreadyExistsException,
+    ValidationError, S3StorageException
+)
+from storage.api.openapi.examples import MODELS, ERROR_EXAMPLES
 
 from storage.core.config import settings
 from storage.core.database import db_manager
 from storage.integrations.s3_client import storage_client
-from storage.api import assets, versions, policies, backups, health
+from storage.api import assets, versions, policies, backups, health, image_storage
 from storage.utils.logging import setup_logging
 
 
@@ -46,11 +53,40 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 # Create FastAPI app
 app = FastAPI(
     title="Storage Service",
-    description="Binary asset storage and management service for D&D Character Creator",
+    description="""Binary asset storage and management service for D&D Character Creator.
+
+    This service provides a centralized storage solution for all binary assets in the system, including:
+    * Character portraits and images
+    * Campaign maps and location images
+    * Audio files for ambiance and effects
+    * Document storage for game content
+    * Video content for cinematics and tutorials
+
+    Features:
+    * Deduplication by SHA256 checksum
+    * Version control with rollback capabilities
+    * Lifecycle policies for asset management
+    * Backup and restore capabilities
+    * Direct access via presigned URLs
+    * Bulk operations support
+    * Content-type validation
+    * Quota management per service
+    * Comprehensive asset metadata
+    """,
     version=settings.service_version,
     lifespan=lifespan,
     docs_url="/docs" if settings.debug else None,
     redoc_url="/redoc" if settings.debug else None,
+    terms_of_service="https://dndcreator.com/terms",
+    contact={
+        "name": "D&D Character Creator Support",
+        "url": "https://dndcreator.com/support",
+        "email": "support@dndcreator.com"
+    },
+    license_info={
+        "name": "MIT",
+        "url": "https://opensource.org/licenses/MIT"
+    }
 )
 
 # Add CORS middleware
@@ -68,23 +104,121 @@ if settings.metrics_enabled:
     app.mount("/metrics", metrics_app)
 
 
-# Exception handlers
-@app.exception_handler(404)
-async def not_found_handler(request: Request, exc):
-    """Handle 404 errors."""
-    return JSONResponse(
-        status_code=404,
-        content={"detail": "Resource not found"},
+def custom_openapi():
+    """Generate custom OpenAPI schema."""
+    if app.openapi_schema:
+        return app.openapi_schema
+
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+        tags=[
+            {
+                "name": "Assets",
+                "description": "Operations for managing binary assets",
+                "externalDocs": {
+                    "description": "Asset Management Guide",
+                    "url": "https://dndcreator.com/docs/storage/assets"
+                }
+            },
+            {
+                "name": "Health",
+                "description": "Health check endpoints"
+            }
+        ]
     )
 
+    # Add examples to schema components
+    if "components" not in openapi_schema:
+        openapi_schema["components"] = {}
+    if "examples" not in openapi_schema["components"]:
+        openapi_schema["components"]["examples"] = {}
 
-@app.exception_handler(500)
-async def internal_error_handler(request: Request, exc):
-    """Handle 500 errors."""
-    logger.error(f"Internal server error: {exc}")
+    # Add model examples
+    for model_name, model_info in MODELS.items():
+        if model_name in openapi_schema["components"]["schemas"]:
+            openapi_schema["components"]["schemas"][model_name]["description"] = model_info["description"]
+            openapi_schema["components"]["schemas"][model_name]["example"] = model_info["example"]
+
+    # Add error examples
+    openapi_schema["components"]["examples"].update(ERROR_EXAMPLES)
+
+    # Add security schemes
+    openapi_schema["components"]["securitySchemes"] = {
+        "ApiKeyAuth": {
+            "type": "apiKey",
+            "in": "header",
+            "name": "X-API-Key"
+        },
+        "JWTAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT"
+        }
+    }
+
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
+
+
+# Exception handlers
+@app.exception_handler(StorageException)
+async def storage_exception_handler(request: Request, exc: StorageException):
+    """Handle storage service specific exceptions."""
+    logger.error(f"Storage error: {exc.detail}")
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=exc.detail
+    )
+
+@app.exception_handler(AssetNotFoundException)
+async def not_found_handler(request: Request, exc: AssetNotFoundException):
+    """Handle asset not found errors."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=exc.detail
+    )
+
+@app.exception_handler(AssetAlreadyExistsException)
+async def conflict_handler(request: Request, exc: AssetAlreadyExistsException):
+    """Handle duplicate asset errors."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=exc.detail
+    )
+
+@app.exception_handler(ValidationError)
+async def validation_error_handler(request: Request, exc: ValidationError):
+    """Handle validation errors."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=exc.detail
+    )
+
+@app.exception_handler(S3StorageException)
+async def s3_error_handler(request: Request, exc: S3StorageException):
+    """Handle S3 storage errors."""
+    logger.error(f"S3 error: {exc.detail}")
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=exc.detail
+    )
+
+@app.exception_handler(Exception)
+async def generic_error_handler(request: Request, exc: Exception):
+    """Handle any unhandled exceptions."""
+    logger.error(f"Unhandled error: {str(exc)}")
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal server error"},
+        content={
+            "message": "Internal server error",
+            "details": {"error": str(exc)}
+        }
     )
 
 
@@ -109,6 +243,10 @@ app.include_router(
     backups.router,
     prefix=f"{settings.api_prefix}/backups",
     tags=["Backups"],
+)
+app.include_router(
+    image_storage.router,
+    tags=["Image Storage"],
 )
 
 
